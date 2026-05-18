@@ -50,7 +50,11 @@ function renderInput(input: DepthRenderInput) {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
-    strength: 0.55,
+    // 0.70 gives Flux enough room to fully replace upholstery and surface
+    // textures while canny still locks walls/windows/doors in place. Below
+    // 0.6 the model preserves patterns too aggressively; above 0.8 walls
+    // start drifting.
+    strength: 0.70,
     control_lora_strength: 0.85,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }

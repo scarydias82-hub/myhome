@@ -168,6 +168,11 @@ export function buildPrompt(
 
   base.push('preserve existing walls, windows, doors, ceiling layout exactly');
   base.push('same camera angle and room proportions as reference photo');
+  // Explicitly direct Flux to swap furniture rather than just retint it.
+  // Without this, canny's strict line lock keeps patterned upholstery
+  // recognisable even when the rest of the room restyles.
+  base.push('replace existing upholstery, patterns, and furniture with new pieces in the requested aesthetic');
+  base.push('no patterned chintz, no floral upholstery unless requested');
   return base.join(', ');
 }
 

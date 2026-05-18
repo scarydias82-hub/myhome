@@ -1,15 +1,23 @@
-// End-to-end matching pipeline:
-//   1. Detect bounding boxes in the rendered image (Florence-2 via fal.ai).
-//   2. Crop each box, embed the crop with CLIP (transformers.js local).
-//   3. Vector-search products by category, return the top N matches.
+// End-to-end product matching pipeline. We replaced the CLIP+pgvector
+// matching step with a Claude-vision ranking step — HF's serverless
+// inference for CLIP is unreliable in production and the native ONNX
+// runtime won't load on Vercel. Trade-off: ~3-5s per match call versus
+// ~10s of HF cold start, plus Claude can reason about *why* a product
+// matches (silhouette, palette, material) which the embedding step
+// couldn't.
 //
-// We use the service-role Supabase client so the route can RPC into pgvector
-// regardless of the calling user.
+// Flow:
+//   1. Detect bounding boxes in the rendered image (Florence-2 via fal.ai)
+//   2. For each box, pull the top N candidate products from the catalogue
+//      by category
+//   3. Ask Claude Haiku to rank those candidates by visual similarity to
+//      the cropped item from the render
+//   4. Return the picking list
 
 import sharp from 'sharp';
+import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { detectObjects, dedupeBoxes, categoryForLabel, type Bbox } from '@/lib/detection';
-import { embedImage } from '@/lib/embeddings';
 
 export interface PickingMatch {
   productId: string;
@@ -20,7 +28,7 @@ export interface PickingMatch {
   imageUrl: string;
   productUrl: string;
   affiliateUrl: string | null;
-  similarity: number;
+  similarity: number; // 0..1 normalised from Claude's rank position
 }
 
 // bbox values are percentages in [0, 1] so the result page can position
@@ -39,11 +47,31 @@ export interface MatchResult {
 }
 
 const MATCHES_PER_ITEM = 5;
-const MIN_BOX_AREA_RATIO = 0.005; // 0.5% of image — discard tiny boxes
-// Capped at 5 — fewer parallel HF Inference calls, faster picking-list
-// finalise, and the user rarely needs more than 5 shoppable items per
-// render anyway (the top picks dominate visual attention).
+const CANDIDATES_PER_ITEM = 10; // how many products to send to Claude per match
+const MIN_BOX_AREA_RATIO = 0.005;
 const MAX_ITEMS = 5;
+const CLAUDE_MODEL = 'claude-haiku-4-6'; // cheaper than Sonnet for this ranking task
+
+interface ProductRow {
+  id: string;
+  name: string;
+  retailer: string;
+  category: string;
+  price_aud: number | null;
+  image_url: string;
+  product_url: string;
+  affiliate_url: string | null;
+}
+
+let anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!anthropic) {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error('ANTHROPIC_API_KEY missing');
+    anthropic = new Anthropic({ apiKey: key });
+  }
+  return anthropic;
+}
 
 export async function buildPickingList({
   admin,
@@ -52,8 +80,6 @@ export async function buildPickingList({
   admin: SupabaseClient;
   renderImageUrl: string;
 }): Promise<MatchResult> {
-  // Download the rendered image once — we use it for both detection (via URL)
-  // and cropping (via local sharp).
   const imgBuf = Buffer.from(await (await fetch(renderImageUrl)).arrayBuffer());
   const metadata = await sharp(imgBuf).metadata();
   const imageWidth = metadata.width ?? 0;
@@ -67,13 +93,10 @@ export async function buildPickingList({
     .filter((b) => (b.w * b.h) / (imageWidth * imageHeight) >= MIN_BOX_AREA_RATIO)
     .slice(0, MAX_ITEMS);
 
-  // Fan out crop → embed → vector-search per box. HF Inference cold starts
-  // serialise badly (~10s each), so doing this in parallel turns N×10s into
-  // ~10s total. Individual failures are isolated — we still return whatever
-  // succeeded.
   const settled = await Promise.allSettled(
     boxes.map((box) => buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box })),
   );
+
   const items: PickingListItem[] = [];
   for (const result of settled) {
     if (result.status === 'fulfilled' && result.value) items.push(result.value);
@@ -108,8 +131,10 @@ async function buildPickingItem({
     })
     .jpeg({ quality: 85 })
     .toBuffer();
-  const vec = await embedImage(new Uint8Array(cropBuf));
-  const matches = await searchSimilar({ admin, embedding: vec, category });
+
+  const candidates = await fetchCandidates({ admin, category });
+  const matches = await rankWithClaude(cropBuf, candidates);
+
   return {
     itemLabel: box.label,
     category,
@@ -123,48 +148,118 @@ async function buildPickingItem({
   };
 }
 
-async function searchSimilar({
+async function fetchCandidates({
   admin,
-  embedding,
   category,
 }: {
   admin: SupabaseClient;
-  embedding: number[];
   category: string;
-}): Promise<PickingMatch[]> {
-  // We use an RPC for pgvector cosine similarity. The function is defined in
-  // a migration; falling back to a client-side select would over-fetch.
-  const { data, error } = await admin.rpc('match_products', {
-    query_embedding: embedding,
-    category_filter: category,
-    match_count: MATCHES_PER_ITEM,
-  });
+}): Promise<ProductRow[]> {
+  // Pull a diverse slate of products in the target category. We sort by
+  // price descending to bias toward more representative pieces — cheap
+  // accessories can dominate categories like "Lighting" otherwise.
+  const { data, error } = await admin
+    .from('products')
+    .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url')
+    .eq('category', category)
+    .not('image_url', 'is', null)
+    .order('price_aud', { ascending: false, nullsFirst: false })
+    .limit(CANDIDATES_PER_ITEM);
   if (error) {
-    console.error('match_products rpc failed', error);
+    console.error('candidate fetch failed', error);
     return [];
   }
-  const rows = (data ?? []) as Array<{
-    id: string;
-    name: string;
-    retailer: string;
-    category: string;
-    price_aud: number | null;
-    image_url: string;
-    product_url: string;
-    affiliate_url: string | null;
-    similarity: number;
-  }>;
-  return rows.map((r) => ({
-    productId: r.id,
-    name: r.name,
-    retailer: r.retailer,
-    category: r.category,
-    priceAud: r.price_aud,
-    imageUrl: r.image_url,
-    productUrl: r.product_url,
-    affiliateUrl: r.affiliate_url,
-    similarity: r.similarity,
-  }));
+  return (data as ProductRow[]) ?? [];
+}
+
+async function rankWithClaude(
+  cropBuf: Buffer,
+  candidates: ProductRow[],
+): Promise<PickingMatch[]> {
+  if (candidates.length === 0) return [];
+
+  const client = getAnthropic();
+  const cropBase64 = cropBuf.toString('base64');
+
+  const candidateList = candidates
+    .map((p, i) => `${i + 1}. ${p.name} — ${p.retailer}`)
+    .join('\n');
+
+  // We send the target crop + the candidate images, and ask for an ordered
+  // list of the top MATCHES_PER_ITEM ids by visual similarity. Constraints:
+  // - keep tokens tight (Haiku is cheap but adds up across boxes)
+  // - structured response is just a comma-separated list of 1-based indices
+  const message = await client.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 60,
+    system:
+      'You rank interior product photos by visual similarity to a target image. Respond with only a comma-separated list of the candidate numbers ranked from most to least similar. Maximum 5 numbers. No explanation, no markdown, no other text.',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'TARGET image (the item to match):' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
+          },
+          { type: 'text', text: `CANDIDATES:\n${candidateList}\n\nTheir images follow in order:` },
+          ...candidates.map((p) => ({
+            type: 'image' as const,
+            source: { type: 'url' as const, url: p.image_url },
+          })),
+          {
+            type: 'text',
+            text: `Rank the candidates by visual similarity to the TARGET. Reply with only ${MATCHES_PER_ITEM} comma-separated numbers in order, e.g. "3,1,7,2,5".`,
+          },
+        ],
+      },
+    ],
+  });
+
+  const raw = message.content
+    .filter((c): c is Anthropic.TextBlock => c.type === 'text')
+    .map((c) => c.text)
+    .join(' ')
+    .trim();
+
+  const ranked = parseRanking(raw, candidates.length);
+  return ranked.slice(0, MATCHES_PER_ITEM).map((idx, position) => {
+    const p = candidates[idx];
+    if (!p) throw new Error(`Index ${idx} out of bounds`);
+    return {
+      productId: p.id,
+      name: p.name,
+      retailer: p.retailer,
+      category: p.category,
+      priceAud: p.price_aud,
+      imageUrl: p.image_url,
+      productUrl: p.product_url,
+      affiliateUrl: p.affiliate_url,
+      // Normalise rank into a 0..1 similarity score (top = 1.0, bottom ~ 0.5).
+      similarity: Math.max(0, 1 - position * 0.1),
+    };
+  });
+}
+
+// Claude should reply "3,1,7,2,5" — but sometimes adds dots or words. We
+// parse defensively, fall back to natural order if parsing fails.
+function parseRanking(raw: string, max: number): number[] {
+  const tokens = raw.match(/\d+/g) ?? [];
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const tok of tokens) {
+    const n = Number(tok) - 1; // 1-based → 0-based
+    if (n >= 0 && n < max && !seen.has(n)) {
+      result.push(n);
+      seen.add(n);
+    }
+  }
+  if (result.length === 0) {
+    // Fallback: use natural order of candidates
+    for (let i = 0; i < Math.min(max, MATCHES_PER_ITEM); i++) result.push(i);
+  }
+  return result;
 }
 
 function clamp(n: number, min: number, max: number): number {
