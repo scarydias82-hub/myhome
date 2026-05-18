@@ -8,6 +8,10 @@ const serverEnvSchema = z.object({
   SENTRY_AUTH_TOKEN: z.string().optional(),
   FAL_KEY: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  // HuggingFace Inference API token — used in production to embed CLIP
+  // vectors when the local @huggingface/transformers binary can't load
+  // (e.g. on Vercel serverless). Optional; falls back to local in dev.
+  HF_TOKEN: z.string().min(1).optional(),
 });
 
 // In dev we let the app boot without Supabase so you can render the landing page
@@ -44,5 +48,6 @@ export function getServerEnv() {
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
     FAL_KEY: process.env.FAL_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    HF_TOKEN: process.env.HF_TOKEN,
   });
 }
