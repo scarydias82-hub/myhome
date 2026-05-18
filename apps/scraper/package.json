@@ -10,7 +10,8 @@
     "scrape:globewest": "node scrapers/globeWest.js",
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
-    "embed:knowledge": "node scripts/embed-knowledge.js"
+    "embed:knowledge": "node scripts/embed-knowledge.js",
+    "generate:trends": "node scripts/generate-trends.js"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",
