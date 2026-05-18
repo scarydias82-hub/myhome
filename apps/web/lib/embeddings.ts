@@ -15,7 +15,10 @@
 // at render time.
 
 const HF_MODEL = 'sentence-transformers/clip-ViT-B-32';
-const HF_INFERENCE_URL = `https://api-inference.huggingface.co/pipeline/feature-extraction/${HF_MODEL}`;
+// HF's classic Inference API path. The /pipeline/feature-extraction/... path
+// returns 404 for this model — the /models/... path is the documented one
+// for sentence-transformers models with image+text dual encoders.
+const HF_INFERENCE_URL = `https://api-inference.huggingface.co/models/${HF_MODEL}`;
 
 // --- LOCAL ---------------------------------------------------------------
 
