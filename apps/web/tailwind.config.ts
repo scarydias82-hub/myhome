@@ -35,6 +35,20 @@ const config: Config = {
         olive: 'hsl(var(--olive))',
         gold: 'hsl(var(--gold))',
 
+        // Editorial kit (myhome dashboard brief). Warm luxury palette,
+        // used on /dashboard and the nexus surfaces. Hex values are the
+        // brief's locked specification.
+        editorial: {
+          cream: '#FAF7F2', // background
+          surface: '#FDFAF6', // cards
+          ink: '#2C1F14', // primary text
+          taupe: '#8B7355', // secondary text
+          cognac: '#C4956A', // accent
+          sage: '#4A7A4A', // success
+          border: '#E8E0D0', // soft borders
+          borderStrong: '#D4C5A9', // hover/active borders
+        },
+
         // shadcn compat
         border: 'hsl(var(--ink) / 0.12)',
         'border-soft': 'hsl(var(--ink) / 0.06)',
@@ -75,10 +89,15 @@ const config: Config = {
         pill: '999px',
       },
       fontFamily: {
+        // Saltbush kit
         display: ['var(--font-display)', 'Georgia', 'serif'],
         sans: ['var(--font-body)', 'system-ui', 'sans-serif'],
         body: ['var(--font-body)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+        // Editorial kit (dashboard brief)
+        serif: ['var(--font-serif)', 'Playfair Display', 'Georgia', 'serif'],
+        dmsans: ['var(--font-dmsans)', 'system-ui', 'sans-serif'],
+        dmmono: ['var(--font-dmmono)', 'ui-monospace', 'monospace'],
       },
       fontSize: {
         // Editorial scale, see DESIGN-BRIEF §2.
