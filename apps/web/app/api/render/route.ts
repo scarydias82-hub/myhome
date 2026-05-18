@@ -1,10 +1,15 @@
 // POST /api/render
 //
-// Body: { roomId: string, style: StyleSlug, paletteId?: string }
+// Body: { roomId, style, paletteId?, featuredProductIds?, projectId? }
 //
-// Pre-condition: /api/analyse-room must have run first to create the room
-// and store its vision analysis. We use that analysis to ground the Flux
-// prompt — the M2 fidelity fix at the source.
+// Async pipeline (post-refactor):
+//   1. Verify room + create style_profile + renders row (status='running')
+//   2. Submit Flux job to fal queue → store fal_request_id
+//   3. Return { id } immediately
+//
+// The /renders/[id] page then polls /api/renders/[id]/status which checks
+// fal's queue, finalises the render (download + storage + picking list) once
+// fal reports completed, and updates the renders row.
 
 import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -16,14 +21,12 @@ import {
   type RoomFacts,
   type HeroProductDescriptor,
 } from '@/lib/styles';
-import { renderWithDepth } from '@/lib/fal';
-import { buildPickingList } from '@/lib/matching';
+import { submitDepthRender } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
 
 export const runtime = 'nodejs';
-// M2 adds ~10-15s for detection + crop embedding + matching, on top of
-// ~20-30s of Flux rendering. Bumping the budget so Vercel doesn't cut us off.
-export const maxDuration = 120;
+// Submit is a fast call — generous budget but typical run is <8s now.
+export const maxDuration = 30;
 
 interface Body {
   roomId?: string;
@@ -59,7 +62,6 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient() as unknown as SupabaseClient;
 
-  // Load the room and verify ownership.
   const roomRes = await admin
     .from('rooms')
     .select('id, user_id, photo_url, analysis')
@@ -70,8 +72,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Room not found.' }, { status: 404 });
   }
 
-  // Style profile lives per-render so that future user-edited palettes can
-  // diverge from the hardcoded preset.
   const profileRes = await admin
     .from('style_profiles')
     .insert({
@@ -91,9 +91,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not create style profile.' }, { status: 500 });
   }
 
-  // Verify project ownership before linking. Body's projectId wins over the
-  // room's stored project_id if both are present (the user may be linking an
-  // existing room into a project at render time).
   let verifiedProjectId: string | null = null;
   const candidateProjectId = body.projectId ?? null;
   if (candidateProjectId) {
@@ -123,7 +120,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not create render record.' }, { status: 500 });
   }
 
-  const signed = await admin.storage.from('rooms').createSignedUrl(room.photo_url, 60 * 10);
+  const signed = await admin.storage.from('rooms').createSignedUrl(room.photo_url, 60 * 60);
   if (signed.error || !signed.data?.signedUrl) {
     await admin
       .from('renders')
@@ -132,7 +129,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not sign photo URL.' }, { status: 500 });
   }
 
-  // Optional hero products to weave into the Flux prompt.
   let heroProducts: HeroProductDescriptor[] = [];
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
     const ids = body.featuredProductIds.slice(0, 3);
@@ -144,80 +140,29 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Vision-grounded prompt — falls back gracefully if analysis is missing.
     const groundedPrompt = buildPrompt(
       style,
       room.analysis as RoomFacts | null,
       heroProducts.length > 0 ? heroProducts : null,
     );
-
-    const output = await renderWithDepth({
+    const submission = await submitDepthRender({
       prompt: groundedPrompt,
       controlImageUrl: signed.data.signedUrl,
     });
-
-    const outKey = `${user.id}/${render.id}.webp`;
-
-    const uploadTask = (async () => {
-      const bytes = new Uint8Array(await (await fetch(output.imageUrl)).arrayBuffer());
-      return admin.storage.from('renders').upload(outKey, bytes, {
-        contentType: 'image/webp',
-        cacheControl: '31536000',
-        upsert: true,
-      });
-    })();
-
-    const matchTask = buildPickingList({
-      admin,
-      renderImageUrl: output.imageUrl,
-    }).catch((err) => {
-      console.error('picking list build failed', err);
-      return { items: [] as unknown[], imageWidth: 0, imageHeight: 0 };
-    });
-
-    const [uploadRes, matchRes] = await Promise.all([uploadTask, matchTask]);
-    if (uploadRes.error) throw new Error(uploadRes.error.message);
-    const pickingList = matchRes.items;
-
     await admin
       .from('renders')
-      .update({
-        status: 'succeeded',
-        output_url: outKey,
-        picking_list: pickingList,
-        cost_estimate_aud: estimateTotal(pickingList),
-        completed_at: new Date().toISOString(),
-      })
+      .update({ fal_request_id: submission.requestId })
       .eq('id', render.id);
   } catch (err) {
-    console.error('render pipeline failed', err);
+    console.error('fal submit failed', err);
     await admin
       .from('renders')
       .update({ status: 'failed', completed_at: new Date().toISOString() })
       .eq('id', render.id);
     const e = err as { body?: { detail?: string }; message?: string };
-    const detail = e?.body?.detail ?? e?.message ?? 'Render failed';
+    const detail = e?.body?.detail ?? e?.message ?? 'Could not submit render job.';
     return NextResponse.json({ error: detail }, { status: 500 });
   }
 
   return NextResponse.json({ id: render.id });
-}
-
-// Sum the cheapest priced match for each item — gives a baseline "you could
-// style this room from $X" figure. POA matches are skipped from the total.
-function estimateTotal(items: unknown[]): number | null {
-  let total = 0;
-  let counted = 0;
-  for (const raw of items) {
-    const item = raw as { matches?: Array<{ priceAud: number | null }> };
-    const cheapest = (item.matches ?? [])
-      .map((m) => m.priceAud)
-      .filter((p): p is number => typeof p === 'number' && p > 0)
-      .sort((a, b) => a - b)[0];
-    if (cheapest != null) {
-      total += cheapest;
-      counted++;
-    }
-  }
-  return counted > 0 ? Math.round(total) : null;
 }

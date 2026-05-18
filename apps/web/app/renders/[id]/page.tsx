@@ -8,6 +8,7 @@ import { Pill } from '@/components/saltbush/pill';
 import { Button } from '@/components/ui/button';
 import { ShoppableRender } from '@/components/renders/shoppable-render';
 import { DesignerRead } from '@/components/renders/designer-read';
+import { RenderPoll } from '@/components/renders/render-poll';
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
@@ -146,7 +147,11 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
         ) : (
-          <RenderingPlaceholder createdAt={render.created_at} />
+          <RenderPoll
+            renderId={render.id}
+            initialStatus={render.status}
+            createdAt={render.created_at}
+          />
         )}
 
         {profile ? (
@@ -188,17 +193,3 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   );
 }
 
-function RenderingPlaceholder({ createdAt }: { createdAt: string }) {
-  const secs = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
-  return (
-    <div className="grid place-items-center rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-16 text-center">
-      <div className="h-3 w-40 overflow-hidden rounded-full bg-ink/10">
-        <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
-      </div>
-      <p className="mt-6 font-display text-h4 text-ink">Restyling your room…</p>
-      <p className="mt-2 max-w-md text-[14px] text-ink-soft">
-        Depth map, ControlNet, Flux. Usually under 30 seconds. Started {secs}s ago.
-      </p>
-    </div>
-  );
-}
