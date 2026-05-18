@@ -30,7 +30,7 @@ pip-delete-this-directory.txt
 # Next.js
 .next/
 out/
-next-env.d.ts
+# next-env.d.ts is regenerated but should be committed (Next convention)
 
 # Production builds
 build/
