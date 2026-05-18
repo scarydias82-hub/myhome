@@ -2,54 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Saltbush design tokens. See docs/DESIGN-BRIEF.md §2. */
 @layer base {
   :root {
-    --background: 40 30% 98%;
-    --foreground: 30 10% 12%;
-    --card: 40 30% 99%;
-    --card-foreground: 30 10% 12%;
-    --primary: 30 25% 22%;
-    --primary-foreground: 40 30% 98%;
-    --secondary: 40 20% 92%;
-    --secondary-foreground: 30 10% 22%;
-    --muted: 40 15% 94%;
-    --muted-foreground: 30 8% 42%;
-    --accent: 30 25% 90%;
-    --accent-foreground: 30 10% 22%;
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 40 30% 98%;
-    --border: 30 15% 88%;
-    --input: 30 15% 88%;
-    --ring: 30 25% 22%;
-    --radius: 0.75rem;
-  }
+    /* Surfaces — warm paper, never pure white */
+    --paper: 39 37% 93%; /* #F4EFE6 */
+    --paper-warm: 39 36% 88%; /* #ECE4D5 */
+    --paper-deep: 40 30% 80%; /* #DCD0BA */
+    --cream: 42 53% 97%; /* #FBF8F2 */
 
-  .dark {
-    --background: 30 10% 8%;
-    --foreground: 40 25% 95%;
-    --card: 30 10% 10%;
-    --card-foreground: 40 25% 95%;
-    --primary: 40 25% 90%;
-    --primary-foreground: 30 10% 12%;
-    --secondary: 30 8% 18%;
-    --secondary-foreground: 40 25% 95%;
-    --muted: 30 8% 16%;
-    --muted-foreground: 40 10% 65%;
-    --accent: 30 8% 20%;
-    --accent-foreground: 40 25% 95%;
-    --destructive: 0 60% 45%;
-    --destructive-foreground: 40 25% 95%;
-    --border: 30 8% 20%;
-    --input: 30 8% 20%;
-    --ring: 40 25% 90%;
+    /* Ink — off-black, never #000 */
+    --ink: 24 14% 9%; /* #1B1815 */
+    --ink-soft: 33 7% 34%; /* #5C5851 */
+    --ink-faint: 35 8% 51%; /* #8B847A */
+
+    /* Accents */
+    --clay: 12 50% 48%; /* #B7553C */
+    --clay-soft: 22 56% 81%; /* #E8C8B7 */
+    --olive: 86 16% 36%; /* #5E6A4D */
+    --gold: 35 39% 47%; /* #A6824A */
+
+    /* Lines */
+    --line: 24 14% 9%; /* base for rgba lines, used with /12 and /6 */
+
+    /* Radii */
+    --radius-sm: 4px;
+    --radius-md: 10px;
+    --radius-lg: 18px;
+    --radius-xl: 28px;
+
+    /* shadcn-compat aliases — let components keep using --background etc. */
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--cream);
+    --card-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--cream);
+    --secondary: var(--paper-warm);
+    --secondary-foreground: var(--ink);
+    --muted: var(--paper-warm);
+    --muted-foreground: var(--ink-soft);
+    --accent: var(--clay-soft);
+    --accent-foreground: var(--ink);
+    --destructive: 0 70% 50%;
+    --destructive-foreground: var(--cream);
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--clay);
+    --radius: var(--radius-lg);
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--ink) / 0.12);
+  }
+  html {
+    scroll-behavior: smooth;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    background: hsl(var(--paper));
+    color: hsl(var(--ink));
+    font-family: var(--font-body), system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background: hsl(var(--clay) / 0.25);
+    color: hsl(var(--ink));
+  }
+}
+
+/* Editorial type defaults — overridable per element */
+@layer base {
+  .font-display {
+    font-family: var(--font-display), Georgia, serif;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+  }
+  .font-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+}
+
+/* Utilities */
+@layer utilities {
+  /* Subtle 4px dot grain on paper surfaces. */
+  .bg-grain {
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      hsl(var(--ink) / 0.025) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+  }
+  .bg-grain-strong {
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      hsl(var(--ink) / 0.045) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+  }
+
+  /* Reduced motion — disable all transforms / reveal animations. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Focus ring — 2px clay outline with 2px offset, per accessibility §7. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid hsl(var(--clay));
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }

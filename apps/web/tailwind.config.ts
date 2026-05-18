@@ -6,14 +6,40 @@ const config: Config = {
   theme: {
     container: {
       center: true,
-      padding: '2rem',
-      screens: { '2xl': '1400px' },
+      padding: {
+        DEFAULT: '1rem',
+        sm: '1.5rem',
+        lg: '3.5rem',
+      },
+      screens: { '2xl': '1320px' },
     },
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
+        // Saltbush palette. Use these by name; the shadcn aliases below stay
+        // wired up so existing primitives keep working.
+        paper: {
+          DEFAULT: 'hsl(var(--paper))',
+          warm: 'hsl(var(--paper-warm))',
+          deep: 'hsl(var(--paper-deep))',
+        },
+        cream: 'hsl(var(--cream))',
+        ink: {
+          DEFAULT: 'hsl(var(--ink))',
+          soft: 'hsl(var(--ink-soft))',
+          faint: 'hsl(var(--ink-faint))',
+        },
+        clay: {
+          DEFAULT: 'hsl(var(--clay))',
+          soft: 'hsl(var(--clay-soft))',
+        },
+        olive: 'hsl(var(--olive))',
+        gold: 'hsl(var(--gold))',
+
+        // shadcn compat
+        border: 'hsl(var(--ink) / 0.12)',
+        'border-soft': 'hsl(var(--ink) / 0.06)',
+        input: 'hsl(var(--ink) / 0.12)',
+        ring: 'hsl(var(--clay))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         primary: {
@@ -42,12 +68,37 @@ const config: Config = {
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        pill: '999px',
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Georgia', 'serif'],
+        sans: ['var(--font-body)', 'system-ui', 'sans-serif'],
+        body: ['var(--font-body)', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+      },
+      fontSize: {
+        // Editorial scale, see DESIGN-BRIEF §2.
+        meta: ['11px', { lineHeight: '1.3', letterSpacing: '0.14em' }],
+        price: ['14px', { lineHeight: '1' }],
+        'display-3': ['clamp(22px, 2vw, 30px)', { lineHeight: '1.1', letterSpacing: '-0.01em' }],
+        'display-2': ['clamp(36px, 4vw, 52px)', { lineHeight: '1.02', letterSpacing: '-0.02em' }],
+        'display-1': ['clamp(44px, 5.4vw, 78px)', { lineHeight: '0.98', letterSpacing: '-0.025em' }],
+      },
+      boxShadow: {
+        soft: '0 24px 60px -20px rgba(27, 24, 21, 0.18)',
+        card: '0 14px 28px -10px rgba(27, 24, 21, 0.2)',
+        pop: '0 8px 24px rgba(27, 24, 21, 0.18)',
+      },
+      letterSpacing: {
+        eyebrow: '0.14em',
+        'eyebrow-wide': '0.16em',
+      },
+      transitionTimingFunction: {
+        editorial: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
       },
     },
   },
