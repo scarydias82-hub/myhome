@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Logo } from '@/components/saltbush/logo';
+import { Eyebrow } from '@/components/saltbush/eyebrow';
+import { DisplayHeading } from '@/components/saltbush/display-heading';
 import { EmailAuthForm } from '@/components/auth/email-auth-form';
 import { GoogleAuthButton } from '@/components/auth/google-auth-button';
 import { SupabaseNotConfigured } from '@/components/supabase-not-configured';
@@ -21,35 +23,46 @@ export default async function SignupPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-12">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Create your account</CardTitle>
-          <CardDescription>Restyle any room, shop the look.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {!isSupabaseConfigured ? <SupabaseNotConfigured /> : null}
-          <GoogleAuthButton next={searchParams.next} />
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or with email</span>
-            </div>
-          </div>
-          <EmailAuthForm mode="signup" next={searchParams.next} />
-          {searchParams.error ? (
-            <p className="text-sm text-destructive">{searchParams.error}</p>
-          ) : null}
-          <p className="text-center text-sm text-muted-foreground">
-            Already have one?{' '}
-            <Link className="underline" href="/login">
-              Sign in
-            </Link>
+    <main className="container flex min-h-screen items-center justify-center py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-8 flex justify-center">
+          <Logo />
+        </div>
+        <div className="rounded-lg border border-ink/[0.06] bg-cream p-8 shadow-soft">
+          <Eyebrow>Get started · 01</Eyebrow>
+          <DisplayHeading level={3} className="mt-2">
+            Restyle any room, <em>shop</em> the look.
+          </DisplayHeading>
+          <p className="mt-3 text-[15px] text-ink-soft">
+            Free to try. Three renders included. No card.
           </p>
-        </CardContent>
-      </Card>
+
+          <div className="mt-7 space-y-5">
+            {!isSupabaseConfigured ? <SupabaseNotConfigured /> : null}
+            <GoogleAuthButton next={searchParams.next} />
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-ink/[0.06]" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-cream px-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                  or with email
+                </span>
+              </div>
+            </div>
+            <EmailAuthForm mode="signup" next={searchParams.next} />
+            {searchParams.error ? (
+              <p className="text-[13px] text-destructive">{searchParams.error}</p>
+            ) : null}
+          </div>
+        </div>
+        <p className="mt-6 text-center text-[14px] text-ink-soft">
+          Already have one?{' '}
+          <Link href="/login" className="text-clay underline-offset-4 hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }
