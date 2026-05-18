@@ -1,0 +1,23 @@
+{
+  "name": "@myhome/scraper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "node scrapers/index.js",
+    "scrape:poliform": "node scrapers/poliform.js",
+    "scrape:coco": "node scrapers/cocoRepublic.js",
+    "scrape:globewest": "node scrapers/globeWest.js",
+    "ingest": "node scripts/ingest.js",
+    "embed": "node scripts/embed.js",
+    "embed:knowledge": "node scripts/embed-knowledge.js"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.10.1",
+    "@huggingface/transformers": "^4.2.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.49.1",
+    "sharp": "^0.33.5"
+  }
+}
