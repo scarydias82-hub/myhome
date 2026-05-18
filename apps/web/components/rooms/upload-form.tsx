@@ -137,10 +137,45 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       }
       setConverting(false);
     }
+    // Vercel serverless caps multipart body at 4.5MB. Modern phone photos are
+    // routinely 8-15MB so we downscale client-side. 1600px wide is plenty for
+    // Claude vision; the original file stays in the user's session if they
+    // want to redo it from scratch.
+    try {
+      usable = await resizeForUpload(usable);
+    } catch (err) {
+      console.warn('resize failed, sending original', err);
+    }
     setFile(usable);
     setPreview(URL.createObjectURL(usable));
     // Kick off analysis immediately.
     void analysePhoto(usable);
+  }
+
+  // Returns the file unchanged if it's already small enough; otherwise
+  // re-encodes as JPEG at max 1600px wide. Preserves aspect ratio.
+  async function resizeForUpload(file: File): Promise<File> {
+    const TARGET_MAX_DIM = 1600;
+    const TARGET_MAX_BYTES = 3.5 * 1024 * 1024; // safe under Vercel's 4.5MB cap
+    if (file.size <= TARGET_MAX_BYTES) return file;
+
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, TARGET_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.88),
+    );
+    if (!blob) return file;
+    const base = file.name.replace(/\.[^.]+$/, '') || 'room';
+    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
   }
 
   async function analysePhoto(photoFile: File) {
