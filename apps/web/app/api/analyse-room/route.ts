@@ -91,14 +91,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not sign photo URL.' }, { status: 500 });
   }
 
+  console.log(`[analyse-room] start roomId=${room.id}`);
+  const startedAt = Date.now();
+
   // Run vision. Cache on rooms.analysis so /api/advise + /api/render can read
   // it directly without re-analysing.
   try {
     const analysis = await analyseRoom(signed.data.signedUrl);
+    const visionMs = Date.now() - startedAt;
+    console.log(`[analyse-room] vision done in ${visionMs}ms`);
     await admin.from('rooms').update({ analysis }).eq('id', room.id);
+    console.log(`[analyse-room] cached analysis on rooms.${room.id}`);
     return NextResponse.json({ roomId: room.id, analysis });
   } catch (err) {
-    console.error('room analysis failed', err);
+    const elapsed = Date.now() - startedAt;
+    console.error(`[analyse-room] failed after ${elapsed}ms`, err);
     return NextResponse.json(
       {
         roomId: room.id,

@@ -66,8 +66,11 @@ export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
   // Claude Sonnet vision accepts either a URL or base64. We pass URL since the
   // signed Supabase URL is already short-lived but publicly fetchable.
   const anthropic = getAnthropic();
+  // Haiku is ~3× faster than Sonnet for this structured-extraction task and
+  // handles vision more than well enough. Sonnet was occasionally taking
+  // >60s on Vercel and getting silently killed by the function timeout.
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-haiku-4-6',
     max_tokens: 1500,
     system: SYSTEM,
     messages: [
