@@ -11,9 +11,21 @@ export function TopNav({ initials, fullName }: TopNavProps) {
   return (
     <header className="sticky top-0 z-40 h-[52px] border-b border-editorial-border bg-editorial-cream/85 backdrop-blur">
       <div className="mx-auto flex h-full max-w-[1200px] items-center justify-between px-6">
-        <Link href="/dashboard" className="flex items-center gap-2" aria-label="myhome — home">
-          <span className="font-serif text-[20px] leading-none text-editorial-ink">
-            <span className="italic">my</span>home
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-2"
+          aria-label="myMaison — your personal design studio"
+        >
+          {/*
+            Brand wordmark per myMaison guidelines:
+              - "my" in italic, warm taupe (#8B7355), weight 400
+              - "Maison" in roman, espresso (#2C1F14), weight 500
+            The case break + colour shift between the two halves is the
+            brand's signature gesture.
+          */}
+          <span className="font-serif text-[20px] leading-none">
+            <span className="italic font-normal text-editorial-taupe">my</span>
+            <span className="font-medium text-editorial-ink">Maison</span>
           </span>
           <span className="rounded-full bg-editorial-cognac/15 px-1.5 py-0.5 font-dmmono text-[9px] uppercase tracking-[0.14em] text-editorial-cognac">
             Beta

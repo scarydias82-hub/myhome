@@ -59,11 +59,11 @@ export function HeroGreeting({ firstName }: HeroGreetingProps) {
         {greetingFor()}
       </p>
       <h1 className="mt-3 font-serif text-[32px] font-normal leading-[1.1] text-editorial-ink">
-        {firstName}'s <em className="italic">design studio</em>
+        {firstName}, your <em className="italic">design studio</em> is ready.
       </h1>
       <p className="mt-3 max-w-2xl font-dmsans text-[14px] leading-relaxed text-editorial-taupe">
-        From Pinterest board to fully shopped room. Pick a starting point — your inspiration,
-        an existing project, the 2026 trend wall, or the AU retailer catalogue.
+        From inspiration to a fully shopped lounge room — in minutes. Pick a starting point:
+        your boards, an open project, the 2026 trend wall, or the Australian catalogue.
       </p>
 
       <ul className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -4,12 +4,12 @@ import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
 
 export const metadata = {
-  title: 'Privacy Policy · myhome',
-  description: 'How myhome handles your data, including Pinterest integration.',
+  title: 'Privacy Policy · myMaison',
+  description: 'How myMaison handles your data, including Pinterest integration.',
 };
 
-const LAST_UPDATED = '18 May 2026';
-const CONTACT_EMAIL = 'hello@myhome.app';
+const LAST_UPDATED = '19 May 2026';
+const CONTACT_EMAIL = 'hello@mymaison.ai';
 
 export default function PrivacyPage() {
   return (
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
 
           <Section title="1. Who we are">
             <p>
-              myhome is an Australian interior design platform that helps people visualise their
+              myMaison is an Australian interior design platform that helps people visualise their
               rooms restyled and connects them with real Australian retailers. This policy explains
               what data we collect, why we collect it, and what choices you have. Questions:{' '}
               <a className="text-clay hover:underline" href={`mailto:${CONTACT_EMAIL}`}>

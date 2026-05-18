@@ -224,7 +224,7 @@ export default async function DashboardPage() {
 
         <footer className="mt-8 border-t border-editorial-border pt-6 pb-12 text-center">
           <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
-            myhome · Australian interior design intelligence
+            myMaison · your personal design studio · Australia
           </p>
         </footer>
       </main>

@@ -48,9 +48,14 @@ export interface MatchResult {
 
 const MATCHES_PER_ITEM = 5;
 const CANDIDATES_PER_ITEM = 10; // how many products to send to Claude per match
-const MIN_BOX_AREA_RATIO = 0.005;
-const MAX_ITEMS = 5;
-const CLAUDE_MODEL = 'claude-haiku-4-5'; // cheaper than Sonnet for this ranking task
+// Lowered from 0.005 → 0.002 (0.2% of image) so we catch decor like lamps,
+// cushions, vases. They're small in pixels but matter visually.
+const MIN_BOX_AREA_RATIO = 0.002;
+// Raised from 5 → 8. brand promise per the dashboard brief: every visible
+// piece should be shoppable. Claude vision matching runs all 8 in parallel
+// so the latency cost is bounded.
+const MAX_ITEMS = 8;
+const CLAUDE_MODEL = 'claude-haiku-4-5';
 
 interface ProductRow {
   id: string;

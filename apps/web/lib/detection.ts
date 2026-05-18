@@ -47,6 +47,12 @@ const FURNITURE_LABELS = new Set([
   'cabinet',
   'console',
   'sideboard',
+  'bedside table',
+  'dining chair',
+  'throw cushion',
+  'throw blanket',
+  'cushion',
+  'blanket',
 ]);
 
 // Map raw detection labels to a normalised category we can filter products by.
@@ -79,25 +85,65 @@ const LABEL_TO_CATEGORY: Record<string, string> = {
   cabinet: 'Storage & Desks',
   console: 'Consoles',
   sideboard: 'Sideboards',
+  'bedside table': 'Side Tables',
+  'dining chair': 'Chairs',
+  'throw cushion': 'Decor',
+  'throw blanket': 'Decor',
+  cushion: 'Decor',
+  blanket: 'Decor',
 };
 
 export function categoryForLabel(label: string): string {
   return LABEL_TO_CATEGORY[label.toLowerCase()] ?? 'Furniture';
 }
 
+// We run TWO Florence-2 calls and merge results:
+//   1. Default object-detection — hits the obvious hero items (sofa, bed)
+//   2. caption-to-phrase-grounding with a curated noun list — picks up
+//      the smaller decor items the default detector tends to miss
+// More boxes → a denser picking list, which is the brand promise: every
+// visible piece should be shoppable.
+const PHRASE_LIST =
+  'a sofa, an armchair, a coffee table, a side table, a console, a sideboard, ' +
+  'a rug, a floor lamp, a table lamp, a pendant light, ' +
+  'art, a picture, a mirror, ' +
+  'a potted plant, a vase, a throw cushion, a throw blanket, ' +
+  'a bed, a bedside table, a dining table, a dining chair.';
+
 export async function detectObjects(imageUrl: string): Promise<Bbox[]> {
   const client = getFal();
-  const result = await client.subscribe('fal-ai/florence-2-large/object-detection', {
-    input: { image_url: imageUrl },
-    logs: false,
-  });
-  const raw = result.data as {
-    results?: { bboxes?: Array<{ x: number; y: number; w: number; h: number; label: string }> };
+  const [defaultRes, groundedRes] = await Promise.allSettled([
+    client.subscribe('fal-ai/florence-2-large/object-detection', {
+      input: { image_url: imageUrl },
+      logs: false,
+    }),
+    client.subscribe('fal-ai/florence-2-large/caption-to-phrase-grounding', {
+      input: { image_url: imageUrl, text_input: PHRASE_LIST },
+      logs: false,
+    }),
+  ]);
+
+  type RawBox = { x?: number; y?: number; w?: number; h?: number; label?: string };
+  const collect = (res: PromiseSettledResult<unknown>): RawBox[] => {
+    if (res.status !== 'fulfilled') return [];
+    const data = (res.value as { data?: { results?: { bboxes?: RawBox[] } } }).data;
+    return data?.results?.bboxes ?? [];
   };
-  const bboxes = raw.results?.bboxes ?? [];
-  return bboxes
-    .filter((b) => FURNITURE_LABELS.has(b.label.toLowerCase()))
-    .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, label: b.label.toLowerCase() }));
+
+  const all = [...collect(defaultRes), ...collect(groundedRes)];
+  return all
+    .filter((b) => typeof b.x === 'number' && typeof b.y === 'number' && typeof b.w === 'number' && typeof b.h === 'number')
+    .map((b) => ({
+      x: b.x!,
+      y: b.y!,
+      w: b.w!,
+      h: b.h!,
+      label: (b.label ?? '').toLowerCase().trim(),
+    }))
+    .filter((b) => b.label.length > 0)
+    // Phrase-grounded labels include "a sofa" etc.; trim leading "a "/"an "
+    .map((b) => ({ ...b, label: b.label.replace(/^(an?\s+)/, '') }))
+    .filter((b) => FURNITURE_LABELS.has(b.label));
 }
 
 // Florence-2 sometimes returns two near-duplicate boxes for the same item

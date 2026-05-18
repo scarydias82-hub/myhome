@@ -51,7 +51,7 @@ export function NexusCTA({ steps, activeProject }: NexusCTAProps) {
 
       <div className="relative mx-auto max-w-3xl text-center">
         <p className="font-dmmono text-[11px] uppercase tracking-[0.16em] text-editorial-cognac">
-          The myhome nexus
+          The myMaison nexus
         </p>
         <h2 className="mt-4 font-serif text-[34px] leading-[1.1] text-editorial-cream md:text-[40px]">
           Abstract idea → <em className="italic">fully shopped room</em>
