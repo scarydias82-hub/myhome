@@ -70,7 +70,7 @@ export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
   // handles vision more than well enough. Sonnet was occasionally taking
   // >60s on Vercel and getting silently killed by the function timeout.
   const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-6',
+    model: 'claude-haiku-4-5',
     max_tokens: 1500,
     system: SYSTEM,
     messages: [

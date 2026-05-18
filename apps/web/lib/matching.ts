@@ -50,7 +50,7 @@ const MATCHES_PER_ITEM = 5;
 const CANDIDATES_PER_ITEM = 10; // how many products to send to Claude per match
 const MIN_BOX_AREA_RATIO = 0.005;
 const MAX_ITEMS = 5;
-const CLAUDE_MODEL = 'claude-haiku-4-6'; // cheaper than Sonnet for this ranking task
+const CLAUDE_MODEL = 'claude-haiku-4-5'; // cheaper than Sonnet for this ranking task
 
 interface ProductRow {
   id: string;
