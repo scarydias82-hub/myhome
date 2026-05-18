@@ -9,6 +9,10 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.supabase.in' },
     ],
   },
+  // @huggingface/transformers ships native ONNX Runtime binaries that can't
+  // be webpack-bundled. Marking them as external keeps them as require()s
+  // resolved at runtime by Node — works locally and on Vercel.
+  serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node', 'sharp'],
   experimental: {
     serverActions: { allowedOrigins: ['localhost:3000'] },
   },
