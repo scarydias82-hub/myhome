@@ -112,9 +112,22 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ imageUrl: result.imageUrl, prompt: result.prompt });
   } catch (err) {
-    console.error('staging failed', err);
-    const e = err as { body?: { detail?: string }; message?: string };
-    const detail = e?.body?.detail ?? e?.message ?? 'Staging failed';
-    return NextResponse.json({ error: detail }, { status: 500 });
+    // fal validation errors carry .body.detail as an array of {loc,msg,type}.
+    // Stringify the whole thing so the next 422 is debuggable from logs.
+    const e = err as {
+      body?: { detail?: unknown };
+      message?: string;
+      status?: number;
+    };
+    const detailJson = e?.body?.detail ? JSON.stringify(e.body.detail).slice(0, 600) : null;
+    console.error(
+      `staging failed status=${e?.status ?? '?'} message=${e?.message ?? '?'} detail=${detailJson ?? '?'}`,
+    );
+    const summary =
+      (typeof e?.body?.detail === 'string' ? e.body.detail : null) ??
+      detailJson ??
+      e?.message ??
+      'Staging failed';
+    return NextResponse.json({ error: summary }, { status: 500 });
   }
 }

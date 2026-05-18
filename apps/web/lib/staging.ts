@@ -96,16 +96,19 @@ export async function stageProduct({
 
   // 5. Call fal inpaint.
   const fal = getFal();
-  // fal's typed input for flux-pro/v1/fill doesn't include every option the
-  // endpoint accepts; we pass a hand-picked subset and cast.
+  // fal-ai/flux-pro/v1/fill schema: image_url + mask_url + prompt are required.
+  // guidance_scale: Flux Pro wants 1.5-5 (we had 30, which 422s).
+  // safety_tolerance: 1-6, replaces the legacy enable_safety_checker flag.
+  // No num_inference_steps on the Pro endpoint — it picks internally.
   const result = await fal.subscribe(INPAINT_ENDPOINT, {
     input: {
       image_url: photoSigned.data.signedUrl,
       mask_url: maskSigned.data.signedUrl,
       prompt,
-      guidance_scale: 30,
+      guidance_scale: 3.5,
       num_images: 1,
-      enable_safety_checker: true,
+      safety_tolerance: '2',
+      output_format: 'jpeg',
     } as never,
     logs: false,
   });
