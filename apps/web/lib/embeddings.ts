@@ -163,11 +163,19 @@ function normaliseHFOutput(raw: unknown): number[] {
 
 // --- Public API -----------------------------------------------------------
 
+// Tag the decision so we can confirm in logs whether the Vercel function
+// is seeing HF_TOKEN. Strip this after we've debugged the deploy.
+let loggedRemoteDecision = false;
 function useRemote(): boolean {
-  // Read process.env directly rather than going through the zod-validated
-  // getServerEnv() — that helper can throw if any other env var fails its
-  // shape check, and we'd silently fall back to a broken local path.
-  return Boolean(process.env.HF_TOKEN);
+  const token = process.env.HF_TOKEN;
+  const has = Boolean(token);
+  if (!loggedRemoteDecision) {
+    console.log(
+      `[embeddings] useRemote=${has} HF_TOKEN length=${(token ?? '').length} keys=${Object.keys(process.env).filter((k) => k.startsWith('HF_') || k === 'HF_TOKEN').join(',')}`,
+    );
+    loggedRemoteDecision = true;
+  }
+  return has;
 }
 
 export async function embedImage(input: string | Uint8Array): Promise<number[]> {
