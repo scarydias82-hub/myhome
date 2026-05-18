@@ -1,0 +1,7 @@
+node_modules
+.next
+.venv
+dist
+build
+*.lock
+pnpm-lock.yaml
