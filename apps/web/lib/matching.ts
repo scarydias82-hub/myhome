@@ -40,7 +40,10 @@ export interface MatchResult {
 
 const MATCHES_PER_ITEM = 5;
 const MIN_BOX_AREA_RATIO = 0.005; // 0.5% of image — discard tiny boxes
-const MAX_ITEMS = 8;
+// Capped at 5 — fewer parallel HF Inference calls, faster picking-list
+// finalise, and the user rarely needs more than 5 shoppable items per
+// render anyway (the top picks dominate visual attention).
+const MAX_ITEMS = 5;
 
 export async function buildPickingList({
   admin,
@@ -64,39 +67,60 @@ export async function buildPickingList({
     .filter((b) => (b.w * b.h) / (imageWidth * imageHeight) >= MIN_BOX_AREA_RATIO)
     .slice(0, MAX_ITEMS);
 
+  // Fan out crop → embed → vector-search per box. HF Inference cold starts
+  // serialise badly (~10s each), so doing this in parallel turns N×10s into
+  // ~10s total. Individual failures are isolated — we still return whatever
+  // succeeded.
+  const settled = await Promise.allSettled(
+    boxes.map((box) => buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box })),
+  );
   const items: PickingListItem[] = [];
-  for (const box of boxes) {
-    const category = categoryForLabel(box.label);
-    try {
-      const cropBuf = await sharp(imgBuf)
-        .extract({
-          left: clamp(Math.round(box.x), 0, imageWidth - 1),
-          top: clamp(Math.round(box.y), 0, imageHeight - 1),
-          width: clamp(Math.round(box.w), 1, imageWidth - Math.round(box.x)),
-          height: clamp(Math.round(box.h), 1, imageHeight - Math.round(box.y)),
-        })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      const vec = await embedImage(new Uint8Array(cropBuf));
-      const matches = await searchSimilar({ admin, embedding: vec, category });
-      items.push({
-        itemLabel: box.label,
-        category,
-        bbox: {
-          x: box.x / imageWidth,
-          y: box.y / imageHeight,
-          w: box.w / imageWidth,
-          h: box.h / imageHeight,
-        },
-        matches,
-      });
-    } catch (err) {
-      console.error(`matching ${box.label} failed`, err);
-      // Don't fail the whole pipeline if one detection fails — drop the item.
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && result.value) items.push(result.value);
+    else if (result.status === 'rejected') {
+      console.error('matching item failed', result.reason);
     }
   }
 
   return { imageWidth, imageHeight, items };
+}
+
+async function buildPickingItem({
+  admin,
+  imgBuf,
+  imageWidth,
+  imageHeight,
+  box,
+}: {
+  admin: SupabaseClient;
+  imgBuf: Buffer;
+  imageWidth: number;
+  imageHeight: number;
+  box: Bbox;
+}): Promise<PickingListItem | null> {
+  const category = categoryForLabel(box.label);
+  const cropBuf = await sharp(imgBuf)
+    .extract({
+      left: clamp(Math.round(box.x), 0, imageWidth - 1),
+      top: clamp(Math.round(box.y), 0, imageHeight - 1),
+      width: clamp(Math.round(box.w), 1, imageWidth - Math.round(box.x)),
+      height: clamp(Math.round(box.h), 1, imageHeight - Math.round(box.y)),
+    })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+  const vec = await embedImage(new Uint8Array(cropBuf));
+  const matches = await searchSimilar({ admin, embedding: vec, category });
+  return {
+    itemLabel: box.label,
+    category,
+    bbox: {
+      x: box.x / imageWidth,
+      y: box.y / imageHeight,
+      w: box.w / imageWidth,
+      h: box.h / imageHeight,
+    },
+    matches,
+  };
 }
 
 async function searchSimilar({
