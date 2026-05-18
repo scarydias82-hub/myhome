@@ -130,6 +130,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             afterUrl={afterSigned.data.signedUrl}
             items={render.picking_list ?? []}
             totalEstimateAud={render.cost_estimate_aud}
+            renderId={render.id}
           />
         ) : isFailed ? (
           <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">

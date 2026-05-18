@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { Pill } from '@/components/saltbush/pill';
+import { StagingModal } from '@/components/renders/staging-modal';
 
 export interface PickingMatch {
   productId: string;
@@ -29,6 +30,12 @@ interface PickingListPanelProps {
   items: PickingListItem[];
   activeIndex: number | null;
   onHover: (index: number | null) => void;
+  renderId: string;
+}
+
+interface StagingTarget {
+  itemIndex: number;
+  match: PickingMatch;
 }
 
 const aud = new Intl.NumberFormat('en-AU', {
@@ -37,7 +44,9 @@ const aud = new Intl.NumberFormat('en-AU', {
   maximumFractionDigits: 0,
 });
 
-export function PickingListPanel({ items, activeIndex, onHover }: PickingListPanelProps) {
+export function PickingListPanel({ items, activeIndex, onHover, renderId }: PickingListPanelProps) {
+  const [staging, setStaging] = useState<StagingTarget | null>(null);
+
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-8 text-center">
@@ -52,37 +61,67 @@ export function PickingListPanel({ items, activeIndex, onHover }: PickingListPan
   }
 
   return (
-    <div className="rounded-xl border border-ink/[0.06] bg-cream shadow-soft">
-      <div className="border-b border-ink/[0.06] p-5">
-        <Eyebrow>Shop this render</Eyebrow>
-        <p className="mt-2 font-display text-h4 text-ink">
-          {items.length} {items.length === 1 ? 'item' : 'items'} matched
-        </p>
-        <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          AU retailers · live links
-        </p>
+    <>
+      <div className="rounded-xl border border-ink/[0.06] bg-cream shadow-soft">
+        <div className="border-b border-ink/[0.06] p-5">
+          <Eyebrow>Shop this render</Eyebrow>
+          <p className="mt-2 font-display text-h4 text-ink">
+            {items.length} {items.length === 1 ? 'item' : 'items'} matched
+          </p>
+          <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            AU retailers · live links
+          </p>
+        </div>
+        <ol className="divide-y divide-ink/[0.06]">
+          {items.map((item, idx) => (
+            <li
+              key={`${item.itemLabel}-${idx}`}
+              onMouseEnter={() => onHover(idx)}
+              onMouseLeave={() => onHover(null)}
+              id={`pl-item-${idx}`}
+              className={cn(
+                'transition',
+                activeIndex === idx ? 'bg-paper-warm' : 'bg-transparent',
+              )}
+            >
+              <PickingListEntry
+                item={item}
+                index={idx}
+                onStage={(match) => setStaging({ itemIndex: idx, match })}
+              />
+            </li>
+          ))}
+        </ol>
       </div>
-      <ol className="divide-y divide-ink/[0.06]">
-        {items.map((item, idx) => (
-          <li
-            key={`${item.itemLabel}-${idx}`}
-            onMouseEnter={() => onHover(idx)}
-            onMouseLeave={() => onHover(null)}
-            id={`pl-item-${idx}`}
-            className={cn(
-              'transition',
-              activeIndex === idx ? 'bg-paper-warm' : 'bg-transparent',
-            )}
-          >
-            <PickingListEntry item={item} index={idx} />
-          </li>
-        ))}
-      </ol>
-    </div>
+      {staging ? (
+        <StagingModal
+          open
+          onClose={() => setStaging(null)}
+          renderId={renderId}
+          itemIndex={staging.itemIndex}
+          product={{
+            productId: staging.match.productId,
+            name: staging.match.name,
+            retailer: staging.match.retailer,
+            imageUrl: staging.match.imageUrl,
+            productUrl: staging.match.productUrl,
+            affiliateUrl: staging.match.affiliateUrl,
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
-function PickingListEntry({ item, index }: { item: PickingListItem; index: number }) {
+function PickingListEntry({
+  item,
+  index,
+  onStage,
+}: {
+  item: PickingListItem;
+  index: number;
+  onStage: (match: PickingMatch) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? item.matches : item.matches.slice(0, 1);
   const more = item.matches.length - 1;
@@ -100,7 +139,12 @@ function PickingListEntry({ item, index }: { item: PickingListItem; index: numbe
       </div>
       <div className="mt-4 space-y-3">
         {visible.map((m) => (
-          <MatchCard key={m.productId} match={m} primary={m === item.matches[0]} />
+          <MatchCard
+            key={m.productId}
+            match={m}
+            primary={m === item.matches[0]}
+            onStage={() => onStage(m)}
+          />
         ))}
       </div>
       {more > 0 ? (
@@ -116,48 +160,67 @@ function PickingListEntry({ item, index }: { item: PickingListItem; index: numbe
   );
 }
 
-function MatchCard({ match, primary }: { match: PickingMatch; primary: boolean }) {
+function MatchCard({
+  match,
+  primary,
+  onStage,
+}: {
+  match: PickingMatch;
+  primary: boolean;
+  onStage: () => void;
+}) {
   const target = match.affiliateUrl ?? match.productUrl;
   return (
-    <a
-      href={target}
-      target="_blank"
-      rel="noopener noreferrer sponsored"
+    <div
       className={cn(
-        'group flex gap-3 rounded-lg border p-3 transition',
+        'group flex flex-col gap-3 rounded-lg border p-3 transition',
         primary
           ? 'border-clay/40 bg-cream'
           : 'border-ink/[0.06] bg-paper-warm bg-grain hover:border-ink/20',
       )}
     >
-      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded bg-ink/[0.04]">
-        <Image
-          src={match.imageUrl}
-          alt={match.name}
-          fill
-          sizes="80px"
-          className="object-cover transition group-hover:scale-105"
-          unoptimized
-        />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col justify-between">
-        <div>
-          <p className="line-clamp-2 font-display text-[15px] leading-tight text-ink">
-            {match.name}
-          </p>
-          <p className="mt-0.5 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            {match.retailer}
-          </p>
+      <div className="flex gap-3">
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded bg-ink/[0.04]">
+          <Image
+            src={match.imageUrl}
+            alt={match.name}
+            fill
+            sizes="80px"
+            className="object-cover transition group-hover:scale-105"
+            unoptimized
+          />
         </div>
-        <div className="mt-1 flex items-end justify-between gap-2">
-          <p className="font-display text-h4 text-ink">
+        <div className="flex min-w-0 flex-1 flex-col justify-between">
+          <div>
+            <p className="line-clamp-2 font-display text-[15px] leading-tight text-ink">
+              {match.name}
+            </p>
+            <p className="mt-0.5 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+              {match.retailer}
+            </p>
+          </div>
+          <p className="mt-1 font-display text-h4 text-ink">
             {match.priceAud != null ? aud.format(match.priceAud) : 'POA'}
           </p>
-          <span className="font-mono text-meta uppercase tracking-eyebrow text-clay group-hover:underline">
-            View ↗
-          </span>
         </div>
       </div>
-    </a>
+      <div className="flex items-center gap-2 border-t border-ink/[0.06] pt-3">
+        <button
+          type="button"
+          onClick={onStage}
+          className="flex-1 rounded-pill bg-ink px-3 py-1.5 text-center font-mono text-meta uppercase tracking-eyebrow text-paper transition hover:bg-ink-soft"
+        >
+          Try in my room
+        </button>
+        <a
+          href={target}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="rounded-pill border border-ink/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
+        >
+          View ↗
+        </a>
+      </div>
+    </div>
   );
 }
