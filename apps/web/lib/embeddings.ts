@@ -14,8 +14,6 @@
 // the LOCAL path) are query-compatible with vectors generated REMOTELY
 // at render time.
 
-import { getServerEnv } from '@/lib/env';
-
 const HF_MODEL = 'sentence-transformers/clip-ViT-B-32';
 const HF_INFERENCE_URL = `https://api-inference.huggingface.co/pipeline/feature-extraction/${HF_MODEL}`;
 
@@ -111,7 +109,7 @@ async function fetchImageBytes(input: string | Uint8Array): Promise<Uint8Array> 
 }
 
 async function callHF(body: BodyInit, headers: HeadersInit): Promise<unknown> {
-  const { HF_TOKEN } = getServerEnv();
+  const HF_TOKEN = process.env.HF_TOKEN;
   if (!HF_TOKEN) throw new Error('HF_TOKEN missing');
   // HF Inference API can cold-start; retry once on 503 (model loading).
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -166,12 +164,10 @@ function normaliseHFOutput(raw: unknown): number[] {
 // --- Public API -----------------------------------------------------------
 
 function useRemote(): boolean {
-  try {
-    const { HF_TOKEN } = getServerEnv();
-    return Boolean(HF_TOKEN);
-  } catch {
-    return false;
-  }
+  // Read process.env directly rather than going through the zod-validated
+  // getServerEnv() — that helper can throw if any other env var fails its
+  // shape check, and we'd silently fall back to a broken local path.
+  return Boolean(process.env.HF_TOKEN);
 }
 
 export async function embedImage(input: string | Uint8Array): Promise<number[]> {
