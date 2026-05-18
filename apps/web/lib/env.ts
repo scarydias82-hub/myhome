@@ -6,6 +6,8 @@ const serverEnvSchema = z.object({
   SENTRY_ORG: z.string().optional(),
   SENTRY_PROJECT: z.string().optional(),
   SENTRY_AUTH_TOKEN: z.string().optional(),
+  FAL_KEY: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
 });
 
 // In dev we let the app boot without Supabase so you can render the landing page
@@ -40,5 +42,7 @@ export function getServerEnv() {
     SENTRY_ORG: process.env.SENTRY_ORG,
     SENTRY_PROJECT: process.env.SENTRY_PROJECT,
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
+    FAL_KEY: process.env.FAL_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   });
 }

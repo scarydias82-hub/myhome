@@ -7,17 +7,17 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get('next') ?? '/dashboard';
 
   if (code) {
-    const supabase = createClient();
+    const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      const fail = url.clone();
+      const fail = new URL(url);
       fail.pathname = '/login';
       fail.search = `?error=${encodeURIComponent(error.message)}`;
       return NextResponse.redirect(fail);
     }
   }
 
-  const dest = url.clone();
+  const dest = new URL(url);
   dest.pathname = next;
   dest.search = '';
   return NextResponse.redirect(dest);

@@ -13,7 +13,7 @@ export interface ItemCardData {
   alternativesCount?: number;
 }
 
-interface ItemCardProps extends React.HTMLAttributes<HTMLButtonElement> {
+interface ItemCardProps extends Omit<React.HTMLAttributes<HTMLButtonElement>, 'onSelect'> {
   data: ItemCardData;
   active?: boolean;
   onSelect?: (id: string) => void;

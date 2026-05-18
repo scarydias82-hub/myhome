@@ -12,14 +12,15 @@ import { createClient } from '@/lib/supabase/server';
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: { next?: string; error?: string };
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
+  const params = await searchParams;
   if (isSupabaseConfigured) {
-    const supabase = createClient();
+    const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (user) redirect(searchParams.next ?? '/dashboard');
+    if (user) redirect(params.next ?? '/dashboard');
   }
 
   return (
@@ -39,7 +40,7 @@ export default async function LoginPage({
 
           <div className="mt-7 space-y-5">
             {!isSupabaseConfigured ? <SupabaseNotConfigured /> : null}
-            <GoogleAuthButton next={searchParams.next} />
+            <GoogleAuthButton next={params.next} />
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-ink/[0.06]" />
@@ -50,9 +51,9 @@ export default async function LoginPage({
                 </span>
               </div>
             </div>
-            <EmailAuthForm mode="signin" next={searchParams.next} />
-            {searchParams.error ? (
-              <p className="text-[13px] text-destructive">{searchParams.error}</p>
+            <EmailAuthForm mode="signin" next={params.next} />
+            {params.error ? (
+              <p className="text-[13px] text-destructive">{params.error}</p>
             ) : null}
           </div>
         </div>
