@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>saltbush — design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Geist:wght@300..700&family=Geist+Mono:wght@300..600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* palette — warm paper, clay, olive, ink */
+    --paper: #F4EFE6;
+    --paper-warm: #ECE4D5;
+    --paper-deep: #DCD0BA;
+    --ink: #1B1815;
+    --ink-soft: #5C5851;
+    --ink-faint: #8B847A;
+    --clay: #B7553C;
+    --clay-soft: #E8C8B7;
+    --olive: #5E6A4D;
+    --gold: #A6824A;
+    --cream: #FBF8F2;
+    --line: rgba(27, 24, 21, 0.12);
+    --line-soft: rgba(27, 24, 21, 0.06);
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Geist', system-ui, sans-serif;
+    --font-mono: 'Geist Mono', monospace;
+
+    --r-sm: 4px;
+    --r-md: 10px;
+    --r-lg: 18px;
+    --r-xl: 28px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: #2a2521;
+    color: var(--ink);
+    font-weight: 400;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 0;
+  }
+
+  /* Page chrome (the mockup viewer) */
+  .mockup-wrap {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  .mockup-header {
+    color: #C8BFAE;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .mockup-header h1 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-style: italic;
+    color: var(--cream);
+    font-size: 28px;
+    text-transform: none;
+    letter-spacing: -0.01em;
+  }
+  .screen-tag {
+    color: #8a8275;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 60px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .screen-tag::before {
+    content: '';
+    width: 18px; height: 1px;
+    background: #8a8275;
+  }
+
+  .screen {
+    background: var(--paper);
+    border-radius: var(--r-xl);
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,0.4);
+  }
+
+  /* Subtle paper grain */
+  .screen::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(27,24,21,0.025) 1px, transparent 0);
+    background-size: 4px 4px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .screen > * { position: relative; z-index: 2; }
+
+  /* ======================== NAV ======================== */
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 28px 56px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-style: italic;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    display: flex;
+    align-items: baseline;
+  }
+  .logo::after {
+    content: '.';
+    color: var(--clay);
+    margin-left: 1px;
+  }
+  .nav-links {
+    display: flex;
+    gap: 36px;
+    list-style: none;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+  .nav-links a { color: inherit; text-decoration: none; transition: color 0.2s; }
+  .nav-links a:hover { color: var(--clay); }
+  .nav-cta {
+    background: var(--ink);
+    color: var(--cream);
+    padding: 11px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    text-decoration: none;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    transition: background 0.2s;
+  }
+  .nav-cta:hover { background: var(--clay); }
+
+  /* ======================== LANDING HERO ======================== */
+  .hero {
+    padding: 80px 56px 100px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 72px;
+    align-items: center;
+  }
+  .hero-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--clay);
+    margin-bottom: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hero-eyebrow::before {
+    content: '';
+    width: 24px; height: 1px;
+    background: var(--clay);
+  }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: clamp(48px, 5.4vw, 78px);
+    line-height: 0.98;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    margin-bottom: 28px;
+  }
+  .hero h1 em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--clay);
+  }
+  .hero-sub {
+    font-size: 18px;
+    color: var(--ink-soft);
+    margin-bottom: 36px;
+    max-width: 480px;
+    line-height: 1.55;
+  }
+  .hero-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 18px 32px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+    transition: all 0.25s;
+  }
+  .hero-cta:hover { background: var(--clay); transform: translateY(-2px); }
+  .hero-cta .arrow {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--cream);
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+  .hero-meta {
+    margin-top: 24px;
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+  }
+
+  /* Hero visual — composed before/after preview */
+  .hero-visual {
+    position: relative;
+    aspect-ratio: 4/5;
+  }
+  .room-card {
+    position: absolute;
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow: 0 30px 50px -20px rgba(27,24,21,0.35);
+  }
+  .room-before {
+    inset: 8% 30% 14% 0;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.1), rgba(0,0,0,0.2)),
+      linear-gradient(135deg, #c4b8a3, #9a8f7b);
+    transform: rotate(-3deg);
+  }
+  .room-after {
+    inset: 18% 0 0 28%;
+    background:
+      linear-gradient(160deg, rgba(255,238,210,0.4), rgba(0,0,0,0.25)),
+      linear-gradient(135deg, #b8956f, #7a5d3f);
+    transform: rotate(2deg);
+  }
+  .room-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 70%, rgba(255,230,200,0.4), transparent 50%),
+      radial-gradient(circle at 70% 30%, rgba(255,255,255,0.15), transparent 40%);
+    mix-blend-mode: overlay;
+  }
+  .room-label {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    color: var(--cream);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    z-index: 3;
+  }
+  /* Faux furniture suggestion in the "after" card */
+  .room-after::before {
+    content: '';
+    position: absolute;
+    inset: 55% 18% 18% 18%;
+    background: linear-gradient(180deg, #6b4f35 0%, #4f3a26 100%);
+    border-radius: 8px 8px 0 0;
+    box-shadow: 0 -2px 0 rgba(255,255,255,0.1) inset;
+  }
+  .product-tag {
+    position: absolute;
+    background: var(--cream);
+    color: var(--ink);
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    z-index: 4;
+  }
+  .product-tag .dot {
+    width: 6px; height: 6px;
+    background: var(--clay);
+    border-radius: 50%;
+  }
+  .product-tag .price {
+    font-family: var(--font-mono);
+    color: var(--ink-soft);
+    font-size: 10px;
+  }
+  .tag-1 { top: 38%; right: 4%; }
+  .tag-2 { top: 68%; left: 32%; }
+
+  /* Logo strip */
+  .retailers {
+    padding: 40px 56px;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+    display: flex;
+    align-items: center;
+    gap: 56px;
+    background: var(--paper-warm);
+  }
+  .retailers .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    max-width: 160px;
+  }
+  .retailers .logos {
+    display: flex;
+    gap: 48px;
+    flex: 1;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .retailers .logos span {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 19px;
+    color: var(--ink-soft);
+    letter-spacing: 0.02em;
+  }
+  .retailers .logos span:nth-child(2) { font-style: italic; }
+  .retailers .logos span:nth-child(4) { font-weight: 500; text-transform: uppercase; font-size: 14px; letter-spacing: 0.18em; }
+
+  /* How it works */
+  .how {
+    padding: 110px 56px;
+  }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--clay);
+    margin-bottom: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-eyebrow::before {
+    content: '';
+    width: 24px; height: 1px;
+    background: var(--clay);
+  }
+  .how h2 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 52px;
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    margin-bottom: 64px;
+    max-width: 720px;
+  }
+  .how h2 em { font-style: italic; color: var(--clay); }
+  .how-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 48px;
+  }
+  .step .num {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 56px;
+    color: var(--clay);
+    line-height: 1;
+    margin-bottom: 20px;
+    display: block;
+  }
+  .step h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 24px;
+    margin-bottom: 12px;
+    letter-spacing: -0.01em;
+  }
+  .step p {
+    color: var(--ink-soft);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .step .divider {
+    width: 56px;
+    height: 1px;
+    background: var(--line);
+    margin-bottom: 24px;
+  }
+
+  /* Quote */
+  .quote {
+    padding: 100px 56px;
+    background: var(--paper-warm);
+    border-top: 1px solid var(--line-soft);
+  }
+  .quote blockquote {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-style: italic;
+    font-size: 38px;
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+    color: var(--ink);
+  }
+  .quote .attr {
+    margin-top: 32px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .quote .attr strong { color: var(--clay); font-weight: 500; }
+
+  /* Footer */
+  .footer {
+    padding: 40px 56px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+
+  /* ======================== ONBOARDING ======================== */
+  .onb {
+    min-height: 720px;
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+  }
+  .onb-left {
+    padding: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border-right: 1px solid var(--line-soft);
+  }
+  .onb-progress {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 56px;
+  }
+  .onb-progress span {
+    height: 3px;
+    width: 36px;
+    background: var(--line);
+    border-radius: 2px;
+  }
+  .onb-progress span.active { background: var(--clay); width: 56px; }
+  .onb h2 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 54px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    margin-bottom: 24px;
+  }
+  .onb h2 em { font-style: italic; color: var(--clay); }
+  .onb p {
+    color: var(--ink-soft);
+    font-size: 17px;
+    line-height: 1.55;
+    margin-bottom: 40px;
+    max-width: 460px;
+  }
+  .pinterest-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    background: #E60023;
+    color: white;
+    padding: 18px 28px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 12px 28px -10px rgba(230, 0, 35, 0.4);
+    margin-bottom: 20px;
+    width: fit-content;
+  }
+  .pinterest-btn .icon {
+    width: 24px; height: 24px;
+    background: white;
+    border-radius: 50%;
+    color: #E60023;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    font-family: var(--font-display);
+  }
+  .skip-link {
+    display: inline-block;
+    color: var(--ink-soft);
+    font-size: 14px;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+  }
+  .privacy-note {
+    margin-top: 48px;
+    padding: 20px 24px;
+    background: var(--paper-warm);
+    border-radius: var(--r-md);
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    max-width: 440px;
+    border-left: 2px solid var(--clay);
+  }
+  .privacy-note strong { color: var(--ink); font-weight: 500; }
+
+  .onb-right {
+    background: var(--paper-warm);
+    padding: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .pin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    transform: rotate(-5deg);
+    margin-bottom: 40px;
+  }
+  .pin {
+    aspect-ratio: 3/4;
+    border-radius: 10px;
+    box-shadow: 0 14px 28px -10px rgba(27,24,21,0.2);
+    background-size: cover;
+    position: relative;
+    overflow: hidden;
+  }
+  .pin::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.15));
+  }
+  .pin:nth-child(1) { background: linear-gradient(160deg, #d8c5a8, #8b6f4e); margin-top: 30px; }
+  .pin:nth-child(2) { background: linear-gradient(160deg, #e8d8c0, #b89878); }
+  .pin:nth-child(3) { background: linear-gradient(160deg, #c4a484, #6e5440); margin-top: 50px; }
+  .pin:nth-child(4) { background: linear-gradient(160deg, #ede0c8, #a08868); margin-top: -10px; }
+  .pin:nth-child(5) { background: linear-gradient(160deg, #b8a080, #5e4830); }
+  .pin:nth-child(6) { background: linear-gradient(160deg, #d4c0a0, #8a7050); margin-top: 20px; }
+  .pin.aspect-tall { aspect-ratio: 3/5; }
+  .palette-strip {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: var(--paper);
+    padding: 14px 18px;
+    border-radius: 999px;
+    width: fit-content;
+    margin: 0 auto;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.15);
+  }
+  .palette-strip .swatch {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+  }
+  .palette-strip .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-right: 6px;
+  }
+
+
+  /* ======================== RESULT PAGE (HERO MOMENT) ======================== */
+  .nav-app {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 56px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--cream);
+  }
+  .nav-app-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+    font-size: 14px;
+  }
+  .nav-app-links a { color: var(--ink-soft); text-decoration: none; }
+  .nav-app-links a.active { color: var(--ink); border-bottom: 1px solid var(--clay); padding-bottom: 18px; margin-bottom: -19px; }
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--clay), var(--gold));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cream);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 16px;
+  }
+
+  .result-header {
+    padding: 36px 56px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 14px;
+  }
+  .breadcrumb .crumb-active { color: var(--clay); }
+  .result-header h1 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 44px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .result-header h1 em { font-style: italic; color: var(--clay); }
+  .result-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .pill-btn {
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pill-btn:hover { background: var(--ink); color: var(--cream); border-color: var(--ink); }
+  .pill-btn.primary {
+    background: var(--ink);
+    color: var(--cream);
+    border-color: var(--ink);
+  }
+  .pill-btn.primary:hover { background: var(--clay); border-color: var(--clay); }
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 32px;
+    padding: 24px 56px 80px;
+  }
+
+  /* Render canvas */
+  .render-canvas {
+    position: relative;
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    aspect-ratio: 16/11;
+    box-shadow: 0 24px 40px -16px rgba(27,24,21,0.25);
+    background:
+      linear-gradient(180deg, rgba(255,235,210,0.3), rgba(0,0,0,0.15)),
+      linear-gradient(135deg, #c8a888 0%, #8a6d4f 60%, #4f3a26 100%);
+  }
+  .render-canvas::after {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 70%, rgba(255,230,200,0.5), transparent 45%),
+      radial-gradient(circle at 75% 25%, rgba(255,255,255,0.2), transparent 35%);
+    mix-blend-mode: overlay;
+  }
+  /* fake furniture silhouettes */
+  .render-canvas::before {
+    content: '';
+    position: absolute;
+    bottom: 8%;
+    left: 12%;
+    right: 32%;
+    height: 32%;
+    background: linear-gradient(180deg, #7a5d3f 0%, #4f3a26 100%);
+    border-radius: 14px 14px 4px 4px;
+    box-shadow:
+      0 -2px 0 rgba(255,255,255,0.06) inset,
+      0 20px 30px -10px rgba(0,0,0,0.35);
+  }
+
+  /* Hotspot dots on render */
+  .hotspot {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--cream);
+    border: 2px solid var(--clay);
+    z-index: 4;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    transition: transform 0.2s;
+  }
+  .hotspot:hover { transform: scale(1.15); }
+  .hotspot::after {
+    content: '';
+    width: 8px; height: 8px;
+    background: var(--clay);
+    border-radius: 50%;
+  }
+  .hotspot.h1 { bottom: 26%; left: 24%; }
+  .hotspot.h2 { bottom: 18%; left: 50%; }
+  .hotspot.h3 { top: 42%; right: 22%; }
+  .hotspot.h4 { top: 22%; left: 32%; }
+  .hotspot.active {
+    background: var(--clay);
+    transform: scale(1.2);
+  }
+  .hotspot.active::after { background: var(--cream); }
+
+  /* Before/after toggle */
+  .ba-toggle {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    background: rgba(27, 24, 21, 0.75);
+    backdrop-filter: blur(20px);
+    border-radius: 999px;
+    padding: 4px;
+    display: flex;
+    gap: 2px;
+    z-index: 5;
+  }
+  .ba-toggle button {
+    background: transparent;
+    border: 0;
+    color: rgba(251, 248, 242, 0.6);
+    padding: 7px 16px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ba-toggle button.active {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .render-meta {
+    position: absolute;
+    bottom: 18px;
+    right: 18px;
+    color: rgba(251, 248, 242, 0.85);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    z-index: 5;
+    text-align: right;
+  }
+  .render-meta .seed { color: rgba(251, 248, 242, 0.5); margin-top: 4px; }
+
+  /* Picking list sidebar */
+  .picking {
+    background: var(--cream);
+    border-radius: var(--r-lg);
+    padding: 28px;
+    height: fit-content;
+    border: 1px solid var(--line-soft);
+  }
+  .picking-header {
+    padding-bottom: 24px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .style-name {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .style-name em { font-style: italic; color: var(--clay); }
+  .style-source {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 16px;
+  }
+  .style-palette {
+    display: flex;
+    gap: 6px;
+  }
+  .style-palette .sw {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.05);
+  }
+
+  .picking-section-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .picking-section-label .count { color: var(--clay); }
+
+  .item-card {
+    display: grid;
+    grid-template-columns: 76px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .item-card:hover { padding-left: 4px; }
+  .item-card.featured {
+    background: var(--paper-warm);
+    margin: 0 -16px;
+    padding: 16px;
+    border-radius: var(--r-md);
+    border-bottom: 1px solid transparent;
+  }
+  .item-thumb {
+    width: 76px;
+    height: 76px;
+    border-radius: var(--r-sm);
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+  }
+  .item-thumb.sofa { background: linear-gradient(160deg, #8a6d4f, #4f3a26); }
+  .item-thumb.rug { background: linear-gradient(160deg, #d4c0a0, #a88868); }
+  .item-thumb.lamp { background: linear-gradient(160deg, #e8d8c0, #b89878); }
+  .item-thumb.table { background: linear-gradient(160deg, #c8a888, #7a5d3f); }
+  .item-info { display: flex; flex-direction: column; justify-content: space-between; }
+  .item-cat {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 2px;
+  }
+  .item-name {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin-bottom: 2px;
+  }
+  .item-retailer {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+  .item-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .item-price {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .item-alts {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.08em;
+  }
+
+  .picking-total {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--ink);
+  }
+  .picking-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 18px;
+  }
+  .picking-total-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .picking-total-amount {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 32px;
+    letter-spacing: -0.02em;
+  }
+  .picking-total-amount em { font-style: italic; color: var(--clay); }
+  .picking-cta {
+    width: 100%;
+    background: var(--ink);
+    color: var(--cream);
+    border: 0;
+    padding: 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 8px;
+    font-family: var(--font-body);
+  }
+  .disclosure {
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-align: center;
+    line-height: 1.4;
+    margin-top: 14px;
+  }
+
+
+  /* ======================== DASHBOARD ======================== */
+  .dash {
+    padding: 56px;
+  }
+  .dash-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 56px;
+  }
+  .dash-header h1 {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 56px;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .dash-header h1 em { font-style: italic; color: var(--clay); }
+  .dash-greeting {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .new-room-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--ink);
+    color: var(--cream);
+    padding: 14px 26px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--font-body);
+  }
+  .new-room-btn .plus {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--cream);
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .dash-tabs {
+    display: flex;
+    gap: 28px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 40px;
+    list-style: none;
+  }
+  .dash-tabs li {
+    font-size: 14px;
+    color: var(--ink-soft);
+    padding-bottom: 16px;
+    cursor: pointer;
+    position: relative;
+  }
+  .dash-tabs li.active {
+    color: var(--ink);
+  }
+  .dash-tabs li.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0; right: 0;
+    height: 1px;
+    background: var(--clay);
+  }
+  .dash-tabs li .count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-left: 6px;
+  }
+
+  /* Magazine grid */
+  .room-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 32px;
+  }
+  .room-tile {
+    cursor: pointer;
+    transition: transform 0.3s;
+  }
+  .room-tile:hover { transform: translateY(-4px); }
+  .room-tile.featured { grid-column: span 7; }
+  .room-tile.standard { grid-column: span 5; }
+  .room-tile.small { grid-column: span 4; }
+  .room-tile.small .room-img { aspect-ratio: 4/5; }
+  .room-img {
+    border-radius: var(--r-md);
+    overflow: hidden;
+    aspect-ratio: 16/10;
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .room-tile.featured .room-img { aspect-ratio: 16/9; }
+  .room-img .render {
+    position: absolute; inset: 0;
+  }
+  .room-tile:nth-child(1) .render {
+    background:
+      linear-gradient(180deg, rgba(255,230,200,0.4), rgba(0,0,0,0.2)),
+      linear-gradient(135deg, #b8956f, #4f3a26);
+  }
+  .room-tile:nth-child(2) .render {
+    background:
+      linear-gradient(180deg, rgba(220,210,180,0.3), rgba(0,0,0,0.15)),
+      linear-gradient(135deg, #d8c5a8, #7a6a4e);
+  }
+  .room-tile:nth-child(3) .render {
+    background:
+      linear-gradient(180deg, rgba(180,160,130,0.25), rgba(0,0,0,0.18)),
+      linear-gradient(135deg, #9a8a70, #4a3e30);
+  }
+  .room-tile:nth-child(4) .render {
+    background:
+      linear-gradient(180deg, rgba(240,220,190,0.35), rgba(0,0,0,0.12)),
+      linear-gradient(135deg, #e8d0a8, #a08868);
+  }
+  .room-tile:nth-child(5) .render {
+    background:
+      linear-gradient(180deg, rgba(200,170,140,0.3), rgba(0,0,0,0.2)),
+      linear-gradient(135deg, #c8a888, #6e5440);
+  }
+  .room-img-badge {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    background: rgba(27,24,21,0.7);
+    backdrop-filter: blur(10px);
+    color: var(--cream);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .room-tile h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+  }
+  .room-tile.featured h3 { font-size: 30px; font-weight: 300; }
+  .room-tile.featured h3 em { font-style: italic; color: var(--clay); }
+  .room-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .room-meta .stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+<div class="mockup-wrap">
+  <div class="mockup-header">
+    <span>saltbush — visual design system</span>
+    <h1>design <em>mockup</em></h1>
+    <span>v0.1 / desktop 1280</span>
+  </div>
+
+  <!-- ==================== 01 LANDING ==================== -->
+  <div class="screen-tag">01 — landing / marketing</div>
+  <div class="screen">
+    <nav class="nav">
+      <a href="#" class="logo">saltbush</a>
+      <ul class="nav-links">
+        <li><a href="#">How it works</a></li>
+        <li><a href="#">Sample looks</a></li>
+        <li><a href="#">Pricing</a></li>
+        <li><a href="#">Journal</a></li>
+      </ul>
+      <a href="#" class="nav-cta">Start free</a>
+    </nav>
+
+    <section class="hero">
+      <div>
+        <span class="hero-eyebrow">For Australian homes</span>
+        <h1>Your room, styled like a <em>magazine</em>.<br>Shoppable today.</h1>
+        <p class="hero-sub">Snap a photo of any room. Pull in a Pinterest board for taste. Saltbush renders it as a real interior — and gives you the picking list to actually buy it, from real Australian retailers.</p>
+        <a href="#" class="hero-cta">
+          Style your first room
+          <span class="arrow">→</span>
+        </a>
+        <div class="hero-meta">Free to try · 3 renders included · No card required</div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="room-card room-before">
+          <span class="room-label">Before</span>
+        </div>
+        <div class="room-card room-after">
+          <span class="room-label">Styled · Warm Japandi</span>
+        </div>
+        <div class="product-tag tag-1">
+          <span class="dot"></span>
+          Burnett Oak Sofa
+          <span class="price">$2,490</span>
+        </div>
+        <div class="product-tag tag-2">
+          <span class="dot"></span>
+          Hawthorn Rug
+          <span class="price">$890</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="retailers">
+      <div class="label">Real products from</div>
+      <div class="logos">
+        <span>TEMPLE &amp; WEBSTER</span>
+        <span>Castlery</span>
+        <span>FREEDOM</span>
+        <span>IKEA</span>
+        <span>Adairs</span>
+        <span>+ more</span>
+      </div>
+    </div>
+
+    <section class="how">
+      <span class="section-eyebrow">The flow</span>
+      <h2>Three steps from your hallway to a <em>finished room</em>.</h2>
+      <div class="how-steps">
+        <div class="step">
+          <span class="num">01</span>
+          <div class="divider"></div>
+          <h3>Capture the room</h3>
+          <p>Take one photo with your phone. Stand at the doorway. We handle the rest — depth, geometry, lighting.</p>
+        </div>
+        <div class="step">
+          <span class="num">02</span>
+          <div class="divider"></div>
+          <h3>Connect your taste</h3>
+          <p>Link a Pinterest board or pick from curated Australian aesthetics. Our AI reads your style, not just the trending ones.</p>
+        </div>
+        <div class="step">
+          <span class="num">03</span>
+          <div class="divider"></div>
+          <h3>Shop the render</h3>
+          <p>Photorealistic restyle in under a minute, with a tappable picking list of real products. Prices in AUD, GST included.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="quote">
+      <blockquote>"It's the first interior AI that actually understands an Australian living room. The picking list saved us three weekends of furniture hunting."</blockquote>
+      <div class="attr"><strong>Maya R.</strong> · Bondi Junction · Beta tester</div>
+    </section>
+
+    <footer class="footer">
+      <span>© 2026 Saltbush · Made in Brisbane</span>
+      <span>Privacy · Terms · Disclosures</span>
+    </footer>
+  </div>
+
+
+  <!-- ==================== 02 ONBOARDING ==================== -->
+  <div class="screen-tag">02 — onboarding / pinterest connect</div>
+  <div class="screen">
+    <nav class="nav">
+      <a href="#" class="logo">saltbush</a>
+      <span style="font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint);">Step 2 of 4</span>
+    </nav>
+    <div class="onb">
+      <div class="onb-left">
+        <div class="onb-progress">
+          <span></span>
+          <span class="active"></span>
+          <span></span>
+          <span></span>
+        </div>
+        <h2>Show us your <em>taste</em>.</h2>
+        <p>Connect a Pinterest board you've been building. We'll read the aesthetic — palette, materials, mood — and use it as the style brief for every room you render.</p>
+        <a href="#" class="pinterest-btn">
+          <span class="icon">P</span>
+          Connect Pinterest
+        </a>
+        <br>
+        <a href="#" class="skip-link">or pick from curated styles instead →</a>
+        <div class="privacy-note">
+          <strong>How we handle your boards.</strong> Saltbush analyses your pins to derive a style profile — colour, material, mood. We don't store the pin images themselves. You can disconnect any time.
+        </div>
+      </div>
+      <div class="onb-right">
+        <div class="pin-grid">
+          <div class="pin"></div>
+          <div class="pin"></div>
+          <div class="pin"></div>
+          <div class="pin"></div>
+          <div class="pin"></div>
+          <div class="pin"></div>
+        </div>
+        <div class="palette-strip">
+          <span class="label">Detected palette</span>
+          <span class="sw" style="background: #D9C7A7"></span>
+          <span class="sw" style="background: #8B7355"></span>
+          <span class="sw" style="background: #5C4A38"></span>
+          <span class="sw" style="background: #E8DCC4"></span>
+          <span class="sw" style="background: #B7553C"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== 03 RESULT / PICKING LIST (HERO MOMENT) ==================== -->
+  <div class="screen-tag">03 — render result with picking list ★ hero moment</div>
+  <div class="screen">
+    <nav class="nav-app">
+      <a href="#" class="logo">saltbush</a>
+      <ul class="nav-app-links">
+        <li><a href="#">My rooms</a></li>
+        <li><a href="#" class="active">This render</a></li>
+        <li><a href="#">Saved products</a></li>
+        <li><a href="#">Style profile</a></li>
+      </ul>
+      <div class="avatar">M</div>
+    </nav>
+
+    <div class="result-header">
+      <div>
+        <div class="breadcrumb">My rooms · Living room · <span class="crumb-active">Render 04</span></div>
+        <h1>Living room — <em>Warm Japandi</em></h1>
+      </div>
+      <div class="result-actions">
+        <button class="pill-btn">↓ Download</button>
+        <button class="pill-btn">⤴ Share</button>
+        <button class="pill-btn">↻ Try another style</button>
+        <button class="pill-btn primary">Save render</button>
+      </div>
+    </div>
+
+    <div class="result-grid">
+      <div class="render-canvas">
+        <div class="ba-toggle">
+          <button>Before</button>
+          <button class="active">After</button>
+          <button>Split</button>
+        </div>
+        <div class="hotspot h1 active"></div>
+        <div class="hotspot h2"></div>
+        <div class="hotspot h3"></div>
+        <div class="hotspot h4"></div>
+        <div class="render-meta">
+          Rendered in 38s
+          <div class="seed">seed · 0xa7c9 · flux-dev</div>
+        </div>
+      </div>
+
+      <aside class="picking">
+        <div class="picking-header">
+          <div class="style-name">Warm <em>Japandi</em></div>
+          <div class="style-source">From "calm mornings" · Pinterest board</div>
+          <div class="style-palette">
+            <span class="sw" style="background: #D9C7A7"></span>
+            <span class="sw" style="background: #8B7355"></span>
+            <span class="sw" style="background: #5C4A38"></span>
+            <span class="sw" style="background: #E8DCC4"></span>
+            <span class="sw" style="background: #B7553C"></span>
+          </div>
+        </div>
+
+        <div class="picking-section-label">
+          The picking list
+          <span class="count">8 items</span>
+        </div>
+
+        <div class="item-card featured">
+          <div class="item-thumb sofa"></div>
+          <div class="item-info">
+            <div>
+              <div class="item-cat">Sofa · selected</div>
+              <div class="item-name">Burnett 3-Seater in Oat Linen</div>
+              <div class="item-retailer">Temple &amp; Webster</div>
+            </div>
+            <div class="item-bottom">
+              <span class="item-price">$2,490</span>
+              <span class="item-alts">+ 4 alternatives</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="item-card">
+          <div class="item-thumb rug"></div>
+          <div class="item-info">
+            <div>
+              <div class="item-cat">Rug</div>
+              <div class="item-name">Hawthorn Wool Rug 240×330</div>
+              <div class="item-retailer">Armadillo</div>
+            </div>
+            <div class="item-bottom">
+              <span class="item-price">$1,890</span>
+              <span class="item-alts">+ 6 alternatives</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="item-card">
+          <div class="item-thumb table"></div>
+          <div class="item-info">
+            <div>
+              <div class="item-cat">Coffee table</div>
+              <div class="item-name">Noma Round Oak 90cm</div>
+              <div class="item-retailer">Castlery</div>
+            </div>
+            <div class="item-bottom">
+              <span class="item-price">$649</span>
+              <span class="item-alts">+ 3 alternatives</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="item-card">
+          <div class="item-thumb lamp"></div>
+          <div class="item-info">
+            <div>
+              <div class="item-cat">Floor lamp</div>
+              <div class="item-name">Mira Paper Shade Standing Lamp</div>
+              <div class="item-retailer">IKEA Australia</div>
+            </div>
+            <div class="item-bottom">
+              <span class="item-price">$129</span>
+              <span class="item-alts">+ 5 alternatives</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="picking-total">
+          <div class="picking-total-row">
+            <span class="picking-total-label">Estimated total</span>
+            <span class="picking-total-amount"><em>$5,847</em></span>
+          </div>
+          <button class="picking-cta">Open all 4 retailer tabs →</button>
+          <div class="disclosure">Some links earn Saltbush a commission at no extra cost to you. Prices include GST.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+
+  <!-- ==================== 04 DASHBOARD ==================== -->
+  <div class="screen-tag">04 — dashboard / my rooms</div>
+  <div class="screen">
+    <nav class="nav-app">
+      <a href="#" class="logo">saltbush</a>
+      <ul class="nav-app-links">
+        <li><a href="#" class="active">My rooms</a></li>
+        <li><a href="#">Saved products</a></li>
+        <li><a href="#">Style profile</a></li>
+      </ul>
+      <div class="avatar">M</div>
+    </nav>
+
+    <div class="dash">
+      <div class="dash-header">
+        <div>
+          <div class="dash-greeting">Welcome back, Maya</div>
+          <h1>Your <em>rooms</em>.</h1>
+        </div>
+        <button class="new-room-btn">
+          <span class="plus">+</span>
+          Style a new room
+        </button>
+      </div>
+
+      <ul class="dash-tabs">
+        <li class="active">All <span class="count">12</span></li>
+        <li>Living <span class="count">4</span></li>
+        <li>Bedroom <span class="count">3</span></li>
+        <li>Kitchen <span class="count">2</span></li>
+        <li>Bathroom <span class="count">1</span></li>
+        <li>Outdoor <span class="count">2</span></li>
+      </ul>
+
+      <div class="room-grid">
+        <div class="room-tile featured">
+          <div class="room-img">
+            <div class="render"></div>
+            <div class="room-img-badge">Warm Japandi · 8 items · $5,847</div>
+          </div>
+          <h3>Living room — <em>Bondi terrace</em></h3>
+          <div class="room-meta">
+            <span>Last styled 2 days ago</span>
+            <span class="stats">4 RENDERS</span>
+          </div>
+        </div>
+
+        <div class="room-tile standard">
+          <div class="room-img">
+            <div class="render"></div>
+            <div class="room-img-badge">Coastal · 6 items</div>
+          </div>
+          <h3>Main bedroom</h3>
+          <div class="room-meta">
+            <span>Styled last week</span>
+            <span class="stats">2 RENDERS</span>
+          </div>
+        </div>
+
+        <div class="room-tile small">
+          <div class="room-img">
+            <div class="render"></div>
+            <div class="room-img-badge">Mid-century</div>
+          </div>
+          <h3>Study nook</h3>
+          <div class="room-meta">
+            <span>Draft</span>
+            <span class="stats">1 RENDER</span>
+          </div>
+        </div>
+
+        <div class="room-tile small">
+          <div class="room-img">
+            <div class="render"></div>
+            <div class="room-img-badge">Hamptons</div>
+          </div>
+          <h3>Guest room</h3>
+          <div class="room-meta">
+            <span>Styled 3 weeks ago</span>
+            <span class="stats">3 RENDERS</span>
+          </div>
+        </div>
+
+        <div class="room-tile small">
+          <div class="room-img">
+            <div class="render"></div>
+            <div class="room-img-badge">Boho · 5 items</div>
+          </div>
+          <h3>Reading corner</h3>
+          <div class="room-meta">
+            <span>Styled last month</span>
+            <span class="stats">2 RENDERS</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height: 60px"></div>
+  <div class="mockup-header">
+    <span style="opacity: 0.5;">end of mockup</span>
+  </div>
+</div>
+
+</body>
+</html>
