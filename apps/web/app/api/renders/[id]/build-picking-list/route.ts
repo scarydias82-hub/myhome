@@ -1,18 +1,21 @@
 // POST /api/renders/[id]/build-picking-list
 //
-// Fired-and-forgotten from /api/renders/[id]/status the moment we
-// finalise the Flux render (download + storage upload). Runs the
-// expensive picking-list pipeline (Florence-2 detection × 2 + Claude
-// validator × N + Claude ranker × N) in its OWN 60-second function
-// invocation so the status route doesn't have to fit everything inside
-// the Vercel Hobby cap.
+// Two uses:
+//   1. (Optional) fired-and-forgotten from /api/renders/[id]/status
+//      as a recovery path — though /status now builds inline.
+//   2. (Primary) the "Rebuild picking list" button on /renders/[id]
+//      calls this directly to refresh the picking list against any
+//      newer pipeline changes (e.g. wall-paint pseudo-item, new
+//      detection categories) without spending fal credits on a fresh
+//      render.
 //
-// Idempotency: if picking_list is already populated on the renders row
-// we return early — multiple concurrent polls calling this endpoint
-// don't waste API spend.
+// Default behaviour is idempotent — if picking_list is already
+// populated we short-circuit. Pass `force=true` to bypass and rebuild
+// (used by the manual rebuild button).
 
 import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildPickingList } from '@/lib/matching';
 
@@ -24,32 +27,68 @@ interface RenderRow {
   user_id: string;
   output_url: string | null;
   picking_list: unknown[] | null;
+  style_profile_id: string | null;
+}
+
+interface Body {
+  force?: boolean;
 }
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
+
+  // Auth check — manual rebuilds run as the render owner so we know
+  // the right user is asking. Service-role can also call this from
+  // server-side flows (status route) by skipping the cookie check.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const body = (await request.json().catch(() => ({}))) as Body;
+  const force = body.force === true;
+
   const admin = createAdminClient() as unknown as SupabaseClient;
 
   const renderRes = await admin
     .from('renders')
-    .select('id, user_id, output_url, picking_list')
+    .select('id, user_id, output_url, picking_list, style_profile_id')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
   if (!render) return NextResponse.json({ error: 'Render not found' }, { status: 404 });
+  // Manual rebuilds require ownership. Server-internal calls (no auth
+  // cookie) bypass — they're inherently trusted.
+  if (user && render.user_id !== user.id) {
+    return NextResponse.json({ error: 'Render not found' }, { status: 404 });
+  }
   if (!render.output_url) {
     return NextResponse.json({ error: 'Render not finalised yet' }, { status: 400 });
   }
 
-  // Idempotency — if picking_list is already populated, skip. This is
-  // intentionally fired and forgotten from /status so a poll storm could
-  // queue several of these in flight; the early-return prevents
-  // duplicate Claude spend.
-  if (Array.isArray(render.picking_list) && render.picking_list.length > 0) {
+  // Idempotency — skip if already populated UNLESS the caller passed
+  // force=true (the manual rebuild button does).
+  if (
+    !force &&
+    Array.isArray(render.picking_list) &&
+    render.picking_list.length > 0
+  ) {
     return NextResponse.json({ status: 'already_built' });
+  }
+
+  // Pull palette from the style profile so wall-paint matching can fire.
+  let paletteHexes: string[] | undefined;
+  if (render.style_profile_id) {
+    const profileRes = await admin
+      .from('style_profiles')
+      .select('palette')
+      .eq('id', render.style_profile_id)
+      .single();
+    const profile = profileRes.data as { palette: string[] | null } | null;
+    paletteHexes = profile?.palette ?? undefined;
   }
 
   // Sign a fresh URL for the render image so matching can pull it.
@@ -64,6 +103,7 @@ export async function POST(
     const matchRes = await buildPickingList({
       admin,
       renderImageUrl: signed.data.signedUrl,
+      paletteHexes,
     });
     await admin
       .from('renders')
@@ -72,12 +112,13 @@ export async function POST(
         cost_estimate_aud: estimateTotal(matchRes.items),
       })
       .eq('id', render.id);
-    return NextResponse.json({ status: 'built', items: matchRes.items.length });
+    return NextResponse.json({
+      status: 'built',
+      items: matchRes.items.length,
+      labels: matchRes.items.map((i) => i.itemLabel),
+    });
   } catch (err) {
     console.error('[build-picking-list] failed', err);
-    // Persist an empty list so we don't retry forever. The user can
-    // request a rebuild manually if needed.
-    await admin.from('renders').update({ picking_list: [] }).eq('id', render.id);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Build failed' },
       { status: 500 },

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ShoppableRender } from '@/components/renders/shoppable-render';
 import { DesignerRead, type DesignerAdvice } from '@/components/renders/designer-read';
 import { RenderPoll } from '@/components/renders/render-poll';
+import { RebuildPickingListButton } from '@/components/renders/rebuild-picking-list-button';
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
 import { RevisionStrip, type RevisionStripItem } from '@/components/renders/revision-strip';
@@ -212,6 +213,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
                 sourceId={render.id}
                 label="Add render to review"
               />
+              <RebuildPickingListButton renderId={render.id} />
               <a
                 href={afterSigned.data.signedUrl}
                 download
