@@ -1,9 +1,13 @@
-// Koala — Shopify store. Sofas + beds only. Public products.json endpoint
-// means we don't need a headless browser. Follows the same pattern as
-// poliform.js. If at runtime the products.json endpoint 404s, we'll need
-// to fall back to Playwright + sitemap.
+// Koala — Shopify store, but the products.json endpoint is fronted by
+// Cloudflare and drops bare-fetch requests at the TCP layer. The
+// previous version used Node's `fetch` and got `fetch failed` with no
+// HTTP status. Fix: use Playwright's browser-context API request, which
+// runs through a real Chromium TLS fingerprint and gets past the WAF.
+//
+// Scope: sofas + beds only.
 
 import path from 'node:path';
+import { chromium } from 'playwright';
 import { delay } from '../utils/delay.js';
 import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
@@ -17,18 +21,9 @@ const RETAILER_SLUG = 'koala';
 const TARGET_MAX = 80;
 const PAGE_SIZE = 50;
 
-// We only want sofas + beds. Koala also sells mattresses, bed bases,
-// pillows, accessories — those get filtered out.
 const ALLOWED_TYPES = ['sofa', 'sofas', 'lounge', 'bed', 'beds', 'bed-frames'];
-const EXCLUDE_PATTERNS = /(mattress|topper|protector|pillow|sheet|quilt|cover|valance|frame-only|spare|accessory|pack)/i;
-
-async function fetchJson(url) {
-  const res = await fetch(url, {
-    headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-  return res.json();
-}
+const EXCLUDE_PATTERNS =
+  /(mattress|topper|protector|pillow|sheet|quilt|cover|valance|frame-only|spare|accessory|pack)/i;
 
 function slugify(input) {
   return String(input)
@@ -69,7 +64,6 @@ function isAllowedProduct(product) {
   const handle = (product.handle ?? '').toLowerCase();
   if (ALLOWED_TYPES.some((w) => type.includes(w))) return true;
   if (ALLOWED_TYPES.some((w) => handle.includes(w))) return true;
-  // Fallback: title contains the target word
   const name = (product.title ?? '').toLowerCase();
   return /\b(sofa|couch|bed frame|bed base|bed)\b/.test(name);
 }
@@ -85,67 +79,100 @@ export async function scrapeKoala() {
     return { retailer: RETAILER, products: [], errors };
   }
 
-  const collected = [];
-  for (let page = 1; collected.length < TARGET_MAX * 2 && page < 12; page++) {
-    const pageUrl = `${ORIGIN}/products.json?limit=${PAGE_SIZE}&page=${page}`;
-    console.log(`[${RETAILER}] fetching page ${page}`);
-    let payload;
+  const browser = await chromium.launch();
+  try {
+    const ctx = await browser.newContext({
+      userAgent: USER_AGENT,
+      viewport: { width: 1280, height: 1600 },
+      extraHTTPHeaders: { 'accept-language': 'en-AU,en;q=0.9' },
+    });
+
+    // First visit the homepage so the context picks up Cloudflare
+    // cookies (cf_clearance + co.) before we hit the API. Without this
+    // warm-up, the products.json call frequently still gets challenged.
     try {
-      payload = await fetchJson(pageUrl);
+      const page = await ctx.newPage();
+      await page.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(2500); // let any Cloudflare JS challenge settle
+      await page.close();
     } catch (err) {
-      errors.push({ url: pageUrl, error: String(err?.message ?? err) });
-      break;
+      console.warn(`[${RETAILER}] homepage warm-up failed: ${err.message}`);
     }
-    const items = Array.isArray(payload?.products) ? payload.products : [];
-    if (items.length === 0) break;
-    collected.push(...items.filter(isAllowedProduct));
-    await delay();
-  }
 
-  console.log(`[${RETAILER}] ${collected.length} candidate products after filtering`);
-
-  const products = [];
-  for (const p of collected.slice(0, TARGET_MAX)) {
-    const slug = p.handle || slugify(p.title);
-    const productUrl = `${ORIGIN}/products/${p.handle}`;
-    const description = pickDescription(p);
-    const heroSrc = p.images?.[0]?.src ?? null;
-
-    let hero = null;
-    if (heroSrc) {
+    // Paginate products.json via the browser-context API request — runs
+    // through Chromium's TLS fingerprint and inherits the cookies.
+    const collected = [];
+    for (let pageNum = 1; collected.length < TARGET_MAX * 2 && pageNum < 12; pageNum++) {
+      const pageUrl = `${ORIGIN}/products.json?limit=${PAGE_SIZE}&page=${pageNum}`;
+      console.log(`[${RETAILER}] fetching page ${pageNum}`);
       try {
-        const dl = await downloadImage({ url: heroSrc, retailerDir: outDir, slug, index: 0 });
-        hero = dl.localPath;
-        await delay(600);
+        const res = await ctx.request.get(pageUrl, {
+          headers: { accept: 'application/json' },
+        });
+        if (!res.ok()) {
+          errors.push({ url: pageUrl, error: `HTTP ${res.status()}` });
+          break;
+        }
+        const payload = await res.json();
+        const items = Array.isArray(payload?.products) ? payload.products : [];
+        if (items.length === 0) break;
+        collected.push(...items.filter(isAllowedProduct));
+        await delay();
       } catch (err) {
-        errors.push({ url: heroSrc, error: String(err?.message ?? err), productUrl });
+        errors.push({ url: pageUrl, error: String(err?.message ?? err) });
+        break;
       }
     }
 
-    products.push({
-      id: slug,
-      retailer: RETAILER,
-      name: p.title,
-      category: pickCategory(p),
-      price: pickPrice(p),
-      currency: 'AUD',
-      dimensions: parseDimensions(`${p.title} ${description ?? ''}`),
-      images: { hero, downloaded: hero != null, source: heroSrc, all: hero ? [hero] : [] },
-      product_url: productUrl,
-      description,
-      scraped_at: new Date().toISOString(),
-    });
-  }
+    console.log(`[${RETAILER}] ${collected.length} candidate products after filtering`);
 
-  await writeJson(path.join(outDir, 'products.json'), products);
-  if (errors.length > 0) await writeJson(path.join(outDir, 'errors.json'), errors);
-  console.log(`[${RETAILER}] wrote ${products.length} products, ${errors.length} errors`);
-  return { retailer: RETAILER, products, errors };
+    const products = [];
+    for (const p of collected.slice(0, TARGET_MAX)) {
+      const slug = p.handle || slugify(p.title);
+      const productUrl = `${ORIGIN}/products/${p.handle}`;
+      const description = pickDescription(p);
+      const heroSrc = p.images?.[0]?.src ?? null;
+
+      let hero = null;
+      if (heroSrc) {
+        try {
+          const dl = await downloadImage({ url: heroSrc, retailerDir: outDir, slug, index: 0 });
+          hero = dl.localPath;
+          await delay(600);
+        } catch (err) {
+          errors.push({ url: heroSrc, error: String(err?.message ?? err), productUrl });
+        }
+      }
+
+      products.push({
+        id: slug,
+        retailer: RETAILER,
+        name: p.title,
+        category: pickCategory(p),
+        price: pickPrice(p),
+        currency: 'AUD',
+        dimensions: parseDimensions(`${p.title} ${description ?? ''}`),
+        images: { hero, downloaded: hero != null, source: heroSrc, all: hero ? [hero] : [] },
+        product_url: productUrl,
+        description,
+        scraped_at: new Date().toISOString(),
+      });
+    }
+
+    await writeJson(path.join(outDir, 'products.json'), products);
+    if (errors.length > 0) await writeJson(path.join(outDir, 'errors.json'), errors);
+    console.log(`[${RETAILER}] wrote ${products.length} products, ${errors.length} errors`);
+    return { retailer: RETAILER, products, errors };
+  } finally {
+    await browser.close();
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   scrapeKoala()
-    .then(({ products, errors }) => console.log(`done — ${products.length} products, ${errors.length} errors`))
+    .then(({ products, errors }) =>
+      console.log(`done — ${products.length} products, ${errors.length} errors`),
+    )
     .catch((err) => {
       console.error('koala scrape failed', err);
       process.exit(1);

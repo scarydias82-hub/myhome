@@ -1,11 +1,15 @@
-// Woodcut Australia — engineered timber flooring. WordPress brochure
-// site, no e-commerce, no prices. Previous version of this scraper
-// looked for `/wood-finishes/<slug>/` URLs which don't exist — the
-// actual product URL pattern is `/wood/<slug>/`. Fixed by reading the
-// sitemap directly and filtering for that pattern (~175 product URLs
-// covered, no collection-index parsing needed).
+// Woodcut Australia — WordPress brochure site, no e-commerce, no prices.
+// The previous version tried to read /sitemap.xml directly with Node
+// `fetch` and got a 403 HTML page back (Woodcut's WAF blocks bare
+// fetches). Fix: use Playwright with a real browser fingerprint to
+// load collection pages, harvest the `/wood/<slug>/` product hrefs
+// from the rendered DOM, then visit each product page.
+//
+// Collection slugs verified live: premium / essence / french /
+// grande-ville. URLs land at `/wood/<slug>/` (NOT /wood-finishes/).
 
 import path from 'node:path';
+import { chromium } from 'playwright';
 import { delay } from '../utils/delay.js';
 import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
@@ -16,78 +20,68 @@ const ORIGIN = 'https://woodcut.com.au';
 const RETAILER = 'Woodcut';
 const RETAILER_SLUG = 'woodcut';
 const TARGET_MAX = 80;
-const SITEMAP_URL = `${ORIGIN}/sitemap.xml`;
 
-async function fetchText(url) {
-  const res = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xml' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-  return res.text();
-}
+const COLLECTION_INDICES = [
+  '/premium-collection/',
+  '/essence-collection/',
+  '/french-collection/',
+  '/grande-ville-collection/',
+];
 
-// Read the sitemap. It may be a sitemap index (links to child sitemaps)
-// or a flat URLset. Walk one level deep.
-async function collectSitemapUrls() {
-  const root = await fetchText(SITEMAP_URL);
-  const out = new Set();
-  const re = /<loc>([^<]+)<\/loc>/g;
-  const children = [];
-  let m;
-  while ((m = re.exec(root))) {
-    const u = m[1].trim();
-    if (u.endsWith('.xml')) children.push(u);
-    else out.add(u);
+async function collectFinishUrlsFromPage(page, indexUrl) {
+  try {
+    await page.goto(indexUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch {
+    return [];
   }
-  for (const child of children) {
-    try {
-      const body = await fetchText(child);
-      let cm;
-      const cre = /<loc>([^<]+)<\/loc>/g;
-      while ((cm = cre.exec(body))) out.add(cm[1].trim());
-      await delay(400);
-    } catch (err) {
-      console.warn(`[${RETAILER}] child sitemap ${child} failed: ${err.message}`);
+  // WordPress index pages render synchronously — just let the DOM settle.
+  await page.waitForTimeout(1200);
+  return page.evaluate(() => {
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+      const href = a.getAttribute('href');
+      if (!href) continue;
+      // Accept absolute or relative; normalise to absolute https://.
+      const m = href.match(/^(?:https:\/\/woodcut\.com\.au)?(\/wood\/[a-z0-9-]+\/?)$/i);
+      if (!m) continue;
+      seen.add(`https://woodcut.com.au${m[1].replace(/\/$/, '/')}`);
     }
-  }
-  return [...out];
+    return [...seen];
+  });
 }
 
-// Product URL pattern verified from the live site: /wood/<slug>/
-function isFinishUrl(url) {
-  return /\/wood\/[a-z0-9-]+\/?$/i.test(url);
+async function extractFinish(page, url) {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(800);
+  return page.evaluate(() => {
+    const text = (s) => document.querySelector(s)?.innerText?.trim() ?? null;
+    const meta = (p) =>
+      document.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content ?? null;
+    const body = document.body.innerText.slice(0, 4000);
+    return {
+      h1: text('h1'),
+      title: document.title,
+      ogImage: meta('og:image'),
+      ogDescription: meta('og:description') ?? meta('description'),
+      heroImg:
+        document.querySelector(
+          'img[src*="/wp-content/uploads/"][src*="-scaled"], .product-image img, .featured-image img',
+        )?.src ?? null,
+      body,
+    };
+  });
 }
 
-function pickFirst(html, regex) {
-  const m = html.match(regex);
-  return m ? m[1].trim() : null;
-}
-
-function extractFinish(html) {
-  const name =
-    pickFirst(html, /<h1[^>]*>([^<]+)<\/h1>/i) ??
-    pickFirst(html, /<meta property="og:title" content="([^"]+)"/i);
-  const description =
-    pickFirst(html, /<meta name="description" content="([^"]+)"/i) ??
-    pickFirst(html, /<meta property="og:description" content="([^"]+)"/i);
-  const imageUrl =
-    pickFirst(html, /<meta property="og:image" content="([^"]+)"/i) ??
-    pickFirst(
-      html,
-      /(https:\/\/woodcut\.com\.au\/wp-content\/uploads\/[^"\s)]+\.(?:jpe?g|png|webp))/i,
-    );
-  const species = pickFirst(
-    html,
+function speciesFromBody(body) {
+  const m = body.match(
     /\b(European Oak|American Walnut|American Oak|European Walnut|Spotted Gum|Tasmanian Oak|Blackbutt)\b/i,
   );
-  const widthMm = pickFirst(html, /(\d{2,3})\s*mm\s*(?:wide|width|plank)/i);
+  return m ? m[1] : null;
+}
 
-  if (!name) return null;
-  return {
-    name: String(name).replace(/\s*\|\s*Woodcut.*$/i, '').trim(),
-    species,
-    widthMm: widthMm ? Number(widthMm) : null,
-    imageUrl,
-    description,
-  };
+function widthMmFromBody(body) {
+  const m = body.match(/(\d{2,3})\s*mm\s*(?:wide|width|plank)/i);
+  return m ? Number(m[1]) : null;
 }
 
 function slugFromUrl(url) {
@@ -99,75 +93,121 @@ export async function scrapeWoodcut() {
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
 
-  if (!(await isAllowed(SITEMAP_URL))) {
-    console.warn(`[${RETAILER}] robots disallows sitemap, skipping`);
-    return { retailer: RETAILER, products: [], errors };
-  }
-
-  let allUrls;
+  const browser = await chromium.launch();
   try {
-    allUrls = await collectSitemapUrls();
-  } catch (err) {
-    errors.push({ url: SITEMAP_URL, error: String(err?.message ?? err) });
-    await writeJson(path.join(outDir, 'errors.json'), errors);
-    return { retailer: RETAILER, products: [], errors };
-  }
-  const finishes = allUrls.filter(isFinishUrl);
-  console.log(`[${RETAILER}] ${allUrls.length} sitemap urls, ${finishes.length} /wood/* finishes`);
-  const targets = finishes.slice(0, TARGET_MAX);
+    const ctx = await browser.newContext({
+      userAgent: USER_AGENT,
+      viewport: { width: 1280, height: 1600 },
+      extraHTTPHeaders: { 'accept-language': 'en-AU,en;q=0.9' },
+    });
+    // Block heavy assets during browsing; image binaries get downloaded
+    // separately via downloadImage so we still get them.
+    await ctx.route('**/*', (route) => {
+      const t = route.request().resourceType();
+      if (t === 'image' || t === 'media' || t === 'font') return route.abort();
+      return route.continue();
+    });
+    const page = await ctx.newPage();
 
-  const products = [];
-  for (let i = 0; i < targets.length; i++) {
-    const url = targets[i];
+    // Warm-up — homepage establishes any cookies the WAF wants.
     try {
-      if (!(await isAllowed(url))) continue;
-      const html = await fetchText(url);
-      const finish = extractFinish(html);
-      if (!finish) {
-        errors.push({ url, error: 'could not parse finish from html' });
+      await page.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(1500);
+    } catch (err) {
+      console.warn(`[${RETAILER}] homepage warm-up failed: ${err.message}`);
+    }
+
+    const finishUrls = new Set();
+    for (const indexPath of COLLECTION_INDICES) {
+      const indexUrl = `${ORIGIN}${indexPath}`;
+      if (!(await isAllowed(indexUrl))) {
+        console.warn(`[${RETAILER}] robots disallows ${indexUrl}, skipping`);
         continue;
       }
-
-      const slug = slugFromUrl(url);
-      let hero = null;
-      if (finish.imageUrl) {
-        try {
-          const dl = await downloadImage({ url: finish.imageUrl, retailerDir: outDir, slug, index: 0 });
-          hero = dl.localPath;
-        } catch (err) {
-          errors.push({ url: finish.imageUrl, error: String(err?.message ?? err), productUrl: url });
-        }
-      }
-
-      products.push({
-        id: slug,
-        retailer: RETAILER,
-        name: finish.species ? `${finish.name} — ${finish.species}` : finish.name,
-        category: 'Flooring',
-        price: null,
-        currency: 'AUD',
-        dimensions: { plankWidthMm: finish.widthMm ?? null },
-        images: { hero, downloaded: hero != null, source: finish.imageUrl, all: hero ? [hero] : [] },
-        product_url: url,
-        description: (finish.description ?? `${finish.name} engineered timber flooring`).slice(0, 600),
-        scraped_at: new Date().toISOString(),
-      });
-      if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);
+      console.log(`[${RETAILER}] fetching ${indexPath}`);
+      const urls = await collectFinishUrlsFromPage(page, indexUrl);
+      console.log(`[${RETAILER}]   ${urls.length} finishes`);
+      for (const u of urls) finishUrls.add(u);
       await delay();
-    } catch (err) {
-      errors.push({ url, error: String(err?.message ?? err) });
     }
-  }
 
-  await writeJson(path.join(outDir, 'products.json'), products);
-  if (errors.length > 0) await writeJson(path.join(outDir, 'errors.json'), errors);
-  console.log(`[${RETAILER}] wrote ${products.length} finishes, ${errors.length} errors`);
-  return { retailer: RETAILER, products, errors };
+    console.log(`[${RETAILER}] ${finishUrls.size} unique finish urls`);
+    const targets = [...finishUrls].slice(0, TARGET_MAX);
+
+    const products = [];
+    for (let i = 0; i < targets.length; i++) {
+      const url = targets[i];
+      try {
+        if (!(await isAllowed(url))) continue;
+        const raw = await extractFinish(page, url);
+        if (!raw.h1) {
+          errors.push({ url, error: 'no h1 — page may be blocked' });
+          continue;
+        }
+        const slug = slugFromUrl(url);
+        const heroSrc = raw.heroImg ?? raw.ogImage;
+        const species = speciesFromBody(raw.body);
+        const widthMm = widthMmFromBody(raw.body);
+        const name = raw.h1.replace(/\s*\|\s*Woodcut.*$/i, '').trim();
+
+        let hero = null;
+        if (heroSrc) {
+          try {
+            const dl = await downloadImage({
+              url: heroSrc,
+              retailerDir: outDir,
+              slug,
+              index: 0,
+            });
+            hero = dl.localPath;
+          } catch (err) {
+            errors.push({
+              url: heroSrc,
+              error: String(err?.message ?? err),
+              productUrl: url,
+            });
+          }
+        }
+
+        products.push({
+          id: slug,
+          retailer: RETAILER,
+          name: species ? `${name} — ${species}` : name,
+          category: 'Flooring',
+          price: null,
+          currency: 'AUD',
+          dimensions: { plankWidthMm: widthMm ?? null },
+          images: {
+            hero,
+            downloaded: hero != null,
+            source: heroSrc,
+            all: hero ? [hero] : [],
+          },
+          product_url: url,
+          description: (raw.ogDescription ?? `${name} engineered timber flooring`).slice(0, 600),
+          scraped_at: new Date().toISOString(),
+        });
+        if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);
+        await delay();
+      } catch (err) {
+        errors.push({ url, error: String(err?.message ?? err) });
+      }
+    }
+
+    await writeJson(path.join(outDir, 'products.json'), products);
+    if (errors.length > 0) await writeJson(path.join(outDir, 'errors.json'), errors);
+    console.log(`[${RETAILER}] wrote ${products.length} finishes, ${errors.length} errors`);
+    return { retailer: RETAILER, products, errors };
+  } finally {
+    await browser.close();
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   scrapeWoodcut()
-    .then(({ products, errors }) => console.log(`done — ${products.length} finishes, ${errors.length} errors`))
+    .then(({ products, errors }) =>
+      console.log(`done — ${products.length} finishes, ${errors.length} errors`),
+    )
     .catch((err) => {
       console.error('woodcut scrape failed', err);
       process.exit(1);

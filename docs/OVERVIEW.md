@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `bd21482` (will
+**Last verified:** 2026-05-19 · most recent material commit: `8fb9e93` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,14 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Second-round scraper triage. Koala + Woodcut both
+  needed Playwright after Node `fetch` couldn't get past their WAFs
+  (Koala dropped TCP entirely, Woodcut returned a 403 HTML page in
+  place of /sitemap.xml). Rewrote both to launch Chromium, warm up the
+  context with a homepage visit so Cloudflare cookies land, then
+  fetch via the browser-context API. Koala iterates products.json
+  through that context; Woodcut harvests `/wood/<slug>/` hrefs from
+  the rendered DOM of each collection page.
 - `2026-05-19` — Scraper triage from first parallel batch run. Koala TLD
   fix (`koala.com` → `koala.com.au`). Dulux rewritten to parse
   `__NEXT_DATA__` JSON instead of regex (the previous version was
