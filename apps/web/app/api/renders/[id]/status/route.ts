@@ -42,6 +42,7 @@ interface RenderRow {
   cost_estimate_aud: number | null;
   fal_request_id: string | null;
   completed_at: string | null;
+  style_profile_id: string | null;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -55,7 +56,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const admin = createAdminClient() as unknown as SupabaseClient;
   const renderRes = await admin
     .from('renders')
-    .select('id, user_id, status, output_url, picking_list, cost_estimate_aud, fal_request_id, completed_at')
+    .select(
+      'id, user_id, status, output_url, picking_list, cost_estimate_aud, fal_request_id, completed_at, style_profile_id',
+    )
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -130,6 +133,21 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       })
       .eq('id', render.id);
 
+    // Pull the palette off the style profile so buildPickingList can
+    // surface a Dulux wall-paint match at the front of the picking
+    // list. Optional — if the profile is missing or has no palette
+    // we just skip the wall-paint item.
+    let paletteHexes: string[] | undefined;
+    if (render.style_profile_id) {
+      const profileRes = await admin
+        .from('style_profiles')
+        .select('palette')
+        .eq('id', render.style_profile_id)
+        .single();
+      const profile = profileRes.data as { palette: string[] | null } | null;
+      paletteHexes = profile?.palette ?? undefined;
+    }
+
     // Step 3: best-effort picking-list build. We have ~50s of remaining
     // function budget after the upload. Density is tuned to fit; if
     // anything pushes us over (slow Claude call, Florence-2 timeout)
@@ -140,6 +158,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       const matchRes = await buildPickingList({
         admin,
         renderImageUrl: result.imageUrl,
+        paletteHexes,
       });
       await admin
         .from('renders')

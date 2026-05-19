@@ -89,9 +89,15 @@ function getAnthropic(): Anthropic {
 export async function buildPickingList({
   admin,
   renderImageUrl,
+  paletteHexes,
 }: {
   admin: SupabaseClient;
   renderImageUrl: string;
+  /** Hex codes from the selected style/palette. Used to surface Dulux
+   *  paint matches as a "Wall paint" picking-list item. Walls aren't
+   *  detectable as discrete objects by Florence-2, so we inject them
+   *  here based on the palette the user chose. */
+  paletteHexes?: string[];
 }): Promise<MatchResult> {
   const imgBuf = Buffer.from(await (await fetch(renderImageUrl)).arrayBuffer());
   const metadata = await sharp(imgBuf).metadata();
@@ -139,7 +145,126 @@ export async function buildPickingList({
     `[matching] final picking list: ${items.length} items (dropped ${droppedNoMatches} for empty catalog matches, ${droppedError} for errors)`,
   );
 
+  // Append a "Wall paint" pseudo-item with Dulux matches if we have a
+  // palette to anchor on. Walls aren't detected by Florence-2 (they're
+  // surfaces, not objects) so without this the picking list has no
+  // paint option at all — even though we have ~108 Dulux colours in
+  // the catalogue. The first item in the strip is the highest-leverage
+  // choice the user can make, so wall paint goes to the front.
+  if (paletteHexes && paletteHexes.length > 0) {
+    try {
+      const wallItem = await buildWallPaintItem({ admin, paletteHexes });
+      if (wallItem) {
+        items.unshift(wallItem);
+        console.log(`[matching] prepended wall paint item with ${wallItem.matches.length} Dulux matches`);
+      }
+    } catch (err) {
+      console.error('[matching] wall paint item build failed', err);
+    }
+  }
+
   return { imageWidth, imageHeight, items };
+}
+
+// --- Wall paint matching ----------------------------------------------------
+//
+// Walls aren't detectable as objects, but we want to surface Dulux paint
+// options that match the user's chosen palette. Strategy: take the
+// palette's lightest tone as the wall target (palette[0] by convention),
+// compute RGB distance against every Dulux paint's swatch hex, return the
+// top 5. Distance is Euclidean RGB — perceptually rough, but good enough
+// to keep cool tones with cool tones and warm with warm.
+
+async function buildWallPaintItem({
+  admin,
+  paletteHexes,
+}: {
+  admin: SupabaseClient;
+  paletteHexes: string[];
+}): Promise<PickingListItem | null> {
+  const targetHex = paletteHexes[0];
+  if (!targetHex) return null;
+  const target = parseHex(targetHex);
+  if (!target) return null;
+
+  // Fetch every Dulux paint that has a hex in the dimensions blob (set
+  // by apps/scraper/scrapers/dulux.js → dimensions.hex). Limit upfront
+  // so we don't paginate ~108 rows worth of color matching client-side.
+  const { data, error } = await admin
+    .from('products')
+    .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions')
+    .eq('category', 'Paint')
+    .eq('retailer', 'Dulux')
+    .not('image_url', 'is', null)
+    .limit(500);
+  if (error || !data || data.length === 0) {
+    console.log('[wall-paint] no Dulux paints in catalogue yet');
+    return null;
+  }
+
+  type PaintRow = {
+    id: string;
+    name: string;
+    retailer: string;
+    category: string;
+    price_aud: number | null;
+    image_url: string;
+    product_url: string;
+    affiliate_url: string | null;
+    dimensions: { hex?: string | null } | null;
+  };
+
+  const ranked = (data as PaintRow[])
+    .map((p) => {
+      const hex = p.dimensions?.hex;
+      if (!hex) return null;
+      const rgb = parseHex(hex);
+      if (!rgb) return null;
+      return { paint: p, distance: rgbDistance(target, rgb) };
+    })
+    .filter((x): x is { paint: PaintRow; distance: number } => x !== null)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, MATCHES_PER_ITEM);
+
+  if (ranked.length === 0) return null;
+
+  return {
+    itemLabel: 'wall paint',
+    category: 'Paint',
+    // Heuristic bbox covering the dominant wall band — upper-centre of
+    // the image. Without a per-photo wall-region detector, this gets us
+    // a hotspot in roughly the right place. The actual paint colour
+    // doesn't depend on this bbox (it's a colour-distance match).
+    bbox: { x: 0.1, y: 0.15, w: 0.8, h: 0.35 },
+    matches: ranked.map((r, position) => ({
+      productId: r.paint.id,
+      name: r.paint.name,
+      retailer: r.paint.retailer,
+      category: r.paint.category,
+      priceAud: r.paint.price_aud,
+      imageUrl: r.paint.image_url,
+      productUrl: r.paint.product_url,
+      affiliateUrl: r.paint.affiliate_url,
+      // Convert distance into a 0..1 similarity score. Top match = 1.0;
+      // we cap the falloff at 0.5 so even the 5th option still reads as
+      // "decent match" rather than "no match" in the UI.
+      similarity: Math.max(0.5, 1 - position * 0.1),
+    })),
+  };
+}
+
+function parseHex(hex: string): { r: number; g: number; b: number } | null {
+  const m = hex.trim().match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1] as string, 16);
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+
+function rgbDistance(
+  a: { r: number; g: number; b: number },
+  b: { r: number; g: number; b: number },
+): number {
+  return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
 }
 
 async function buildPickingItem({
