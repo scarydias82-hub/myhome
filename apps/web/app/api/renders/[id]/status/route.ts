@@ -106,7 +106,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const result = await fetchRenderResult(render.fal_request_id);
     const outKey = `${user.id}/${render.id}.webp`;
 
-    // Step 1: download fal result, upload to storage. This is fast (~5s).
+    // Step 1: download fal result, upload to storage. ~5s.
     const bytes = new Uint8Array(await (await fetch(result.imageUrl)).arrayBuffer());
     const upload = await admin.storage.from('renders').upload(outKey, bytes, {
       contentType: 'image/webp',
@@ -115,41 +115,51 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     });
     if (upload.error) throw new Error(upload.error.message);
 
-    // Step 2: build picking list. Detection + validation + matching
-    // runs against the public CDN URL fal gave us (still valid for the
-    // brief window between completion and our storage upload).
-    let pickingList: unknown[] = [];
-    let costEstimate: number | null = null;
-    try {
-      const matchRes = await buildPickingList({
-        admin,
-        renderImageUrl: result.imageUrl,
-      });
-      pickingList = matchRes.items;
-      costEstimate = estimateTotal(matchRes.items);
-    } catch (err) {
-      // Picking list failure shouldn't kill the render — image still
-      // gets shown, user can request a rebuild via /build-picking-list
-      // if needed.
-      console.error('[status] inline picking list failed', err);
-    }
-
-    // Step 3: one atomic update so the page sees everything together.
+    // Step 2: LOOP BREAK. Mark the render as succeeded + persist
+    // output_url BEFORE running the slow picking-list build. If the
+    // function gets killed by maxDuration during the build, the next
+    // poll sees output_url is set, short-circuits, and the page shows
+    // the rendered image. We never get trapped in the same expensive
+    // finalise loop we had before.
     await admin
       .from('renders')
       .update({
         status: 'succeeded',
         output_url: outKey,
-        picking_list: pickingList,
-        cost_estimate_aud: costEstimate,
         completed_at: new Date().toISOString(),
       })
       .eq('id', render.id);
 
-    return NextResponse.json({
-      status: 'succeeded',
-      pickingListItems: pickingList.length,
-    });
+    // Step 3: best-effort picking-list build. We have ~50s of remaining
+    // function budget after the upload. Density is tuned to fit; if
+    // anything pushes us over (slow Claude call, Florence-2 timeout)
+    // the render is already saved, picking_list stays null, and the
+    // /build-picking-list endpoint can be invoked later as a manual
+    // rebuild.
+    try {
+      const matchRes = await buildPickingList({
+        admin,
+        renderImageUrl: result.imageUrl,
+      });
+      await admin
+        .from('renders')
+        .update({
+          picking_list: matchRes.items,
+          cost_estimate_aud: estimateTotal(matchRes.items),
+        })
+        .eq('id', render.id);
+      return NextResponse.json({
+        status: 'succeeded',
+        pickingListItems: matchRes.items.length,
+      });
+    } catch (err) {
+      console.error('[status] inline picking list failed', err);
+      return NextResponse.json({
+        status: 'succeeded',
+        pickingListItems: 0,
+        pickingListError: err instanceof Error ? err.message : 'build failed',
+      });
+    }
   } catch (err) {
     console.error('finalise render failed', err);
     await admin
