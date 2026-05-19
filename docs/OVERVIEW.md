@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `5c6e3ce` (will
+**Last verified:** 2026-05-19 · most recent material commit: `5ce918d` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,19 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Renders trapped in "running" for 5+ minutes. Root
+  cause: status route did Flux finalise AND picking-list build inside
+  a single 60s function, but the picking list (Florence-2 + 15 Claude
+  validator calls + 15 Claude ranker calls with 12 image attachments
+  each) was routinely overrunning 60s. Vercel killed the function
+  before the renders row could update; the next poll retried the same
+  expensive work; loop. Split into two phases: status route now only
+  does the cheap "Flux done → upload to storage → set status=succeeded"
+  finalise (~10s), then fire-and-forgets a POST to a new endpoint
+  `/api/renders/[id]/build-picking-list` which runs the heavy work in
+  its own 60s budget. Picking-list density reduced from 15 items to 12
+  and from 12 candidates to 8 for safety. Idempotent — multiple
+  in-flight builds short-circuit on already-populated picking_list.
 - `2026-05-19` — SKU fidelity fix shipped (task #73). Staging no longer
   goes through Flux Pro Fill with a text description (which invented a
   generic version of whatever you picked). New pipeline: background-

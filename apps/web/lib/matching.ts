@@ -47,17 +47,22 @@ export interface MatchResult {
 }
 
 const MATCHES_PER_ITEM = 5;
-const CANDIDATES_PER_ITEM = 12; // was 10 — more variety per category in bold mode
+// Each ranker call sends 1 crop + N candidate images to Claude Haiku.
+// Larger N = more variety per category but a larger Claude payload. 8 is
+// the sweet spot between variety and latency for the 60s background
+// build window.
+const CANDIDATES_PER_ITEM = 8;
 // Lowered from 0.005 → 0.002 (0.2% of image) so we catch decor like lamps,
 // cushions, vases. They're small in pixels but matter visually.
 const MIN_BOX_AREA_RATIO = 0.002;
-// Stage 1: raised from 8 → 15 to drive product density. Aggressive mode
-// surfaces curtains, lamps, art, sculptures, cushions in addition to the
-// hero furniture. Items with zero matching SKUs in the catalogue are
-// dropped (demand-signal logged) rather than padding the picking list
-// with empty cards. Each item runs ~3-5s of Claude vision in parallel,
-// so a 15-item render finalises in ~12-18s.
-const MAX_ITEMS = 15;
+// Tuned to fit the 60s background build endpoint:
+//   - 12 boxes × validator (Haiku, ~3-5s parallel) = ~5s wall-clock
+//   - 12 boxes × ranker (Haiku with 8 candidate images, ~5-8s parallel) = ~8s wall-clock
+//   - plus Florence-2 detection (~10s) and image fetch (~3s)
+//   - total ~26-32s, well inside the 60s envelope
+// We previously had this at 15 with 12 candidates which routinely
+// pushed past 60s and trapped renders in "running" forever.
+const MAX_ITEMS = 12;
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 
 interface ProductRow {
