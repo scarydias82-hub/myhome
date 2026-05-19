@@ -1,12 +1,43 @@
 # myMaison — overview
 
-A single source of truth for the **business**, the **system**, the **product
-today**, the **roadmap**, and the **how-to** for operating it with Claude Code.
+The **living source of truth** for the business, the strategy, the system,
+the product today, the roadmap, and the how-to for operating it with Claude
+Code.
 
-Last verified: 2026-05-19. This doc supersedes `docs/ARCHITECTURE.md`,
-`docs/SETUP.md`, and `docs/DEPLOY.md` (those were written for the M0
-FastAPI/Fly era and are kept only for historical reference — re-read
-this doc instead).
+**Last verified:** 2026-05-19 · most recent material commit: `cbc5f1c` (will
+be bumped on the commit that lands this revision).
+
+> **Living-doc protocol.** Every commit that materially changes the
+> product, the system, or the business updates the relevant section of this
+> doc *in the same commit*, prepends an entry to the Changelog below, and
+> bumps the *Last verified* date. Claude Code is briefed on this protocol
+> via [`CLAUDE.md`](../CLAUDE.md) at the repo root and will action it
+> without being asked — if a session forgets, remind it.
+
+This doc supersedes `docs/ARCHITECTURE.md`, `docs/SETUP.md`, and
+`docs/DEPLOY.md` (kept for historical reference only — read this instead).
+
+---
+
+## Changelog
+
+Most recent first. One line per commit that materially changes the
+product, the system, or the business. Cross-reference SHAs with
+`git log --oneline` when you need precision.
+
+- `2026-05-19` — Living-doc protocol + `CLAUDE.md`. Added §3 Business
+  strategy. Locked public sign-ups (closed beta — manual provisioning).
+  Editorial hero canvas on landing page.
+- `2026-05-19` · `cbc5f1c` — Initial OVERVIEW.md (business, system, runbook).
+- `2026-05-19` · `1314c29` — Three-audience testimonials on landing.
+- `2026-05-19` · `a7354da` — Public pages migrated to myMaison editorial brand.
+- `2026-05-19` · `838947f` — Florence-2 detections validated by Claude Haiku.
+- `2026-05-18` · `4dc8481` — Multi-product staging in a single fal call.
+- `2026-05-18` · `d7fb5b4` — Mobile horizontal-scroll fix (global viewport lock).
+- `2026-05-18` · `39e66d0` — Project lifecycle: Analysis → Review → Complete.
+- `2026-05-18` · `29e457f` — myMaison rebrand + denser picking-list detection.
+- `2026-05-18` · `ca1c215` — Editorial-luxury `/dashboard` redesign.
+- Earlier commits captured in `BRIEF.md` milestone log.
 
 ---
 
@@ -42,7 +73,7 @@ There are three audiences:
 
 | Stream                         | From          | Status                | Notes                                                              |
 |--------------------------------|---------------|-----------------------|--------------------------------------------------------------------|
-| **Affiliate commissions**      | Consumers     | Live                  | Every buy link is affiliate-tagged. ACCC-compliant disclosure on the render page + signup. |
+| **Affiliate commissions**      | Consumers     | Live                  | Every buy link is affiliate-tagged. ACCC-compliant disclosure on the render page + sign-up. |
 | **Studio subscription**        | Design studios| Planned (#70)         | Monthly plan unlocks clients CRUD, multiple projects, PDF proposals, branded exports. |
 | **Retailer partnerships**      | Retailers     | Pipeline              | Two flavours: SKU placement priority, and brief-routing (#53) where a user's brief is emailed to a curated retailer shortlist. |
 | **Paint / finishes API**       | Bunnings et al| Planned (#63)         | Wall paint as a first-class layer in the render, drives Bunnings affiliate revenue. |
@@ -73,7 +104,7 @@ long as the catalogue conversion rate stays above ~0.2%.
 
 ### 2.4 Compliance — non-negotiable
 
-- **ACCC affiliate disclosure** — every product card and the signup page
+- **ACCC affiliate disclosure** — every product card and the sign-up page
   state that buy links may be affiliate-tagged.
 - **Pinterest TOS** — we *never* persist pin images or URLs. We derive a
   per-board style profile (descriptor + palette + materials + mood) and
@@ -83,11 +114,205 @@ long as the catalogue conversion rate stays above ~0.2%.
 - **No secrets in the client.** `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`,
   `ANTHROPIC_API_KEY` are server-only env vars.
 
+### 2.5 Current status — closed beta
+
+> **Public sign-ups are paused.** myMaison is in closed beta. The
+> `/signup` page renders a "request access" state and the Supabase Auth
+> dashboard has *Allow new users to sign up* disabled so the lock is
+> server-enforced — nothing in code can bypass it. Existing accounts
+> continue to work — they sign in at `/login` as normal. New accounts are
+> provisioned manually by the owner (see §7.3).
+
+To re-open public sign-ups later: Supabase → Authentication → Providers →
+re-enable signup, then set `NEXT_PUBLIC_SIGNUPS_OPEN=true` in Vercel and
+redeploy. The `/signup` page reverts to the live form automatically.
+
 ---
 
-## 3. System architecture
+## 3. Business strategy
 
-### 3.1 The pieces
+This section is the owner's playbook. It changes with the business —
+update it as decisions are made.
+
+### 3.1 Strategic position — what's defensible
+
+AI models are commodities. Anyone can call Claude or Flux, and they will.
+The editorial flair is copyable too. What's defensible — and where the
+energy should go:
+
+| Moat                              | Why it's hard to copy                                                                 |
+|-----------------------------------|----------------------------------------------------------------------------------------|
+| **AU catalogue depth**            | 500+ SKUs across paint, furniture, lighting, decor — each one is a partnership and a feed. A year+ of work. |
+| **Design knowledge corpus**       | 25+ curated chunks of AU design wisdom grounded in climate, building stock, AU palette directions. Expanding to 200+. Editorial sweat equity. |
+| **Brand and editorial voice**     | myMaison's tone, palette curation, designer reads. A magazine-level standard that compounds with every render. |
+| **Retailer relationships**        | Each affiliate + featured partnership is a contract. Once stitched, hard to unstitch. |
+
+Marketing pours into #1 + #3 + #4. Engineering pours into #1 + #2.
+
+### 3.2 Go-to-market — phases
+
+| Phase | What                                  | Who                                        | Goal                                              |
+|-------|---------------------------------------|--------------------------------------------|---------------------------------------------------|
+| 0     | **Closed beta (now)**                 | 20–50 hand-picked users across all 3 tiers | Real testimonials, conversion data, 3 named retailer partnerships |
+| 1     | **Open beta for individuals**         | Free plan, public sign-up                  | 1,000 signups, 100 completed renders/month        |
+| 2     | **Design Studio paid plan**           | Stripe billing, clients CRUD, PDF proposals| 20 paying studios in first 90 days                |
+| 3     | **Retailer self-serve**               | Retailers manage their own SKU feeds       | 25 retailers self-serving + featured tier revenue |
+
+### 3.3 Marketing tactics by audience
+
+**Consumers**
+
+- **Pinterest organic + paid** — the inspiration funnel. Users are already
+  there. Pin every render to relevant boards (auto-pin via Pinterest API
+  once OAuth lands, #55).
+- **Instagram before/after carousels** — trend cards from `trend_cards`
+  make natural reels. Three per week, cross-posted from Pinterest.
+- **TikTok shop-the-room creators** — partner with 5–10 AU room-styling
+  creators on a referral commission split.
+- **SEO long-tail** — "best [style] sofa Australia under $X" hub-and-spoke
+  pages built from the catalogue. Server-rendered, indexable.
+- **Referral program** — every user gets a code. Both sides get +3 renders.
+  Wire into the sign-up flow once it reopens.
+- **PR angle** — "AI for the 80% of Australians who can't afford an
+  interior designer." Pitch AU lifestyle and tech press.
+
+**Design studios**
+
+- **AIDA / DIA partnerships** — sponsor the IDEA Awards, INDE Awards, AIDA
+  conference. Become the AI tool the AU design industry sanctions.
+- **Free-for-life for the first 20 studios** in exchange for a public
+  case study + one-pager testimonial.
+- **Trade press** — Inside Out trade edition, ArchitectureAU, Indesign.
+  Bylined articles from the founder on AI in interior design.
+- **Direct outreach** — every AU Instagram studio with >5k followers gets a
+  personalised 30-second Loom demo: *"you spend 8 hours on mood boards;
+  here's 20 minutes."*
+- **Showroom partnerships** — co-host events at Coco Republic / GlobeWest
+  showrooms. Hands-on sessions, bring a room photo.
+
+**Retailers** — see §3.5.
+
+### 3.4 Content marketing engine
+
+| Channel              | What                                                          | Cadence            |
+|----------------------|---------------------------------------------------------------|--------------------|
+| Pinterest            | Trend cards from `trend_cards`, one per palette × room        | Weekly auto-post   |
+| Instagram            | Before/after carousels, trend reels                           | 3× a week          |
+| `/journal` (blog)    | Top 10 renders → editorial posts with the designer read       | 2× a week          |
+| LinkedIn             | Founder voice — AU design + AI angle, short posts             | 3× a week          |
+| Newsletter           | "Restyles of the week" + one trend insight from the corpus    | Weekly             |
+| `/press` (press kit) | Wordmark, founder bio, screenshots, embargo policy            | Always up to date  |
+
+### 3.5 Retailer engagement playbook
+
+**The pitch — one paragraph:**
+
+> "We're myMaison, an Australian interior-design AI that renders a
+> homeowner's actual room in their preferred aesthetic, then maps every
+> visible piece to a real, buyable product. Pilot data suggests we send
+> ~3× the conversion of a paid-referral channel because the customer has
+> already seen the piece work in their room — and returns are lower for
+> the same reason. We're stocked from Coco Republic, Poliform and
+> GlobeWest today, with 200+ SKUs across furniture, lighting and decor.
+> We'd like to add you next. Beta placement is free in exchange for a SKU
+> feed and three months of conversion data. 15 minutes this week?"
+
+**The first 10 to approach** (in addition to the three already live):
+
+| Retailer                | Why                                                                  |
+|-------------------------|----------------------------------------------------------------------|
+| Freedom Furniture       | Mass-market complement to Coco Republic. AU's #1 furniture brand by reach. |
+| Bunnings                | Paint + finishes — first non-furniture vertical. Massive affiliate revenue. |
+| West Elm AU             | Millennial-luxe positioning. Catalogue API is mature.                |
+| Domayne                 | Mid-luxe AU. Big online presence, strong AU brand.                   |
+| Castlery                | Online-native, AU-active, fast logistics. Fits "shop the render today". |
+| Sheridan                | Soft furnishings. Critical for bedrooms + linen styling.             |
+| Aura Home               | Linen, textiles. Coastal / Hamptons styling.                         |
+| Adairs                  | Homewares mass-market. Wide age range.                               |
+| Provincial Home Living  | Heritage / French country — fills a stylistic gap.                   |
+| Temple & Webster        | Aggregator. Potential upstream catalogue partnership.                |
+
+**Onboarding kit** — what we need from a retailer:
+
+- SKU feed (CSV / JSON / Shopify API / BigCommerce API — we adapt).
+- Image rights for in-platform display (one-page rights letter).
+- Affiliate-link format (Commission Factory, Awin, Impact, or direct partner ID).
+- Brand-safety contact for ACCC disclosure questions.
+
+**Partnership tiers:**
+
+| Tier        | Revenue model                          | What they get                                                     |
+|-------------|----------------------------------------|-------------------------------------------------------------------|
+| Affiliate   | Affiliate commission only. No fee.     | Catalogue inclusion, organic match priority via Claude vision.    |
+| Featured    | Quarterly fee + higher commission.     | Priority placement in renders + trend-card co-branding.           |
+| Anchor      | Annual contract.                       | Co-marketing, custom palette curated together, dashboard module.  |
+
+Beta retailers go in at the **Affiliate** tier with a "founding partner"
+plaque on their footer in the dashboard.
+
+**What NOT to over-promise:**
+
+- Don't quote conversion rates we don't have yet. Be honest about
+  beta-stage data.
+- Don't promise specific SKU placement — Claude vision picks the best
+  match by image, not by commercial agreement.
+- Don't commit to volume; we don't control user demand.
+- Don't guarantee zero returns. Lower than baseline, yes; zero, no.
+
+**Holding the line on quality:**
+
+- Reject retailers whose photography isn't on par with the brand. They
+  drag the editorial standard down.
+- Cap the catalogue at four retailers per stylistic niche (e.g. mid-luxe
+  sofas) to avoid dilution.
+
+### 3.6 The owner's checklist — things only you can decide
+
+- **Funding.** Bootstrap on affiliate revenue, or raise? If raising:
+  pre-seed at $1–1.5M AUD from AU design + AI angels? Decide before Phase 2.
+- **Incorporation.** Register myMaison Pty Ltd with ASIC. ABN. GST
+  registration is required once revenue > $75k annualised.
+- **Trademark.** Register the wordmark and the name with IP Australia
+  before any press push.
+- **Domains.** Confirm `mymaison.com.au`, `.ai`, `.com`, `.au`
+  registrations are with you and on auto-renew.
+- **Legal docs (before commercial launch):**
+  - Privacy policy (covers Pinterest derived-only signal, Supabase
+    storage, affiliate disclosure, optional GDPR).
+  - Terms of service (free vs paid tiers, IP ownership of renders,
+    retailer affiliate flow).
+  - Retailer partnership template (the three tiers above).
+  - Design Studio subscription agreement.
+- **Insurance.** Professional indemnity once paid traffic flows. Cyber
+  insurance once retailer commissions and studio payments are live.
+- **Banking.** Separate AU business account before retailer commissions
+  start landing. Business credit card with auto-categorisation.
+- **Tax.** Engage an AU accountant familiar with the R&D Tax Incentive
+  (RDTI). The AI dev work qualifies; significant rebate available.
+- **Hiring runway.** At what revenue or funding milestone does the second
+  hire (full-stack engineer? designer? retailer-partnerships lead?)
+  come in?
+
+### 3.7 Beta-cohort priorities — next 90 days
+
+| KPI                                                | Target |
+|----------------------------------------------------|--------|
+| Individual users (manually provisioned)            | 20     |
+| Design studios trialling                            | 5      |
+| Active retailer feeds                               | 5      |
+| Renders completed                                   | 200    |
+| Named on-the-record testimonials (one per tier)    | 3      |
+| Affiliate conversion data points                    | 30+    |
+| Press / industry mentions                           | 3      |
+
+The cohort is the foundation of every future marketing claim. Spend on
+making sure each user has a great first render — concierge-style if needed.
+
+---
+
+## 4. System architecture
+
+### 4.1 The pieces
 
 ```
                        ┌──────────────────────┐
@@ -116,12 +341,12 @@ long as the catalogue conversion rate stays above ~0.2%.
                           └──────────────┘
 ```
 
-### 3.2 Each component — what + why
+### 4.2 Each component — what + why
 
 | Component                     | Path / vendor                          | Purpose                                                                                                       |
 |-------------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------------------|
 | **Web app**                   | `apps/web` (Next.js 16, App Router)    | Every user-facing surface. Server Components for data fetches, client islands for interactivity. Single deployment target. |
-| **API routes**                | `apps/web/app/api/**`                  | All backend logic lives co-located with the web app — `/api/render`, `/api/stage`, `/api/stage-multi`, `/api/analyse-room`, `/api/projects/[id]/shortlist`, etc. Edge-aware, async-cookie-aware. |
+| **API routes**                | `apps/web/app/api/**`                  | All backend logic co-located with the web app — `/api/render`, `/api/stage`, `/api/stage-multi`, `/api/analyse-room`, `/api/projects/[id]/shortlist`, etc. Edge-aware, async-cookie-aware. |
 | **Auth + DB + Storage**       | Supabase (Sydney)                      | Postgres for relational data, Storage for room/render/staged image buckets, Auth for sessions. RLS on every user-scoped table. `pgvector` for the design-knowledge corpus. |
 | **Render generation**         | fal.ai                                 | `flux-control-lora-canny/image-to-image` for the restyle (strength 0.70, canny conditioning preserves architecture). `flux-pro/v1/fill` for virtual staging. Async submit + poll pattern to clear Vercel's 60s function cap. |
 | **Object detection**          | fal.ai (Florence-2)                    | Two parallel passes per render: default object-detection + caption-to-phrase-grounding with a curated furniture noun list. Results merged for picking-list density. |
@@ -133,7 +358,7 @@ long as the catalogue conversion rate stays above ~0.2%.
 | **Design knowledge RAG**      | `apps/scraper/data/design-knowledge-seed.json` → `design_knowledge` + CLIP-text embeddings | Curated 25-chunk AU corpus (Dulux 2026, S-W, Pantone, AIDA, Vogue Living AU, House & Garden, climate/building-stock notes). Retrieved via `match_design_knowledge` RPC. |
 | **Hosting**                   | Vercel (region `syd1`)                 | Auto-deploy from `main`. Function timeout 60s — render and stage are async (queue submit + poll) to live within it. |
 
-### 3.3 Key tables
+### 4.3 Key tables
 
 | Table              | Owns                                                                 |
 |--------------------|----------------------------------------------------------------------|
@@ -148,13 +373,13 @@ long as the catalogue conversion rate stays above ~0.2%.
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
 | `design_knowledge` | Curated AU design corpus + CLIP-text embeddings for RAG.             |
 
-### 3.4 Storage buckets
+### 4.4 Storage buckets
 
 - `rooms` — original user-uploaded photos. Private. Signed URLs only.
 - `renders` — output of the canny img2img pass. Private. Signed URLs only.
 - `staged_images` — output of Flux Pro Fill staging. Private. Signed URLs only.
 
-### 3.5 Why these choices (the boring but load-bearing decisions)
+### 4.5 Why these choices (the boring but load-bearing decisions)
 
 - **Canny ControlNet, not depth.** Depth Anything blew out room
   geometry. Canny edges + img2img at strength 0.70 keeps walls, windows,
@@ -179,12 +404,12 @@ long as the catalogue conversion rate stays above ~0.2%.
 
 ---
 
-## 4. How the application currently works
+## 5. How the application currently works
 
-### 4.1 The consumer happy path
+### 5.1 The consumer happy path
 
 ```
-Signup or sign in
+Sign in (sign-ups are locked during closed beta — accounts manually provisioned)
    │
    ▼
 Dashboard ── trends, projects, AR catalogue ── New render
@@ -232,7 +457,7 @@ Picking list rendered                 ──> /renders/[id] live
 Mark complete → status completed (locked final selection, re-open available)
 ```
 
-### 4.2 The pipeline, file by file
+### 5.2 The pipeline, file by file
 
 | Step                          | Code                                                       |
 |-------------------------------|------------------------------------------------------------|
@@ -259,7 +484,7 @@ Mark complete → status completed (locked final selection, re-open available)
 | Shortlist                     | `apps/web/app/api/projects/[id]/shortlist/route.ts`        |
 | Project lifecycle             | `apps/web/app/projects/[id]/page.tsx`                      |
 
-### 4.3 The dashboard
+### 5.3 The dashboard
 
 The editorial dashboard at `/dashboard` is built from small primitives in
 `apps/web/components/dashboard/**`:
@@ -273,7 +498,7 @@ The editorial dashboard at `/dashboard` is built from small primitives in
   placeholder today; #56 lands the real version).
 - **NexusCTA** — dark editorial section linking to `/rooms/new`.
 
-### 4.4 The brand system
+### 5.4 The brand system
 
 - **Wordmark.** `my` italic taupe + `Maison` roman espresso. Always paired.
 - **Type.** Playfair Display (display), DM Sans (body), DM Mono (metadata
@@ -290,19 +515,19 @@ dashboard, projects, renders — is all editorial.
 
 ---
 
-## 5. Roadmap (backlog)
+## 6. Roadmap (backlog)
 
 Each item below is tracked in the in-session task list. Numbers are the
 task IDs; reference them when briefing Claude Code.
 
-### 5.1 Catalogue expansion
+### 6.1 Catalogue expansion
 - **#63 — Bunnings paint + wall materials scraper.** Adds wall paint as a
   first-class render layer + Bunnings affiliate revenue.
 - **#64 — Freedom Furniture scraper.** Mass-market complement to the
   luxury catalogue.
 
-### 5.2 Design Studio mode
-- **#66 — Account type: Individual vs Studio.** Splits the signup form
+### 6.2 Design Studio mode
+- **#66 — Account type: Individual vs Studio.** Splits the sign-up form
   and gates the studio-only routes.
 - **#67 — Clients CRUD.** Per-studio clients, each with address, brief,
   rooms.
@@ -313,7 +538,7 @@ task IDs; reference them when briefing Claude Code.
 - **#70 — Subscription billing.** Stripe; per-seat or per-active-client
   plan.
 
-### 5.3 Pricing + ops
+### 6.3 Pricing + ops
 - **#51 — Labour & install cost estimates.** Tradie + install lines on
   the cost rollup.
 - **#52 — Retailer sale notifications.** Push when a watched SKU goes on sale.
@@ -322,37 +547,41 @@ task IDs; reference them when briefing Claude Code.
 - **#54 — User postcode + store routing.** Show in-stock-at-your-store
   data on product cards.
 
-### 5.4 Inspiration intake (Pinterest)
+### 6.4 Inspiration intake (Pinterest)
 - **#23, #24, #55 — Pinterest OAuth + board ingest.** Per TOS: derive a
   style profile, never persist pin images.
 - **#25 — Inspiration gallery in project.**
 - **#26, #27 — Industry curation flow + curation-rich render.**
 
-### 5.5 Render fidelity
+### 6.5 Render fidelity
 - **#73 — SKU fidelity via reference-image inpainting.** Flux Pro Fill
   takes prompt + mask but **no reference image** — that's why a marble
   coffee table can render as a plain wood one. Needs IP-Adapter,
   multi-image controlnet, or a model variant that accepts a conditioning
   image of the selected SKU.
 
-### 5.6 AR / discovery
+### 6.6 AR / discovery
 - **#56 — Real AR-card compat scores.** Today's score is a placeholder.
 - **#57 — Persist "Add to project" from AR card.**
 
-### 5.7 Done in the last sprint (for reference)
-- Multi-product staging in one Flux call (#71)
-- Claude vision validation pass on detections (#72)
-- Public pages migrated to myMaison editorial brand (#74)
-- Three-audience testimonials on landing (latest commit)
+### 6.7 Recently shipped (for reference)
+- Editorial hero canvas on landing — palette-true gradient + architectural motif.
+- Closed-beta lock on public sign-ups (manual provisioning).
+- Living-doc protocol + `CLAUDE.md`.
+- Three-audience testimonials on landing.
+- Public pages migrated to myMaison editorial brand (#74).
+- Florence-2 detections validated by Claude Haiku (#72).
+- Multi-product staging in one Flux call (#71).
+- Project lifecycle: Analysis → Review → Complete (#50).
 
 ---
 
-## 6. How to operate myMaison (with Claude Code)
+## 7. How to operate myMaison (with Claude Code)
 
-This section is the runbook. It assumes you (the site owner) are working
-through Claude Code in a terminal.
+This section is the runbook. It assumes the site owner is working through
+Claude Code in a terminal.
 
-### 6.1 First-time setup
+### 7.1 First-time setup
 
 ```bash
 # clone
@@ -375,6 +604,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 FAL_KEY=...
 HF_TOKEN=...                    # optional, only if you re-enable CLIP
 
+# Sign-ups: 'false' (default) keeps /signup in closed-beta state.
+# Flip to 'true' AND re-enable signups in Supabase to reopen.
+NEXT_PUBLIC_SIGNUPS_OPEN=false
+
 # (when Pinterest OAuth lands)
 PINTEREST_CLIENT_ID=...
 PINTEREST_CLIENT_SECRET=...
@@ -387,7 +620,7 @@ pnpm --filter web dev
 # http://localhost:3000
 ```
 
-### 6.2 Briefing Claude Code well — the patterns that worked
+### 7.2 Briefing Claude Code well — the patterns that worked
 
 Claude Code is the operating layer. The way you brief it determines the
 quality of the work. Three patterns to copy:
@@ -427,7 +660,51 @@ A few rules of thumb:
 - **Never paste API keys in chat.** If you do, revoke and rotate
   immediately — keys live in `.env.local` and Vercel env vars, full stop.
 
-### 6.3 Common operations
+### 7.3 Manually provisioning a user (closed beta)
+
+While we're in closed beta, accounts are created by the owner via the
+Supabase Studio dashboard. Two routes:
+
+**A. Supabase Studio (recommended)**
+
+1. Supabase Dashboard → Authentication → Users → **Add user**.
+2. Enter email + a strong initial password.
+3. Tick **Auto Confirm User** so they can sign in immediately.
+4. Save.
+5. Share the credentials securely (1Password share, Bitwarden Send, signal
+   message). Never via plain email.
+6. Send them the magic link: tell them to hit `/login`, sign in, and
+   immediately reset their password from Supabase (password-reset email).
+
+**B. SQL via service role (advanced)**
+
+Use Supabase's `auth.admin_create_user` from the SQL editor or a
+service-role-keyed script:
+
+```sql
+select auth.admin_create_user(
+  email := 'jane@example.com',
+  password := 'strong-temp-password',
+  email_confirm := true,
+  user_metadata := '{"full_name":"Jane Smith"}'::jsonb
+);
+```
+
+The trigger on `auth.users` populates `public.users` automatically.
+
+**Re-opening public sign-ups later:**
+
+1. Supabase Dashboard → Authentication → Providers → re-enable
+   *Allow new users to sign up*.
+2. Vercel → Settings → Environment Variables → set
+   `NEXT_PUBLIC_SIGNUPS_OPEN=true` and redeploy.
+3. The `/signup` page reverts to the live sign-up form automatically.
+
+If you only flip one of (1) or (2), the system errs on the side of
+*closed* — Supabase refuses to create users if (1) is off, and the
+`/signup` page shows the closed-beta state if (2) is off.
+
+### 7.4 Other common operations
 
 #### Add a new migration
 
@@ -442,6 +719,8 @@ supabase db push
 # paste into Supabase Studio → SQL editor, or use the CLI with the
 # linked project ref
 ```
+
+After applying — **update OVERVIEW §4.3** with the new table.
 
 #### Re-scrape the catalogue
 
@@ -475,7 +754,7 @@ pnpm run embed:knowledge
 
 Run after editing `data/design-knowledge-seed.json`.
 
-### 6.4 Deploying
+### 7.5 Deploying
 
 Vercel auto-deploys every push to `main`. The deployment chain:
 
@@ -494,13 +773,13 @@ Vercel root directory must stay `apps/web`. Framework auto-detects from
 `apps/web/vercel.json`.
 
 Rollback: Vercel dashboard → Deployments → ⋯ on the prior green deploy →
-"Promote to Production."
+*Promote to Production*.
 
-### 6.5 Where to look when something breaks
+### 7.6 Where to look when something breaks
 
 | Symptom                                  | Look here                                                       |
 |------------------------------------------|-----------------------------------------------------------------|
-| Render starts but never finishes         | fal dashboard → queue → check the request ID stored on `renders.fal_request_id`. Vercel function logs for the `/api/renders/[id]/status` route. |
+| Render starts but never finishes         | fal dashboard → queue → check the request ID stored on `renders.fal_request_id`. Vercel function logs for `/api/renders/[id]/status`. |
 | Render returns garbage / drifting walls  | `lib/styles.ts → buildPrompt`. Confirm strength is 0.70, canny is on, prompt is grounded in vision facts. |
 | Picking list shows architecture          | `lib/matching.ts → validateBoxesWithClaude`. Confirm the validator pass is running and Haiku key is live. |
 | "Bucket not found" on upload             | Supabase Storage → confirm the `rooms`, `renders`, `staged_images` buckets exist and are private. |
@@ -509,8 +788,10 @@ Rollback: Vercel dashboard → Deployments → ⋯ on the prior green deploy →
 | Upload fails silently on phone           | Look for the 4.5MB body cap — the client-side resize in `upload-form.tsx` should be downscaling, but a truly massive HEIC can sneak through. |
 | Designer read is empty                   | `lib/designer.ts` — confirm `ANTHROPIC_API_KEY` is set and the system prompt loads. |
 | Trend cards section missing              | `trend_cards` table is empty. Run the trend generator. |
+| New user can't sign up                   | By design — closed beta. See §7.3 to provision manually.        |
+| Existing user can sign in but `/signup` lets new ones through | `NEXT_PUBLIC_SIGNUPS_OPEN` is true. Set to `false` in Vercel and ensure Supabase signup is disabled too. |
 
-### 6.6 Cost levers
+### 7.7 Cost levers
 
 | Lever                                   | Effect                                                  |
 |-----------------------------------------|---------------------------------------------------------|
@@ -520,7 +801,7 @@ Rollback: Vercel dashboard → Deployments → ⋯ on the prior green deploy →
 | Switch Sonnet → Haiku for designer read | Cheaper. Quality drops noticeably; only do for free tier if margins tighten. |
 | Pre-render trend cards weekly           | Spreads cost; users see fresh imagery at marginal cost. |
 
-### 6.7 API keys + accounts to know about
+### 7.8 API keys + accounts to know about
 
 | Service     | Account / dashboard URL                          | What to monitor                                |
 |-------------|--------------------------------------------------|------------------------------------------------|
@@ -534,7 +815,7 @@ Rollback: Vercel dashboard → Deployments → ⋯ on the prior green deploy →
 Rotate any key that's ever been pasted into a chat, slide, screenshot,
 or email. There are no exceptions to that rule.
 
-### 6.8 Working with the agent on a new feature — end-to-end example
+### 7.9 Working with the agent on a new feature — end-to-end example
 
 > **You:** "Add labour & install cost estimates to the project review
 > page. For each completed render, take the picking list and add a 10%
@@ -545,7 +826,8 @@ or email. There are no exceptions to that rule.
 > rollup component, plans the change, edits the component, runs
 > `pnpm tsc --noEmit`, commits as
 > `feat(web): add labour & install line items to project rollup`,
-> pushes, and reports back the commit SHA + Vercel deploy URL.
+> updates OVERVIEW §5.2 + §6.7, pushes, and reports the commit SHA +
+> Vercel deploy URL.
 >
 > **You:** check `/projects/[id]` once Vercel finishes. If it's wrong,
 > brief the next change against the live page.
@@ -554,12 +836,13 @@ That's the loop. Brief → ship → review → brief again.
 
 ---
 
-## 7. Appendix
+## 8. Appendix
 
-### 7.1 Repo layout
+### 8.1 Repo layout
 
 ```
 myhome/
+├── CLAUDE.md             ← Claude Code working instructions (auto-loaded)
 ├── apps/
 │   ├── web/              ← Next.js 16 app (deployed to Vercel)
 │   │   ├── app/          ← App Router routes
@@ -569,7 +852,7 @@ myhome/
 │   │   │   ├── renders/
 │   │   │   ├── rooms/
 │   │   │   ├── login/    ← editorial brand
-│   │   │   ├── signup/   ← editorial brand
+│   │   │   ├── signup/   ← editorial brand + closed-beta state
 │   │   │   └── page.tsx  ← landing, editorial brand
 │   │   ├── components/   ← shared UI (dashboard/, renders/, projects/, saltbush/, ui/)
 │   │   ├── lib/          ← server-side helpers (fal, vision, designer, matching, staging)
@@ -579,8 +862,8 @@ myhome/
 │       ├── scripts/      ← ingest, embed, embed-knowledge, generate-trends
 │       └── data/         ← design-knowledge-seed.json
 ├── supabase/migrations/  ← timestamped SQL migrations
-├── docs/                 ← this folder
-│   ├── OVERVIEW.md       ← you are here
+├── docs/
+│   ├── OVERVIEW.md       ← you are here (living doc)
 │   ├── DESIGN-BRIEF.md   ← editorial brand spec (still current)
 │   ├── ARCHITECTURE.md   ← historical (M0 FastAPI era)
 │   ├── DEPLOY.md         ← historical
@@ -589,18 +872,18 @@ myhome/
 └── README.md
 ```
 
-### 7.2 Where the older docs are still useful
+### 8.2 Where the older docs are still useful
 
 - **`docs/DESIGN-BRIEF.md`** — the editorial brand spec. Still current.
   Refer to it when adding new surfaces.
 - **`docs/ARCHITECTURE.md`** — historical. Pre-dates the move to a
   Next-only stack. Read for context, don't follow its setup.
 - **`docs/SETUP.md` / `docs/DEPLOY.md`** — pre-Vercel-only era. Read
-  Section 6 of this doc instead.
+  §7 of this doc instead.
 - **`BRIEF.md`** — original M0–M2 product brief. We're well past M2 but
   the proposition + design principles still apply.
 
-### 7.3 Naming conventions
+### 8.3 Naming conventions
 
 - Branches: short kebab — `fix/picking-list-mobile`, `feat/clients-crud`.
 - Commits: Conventional Commits — `feat(web): ...`, `fix(web): ...`,
@@ -610,7 +893,7 @@ myhome/
 - React components: kebab files, PascalCase exports.
 - Tables: snake — `shortlist_items`, `trend_cards`.
 
-### 7.4 Glossary
+### 8.4 Glossary
 
 - **Nexus** — myMaison's word for the convergence point between
   inspiration, room, catalogue, and AI designer.
@@ -624,3 +907,5 @@ myhome/
   grounded in palette, materials, and AU design knowledge.
 - **Hero product** — a user-selected catalogue piece that anchors the
   render prompt.
+- **Closed beta** — current state. Public sign-ups are paused; accounts
+  are manually provisioned by the owner (see §7.3).
