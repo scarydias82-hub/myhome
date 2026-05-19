@@ -105,23 +105,39 @@ export async function buildPickingList({
   const sized = dedupeBoxes(rawBoxes)
     .filter((b) => (b.w * b.h) / (imageWidth * imageHeight) >= MIN_BOX_AREA_RATIO)
     .slice(0, MAX_ITEMS + 3); // pull a couple extra — validator may drop some
+  console.log(
+    `[matching] Florence-2 returned ${rawBoxes.length} boxes, ${sized.length} after dedupe+size-filter`,
+  );
 
   // Claude-vision sanity pass: drops architectural false-positives (open
   // doorways read as "mirror", walls read as "art") and corrects mislabels
   // (a bed Florence-2 calls "sofa", a side table called "ottoman").
   const boxes = await validateBoxesWithClaude(imgBuf, sized, imageWidth, imageHeight);
+  console.log(
+    `[matching] validator kept ${boxes.length}/${sized.length} boxes (labels: ${boxes
+      .map((b) => b.label)
+      .join(', ')})`,
+  );
 
   const settled = await Promise.allSettled(
     boxes.map((box) => buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box })),
   );
 
   const items: PickingListItem[] = [];
+  let droppedNoMatches = 0;
+  let droppedError = 0;
   for (const result of settled) {
-    if (result.status === 'fulfilled' && result.value) items.push(result.value);
-    else if (result.status === 'rejected') {
+    if (result.status === 'fulfilled') {
+      if (result.value) items.push(result.value);
+      else droppedNoMatches++;
+    } else {
+      droppedError++;
       console.error('matching item failed', result.reason);
     }
   }
+  console.log(
+    `[matching] final picking list: ${items.length} items (dropped ${droppedNoMatches} for empty catalog matches, ${droppedError} for errors)`,
+  );
 
   return { imageWidth, imageHeight, items };
 }

@@ -69,12 +69,24 @@ let inserted = 0;
 let skipped = 0;
 const errors = [];
 
+// Reject rows that obviously aren't real products. Earlier scrapes
+// captured 404 pages as "products" with name = '404 Not Found' and
+// images pointing at site logos / promo banners. Even after fixing the
+// scraper, we want a belt-and-braces guard at the ingest step so junk
+// can't reach the picking list.
+function isJunkRow(row) {
+  if (!row.image_url || !row.name) return true;
+  if (/404|not\s*found|page\s*not\s*available/i.test(row.name)) return true;
+  if (/logo\.svg|product_label|brand|banner/i.test(row.image_url)) return true;
+  return false;
+}
+
 for await (const { retailer, products } of walkRetailerDirs()) {
   console.log(`\n=== ${retailer} (${products.length} records) ===`);
   for (const raw of products) {
     total++;
     const row = toRow(raw);
-    if (!row.image_url || !row.name) {
+    if (isJunkRow(row)) {
       skipped++;
       continue;
     }

@@ -77,7 +77,13 @@ function slugFromUrl(url) {
 }
 
 async function extractProduct(page, url) {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  // Reject 404s outright — without this check we end up storing the
+  // Magento 404 page as a "product" with name = '404 Not Found | Beacon'
+  // and the site logo or Black Friday banner as the image.
+  if (response && response.status() >= 400) {
+    return { dead: true, statusCode: response.status() };
+  }
   try {
     await page.waitForSelector('h1', { timeout: 10000 });
   } catch {
@@ -105,6 +111,24 @@ async function extractProduct(page, url) {
       specText: specText + '\n' + bodyTail,
     };
   });
+}
+
+// Beacon's product images live under /media/catalog/product/... Any other
+// path is either the site logo, a Black Friday promo banner, or some
+// other piece of brand chrome — none of which is a real product photo.
+// Earlier scrapes happily fell back to og:image when no product image
+// was found, ending up with hundreds of rows pointing at logo.svg.
+function isRealBeaconProductImage(url) {
+  if (!url) return false;
+  if (!/beaconlighting\.com\.au/i.test(url)) return false;
+  if (!/\/media\/catalog\/product\//i.test(url)) return false;
+  if (/\.svg(\?|$)/i.test(url)) return false;
+  return true;
+}
+
+function isNotFoundPage(raw) {
+  const tokens = [raw.h1, raw.title].filter(Boolean).join(' ');
+  return /404|not found/i.test(tokens);
 }
 
 function categoryFromUrl(url) {
@@ -143,13 +167,36 @@ export async function scrapeBeaconLighting() {
 
     const products = [];
     const targets = lamps.slice(0, TARGET_MAX);
+    let droppedDead = 0;
+    let droppedNotFound = 0;
+    let droppedBadImage = 0;
     for (let i = 0; i < targets.length; i++) {
       const url = targets[i];
       try {
         if (!(await isAllowed(url))) continue;
         const raw = await extractProduct(page, url);
+
+        // Sitemap entries can outlive product pages. The earlier scraper
+        // happily stored these as products with name = '404 Not Found'
+        // and the logo as the image.
+        if (raw.dead) {
+          droppedDead++;
+          continue;
+        }
+        if (isNotFoundPage(raw)) {
+          droppedNotFound++;
+          continue;
+        }
+        // Insist on a real catalog image. og:image fallback used to
+        // pick up the site logo or Black Friday banner — both useless
+        // as product photos.
+        if (!isRealBeaconProductImage(raw.heroImg)) {
+          droppedBadImage++;
+          continue;
+        }
+
         const slug = slugFromUrl(url);
-        const heroSrc = raw.heroImg ?? raw.ogImage;
+        const heroSrc = raw.heroImg;
         const price = parsePriceString(raw.priceTexts[0]);
         const dimensions = parseDimensions(raw.specText);
         const description = raw.ogDescription?.slice(0, 600) ?? null;
@@ -186,7 +233,10 @@ export async function scrapeBeaconLighting() {
 
     await writeJson(path.join(outDir, 'products.json'), products);
     if (errors.length > 0) await writeJson(path.join(outDir, 'errors.json'), errors);
-    console.log(`[${RETAILER}] wrote ${products.length} products, ${errors.length} errors`);
+    console.log(
+      `[${RETAILER}] wrote ${products.length} products, ${errors.length} errors ` +
+        `(dropped ${droppedDead} dead / ${droppedNotFound} 404 / ${droppedBadImage} bad-image)`,
+    );
     return { retailer: RETAILER, products, errors };
   } finally {
     await browser.close();

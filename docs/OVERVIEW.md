@@ -25,6 +25,24 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Beacon Lighting scraper poisoning the catalogue.
+  Sitemap entries outlive product pages, so visits returned 404 pages;
+  the scraper happily stored those as products with name='404 Not
+  Found | Beacon' and the og:image fallback brought in site logos and
+  Black Friday promo banners as the product photo. Hundreds of these
+  rows were in Lighting category, blocking Claude's vision ranker
+  from finding real matches — possibly the reason for empty picking
+  lists. Three layered defences:
+  (a) Scraper checks the HTTP status code and rejects 4xx pages outright;
+  (b) Rejects any page whose h1/title contains "404" or "Not Found";
+  (c) Only accepts product images from `/media/catalog/product/`
+      (Magento's product path) — drops the logo, banner and SVG paths
+      that ogImage was leaking through.
+  Plus an `isJunkRow` filter at the ingest layer as belt-and-braces so
+  legacy bad data + future regressions can't reach the table. Plus
+  diagnostic logging in lib/matching.ts so we can read Vercel logs to
+  see exactly how many boxes Florence-2 returned, how many the
+  validator kept, and how many got dropped for empty catalog matches.
 - `2026-05-19` — Re-inlined the picking-list build into the status
   route. The fire-and-forget `void fetch()` trigger I'd shipped to
   decouple slow picking-list work from fast finalise was unreliable —
