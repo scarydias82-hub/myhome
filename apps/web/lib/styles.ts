@@ -199,6 +199,16 @@ export function buildPrompt(
     'preserve room geometry exactly: same wall positions, same window openings, same door openings, same ceiling height',
   );
   base.push('same camera angle and room proportions as reference photo');
+  // Anti-hallucination directives. Canny conditioning is loose enough
+  // for surface repaints; without these, Flux fills empty regions with
+  // "expected" features (a vent in the ceiling, a fence outside a
+  // first-floor window). Be explicit about what stays.
+  base.push(
+    'preserve the view through every window exactly — same horizon level, same sky, same vegetation, same neighbouring structures, same elevation, same distance to horizon as the reference photo. If the room is upstairs the view stays upstairs.',
+  );
+  base.push(
+    'preserve the ceiling exactly as it appears in the reference — same surface, same colour, no added ceiling vents, fans, fixtures, downlights, fire alarms, sprinklers or skylights that are not already there',
+  );
 
   if (mode === 'bold') {
     // Aggressive surface transformation. Each line below is a separate

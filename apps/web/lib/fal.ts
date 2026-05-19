@@ -61,13 +61,14 @@ function renderInput(input: DepthRenderInput) {
     //     hallucinating extra windows.
     //   - control_lora_strength (canny): how strictly the canny LoRA
     //     enforces existing edges. 0.85 locked surface textures too
-    //     hard (walls stayed the same colour, floors kept their boards).
-    //     0.55 lets Flux repaint surfaces freely while canny still
-    //     anchors the room's bones (wall positions, window/door
-    //     openings, ceiling height) via edges that survive at lower
-    //     conditioning strength.
+    //     hard (no repaint of walls or floors). 0.55 was too loose —
+    //     window content drifted (upstairs view became ground-floor
+    //     with a fence) and Flux invented ceiling vents that weren't
+    //     in the source. 0.65 anchors architectural detail (ceiling,
+    //     window frames, fixtures) while still letting Flux repaint
+    //     wall surfaces and flooring freely.
     strength: input.strength ?? 0.87,
-    control_lora_strength: 0.55,
+    control_lora_strength: 0.65,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),
