@@ -16,6 +16,45 @@ import sharp from 'sharp';
 import { getFal } from '@/lib/fal';
 
 const REMBG_ENDPOINT = 'fal-ai/birefnet/v2';
+const HARMONIZE_ENDPOINT = 'fal-ai/flux/dev/image-to-image';
+
+// Low-strength Flux img2img pass that takes a pasted composite and
+// blends the edges, casts shadows that match the room's light
+// direction, harmonises colour temperature. Strength 0.18 is the sweet
+// spot: high enough to integrate the product into the scene, low
+// enough to preserve the SKU's identity (colour, silhouette, material).
+//
+// Skips silently if FAL_KEY isn't set or the call errors — the
+// un-harmonised composite is still a valid result, just more "placed".
+export async function harmoniseComposite(compositeBuf: Buffer): Promise<Buffer> {
+  try {
+    const fal = getFal();
+    // Upload the composite to a data URL so fal can fetch it.
+    const dataUrl = `data:image/webp;base64,${compositeBuf.toString('base64')}`;
+    const result = await fal.subscribe(HARMONIZE_ENDPOINT, {
+      input: {
+        prompt:
+          'photorealistic interior photography, natural lighting integration, soft realistic shadows, coherent colour temperature, seamless composition, editorial magazine quality',
+        image_url: dataUrl,
+        strength: 0.18,
+        num_inference_steps: 18,
+        guidance_scale: 3.0,
+        num_images: 1,
+        enable_safety_checker: true,
+      } as never,
+      logs: false,
+    });
+    const data = result.data as { images?: Array<{ url: string }> };
+    const url = data.images?.[0]?.url;
+    if (!url) return compositeBuf;
+    const fetched = await fetch(url);
+    if (!fetched.ok) return compositeBuf;
+    return Buffer.from(await fetched.arrayBuffer());
+  } catch (err) {
+    console.warn('[composite] harmonise pass failed, using raw composite', err);
+    return compositeBuf;
+  }
+}
 
 export interface PixelBbox {
   x: number;
@@ -25,11 +64,15 @@ export interface PixelBbox {
 }
 
 // Background-remove a product image via fal. Returns a PNG buffer with
-// alpha channel so we can composite cleanly.
+// alpha channel so we can composite cleanly. Upgrades known CDN URLs
+// to high resolution before sending to birefnet — without this, Shopify
+// URLs like `_600x.jpg` come through at thumbnail resolution and the
+// cutout looks blurry when scaled to fit the room-photo bbox.
 export async function cutoutProduct(imageUrl: string): Promise<Buffer> {
   const fal = getFal();
+  const upgradedUrl = upgradeImageUrl(imageUrl);
   const result = await fal.subscribe(REMBG_ENDPOINT, {
-    input: { image_url: imageUrl },
+    input: { image_url: upgradedUrl },
     logs: false,
   });
   const data = result.data as { image?: { url?: string } };
@@ -38,6 +81,42 @@ export async function cutoutProduct(imageUrl: string): Promise<Buffer> {
   const res = await fetch(cutoutUrl);
   if (!res.ok) throw new Error(`fetch cutout failed: HTTP ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+// Upgrade common product-image CDN URLs to the highest available
+// resolution. Shopify in particular returns low-res variants by default
+// (e.g. `_600x.jpg`) which makes the resulting cutout look blurry when
+// composited into a high-res room photo. Strip the size suffix to get
+// the original / master variant.
+function upgradeImageUrl(url: string): string {
+  // Shopify CDN — strip any embedded size suffix so the URL resolves to
+  // the master image. Patterns observed: _600x.jpg, _600x600.jpg,
+  // _small.jpg, _large.jpg, _grande.jpg, _master.jpg, _2048x2048.jpg, etc.
+  if (/cdn\/shop\/|cdn\.shopify\.com|\.myshopify\.com/i.test(url)) {
+    return url.replace(
+      /_(\d+x\d*|small|compact|medium|large|grande|master|thumb|icon|pico|original)(?=\.(?:jpe?g|png|webp|gif)(?:\?|$))/gi,
+      '',
+    );
+  }
+  // Contentful (Dulux) — strip any existing dimension/format params and
+  // request a known-good high-res JPG. The default `fm=webp&h=600` we
+  // saw in earlier scrapes was painful for compositing.
+  if (/images\.ctfassets\.net/i.test(url)) {
+    const stripped = url.replace(/[?&](w|h|fit|fm|q)=[^&]*/gi, '').replace(/[?&]$/, '');
+    const sep = stripped.includes('?') ? '&' : '?';
+    return `${stripped}${sep}w=1500&fm=jpg&q=85`;
+  }
+  // Freedom — strip Coveo's base64-encoded transform context to fall
+  // back to the raw media URL. Often higher-res than the transformed one.
+  if (/api-prod\.freedom\.com\.au\/medias/i.test(url)) {
+    return url.split('?')[0] ?? url;
+  }
+  // WordPress (Woodcut + others) — drop -NNNxNNN size suffix to land
+  // on the original upload.
+  if (/wp-content\/uploads/i.test(url)) {
+    return url.replace(/-\d+x\d+(?=\.(?:jpe?g|png|webp|gif)(?:\?|$))/i, '');
+  }
+  return url;
 }
 
 // Composite one product cutout onto a room photo at a pixel-space
@@ -101,9 +180,21 @@ async function buildProductLayers(
   }
 
   // Resize the cutout. Keep alpha. PNG output preserves transparency
-  // through sharp's composite pipeline.
+  // through sharp's composite pipeline. Apply a slight blur to the
+  // alpha channel (feathered edges) so the silhouette doesn't read as
+  // hard-cropped — a few pixels of softness reads as anti-aliasing.
+  const featherRadius = Math.max(1, Math.round(Math.min(drawW, drawH) * 0.003));
   const resized = await sharp(cutoutBuf)
     .resize(drawW, drawH, { fit: 'inside', withoutEnlargement: false })
+    .png()
+    .toBuffer();
+  const featheredAlpha = await sharp(resized)
+    .extractChannel('alpha')
+    .blur(featherRadius)
+    .toBuffer();
+  const featheredResized = await sharp(resized)
+    .removeAlpha()
+    .joinChannel(featheredAlpha)
     .png()
     .toBuffer();
 
@@ -122,7 +213,7 @@ async function buildProductLayers(
   const shadowOffsetX = Math.round(shadowRadius * 0.4);
   const shadowOffsetY = Math.round(shadowRadius * 0.7);
 
-  const alpha = await sharp(resized).extractChannel('alpha').toBuffer();
+  const alpha = await sharp(featheredResized).extractChannel('alpha').toBuffer();
   // Build a solid near-black layer the same size as the cutout, then
   // join the blurred alpha as its alpha channel → that's the shadow.
   const shadowBase = await sharp({
@@ -151,7 +242,7 @@ async function buildProductLayers(
       blend: 'multiply',
     },
     {
-      input: resized,
+      input: featheredResized,
       left: Math.max(0, drawX),
       top: Math.max(0, drawY),
     },

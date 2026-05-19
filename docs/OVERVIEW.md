@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `5ce918d` (will
+**Last verified:** 2026-05-19 · most recent material commit: `499fab2` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,19 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Staged composites looked "pasted" — hard edges, wrong
+  light direction, blurry cutouts. Three fixes layered on top of the
+  composite pipeline shipped earlier:
+  (a) URL upgrade — Shopify default URLs come back at thumbnail
+      resolution (`_600x.jpg`); we now strip the size suffix to fetch
+      the master image. Contentful (Dulux), Freedom and WordPress
+      patterns also handled.
+  (b) Feathered edges — sharp blurs the alpha channel by a few pixels
+      so the silhouette reads as anti-aliased rather than hard-cropped.
+  (c) Harmonisation pass — gentle Flux img2img at strength 0.18 after
+      the composite blends edges into the scene, integrates shadows,
+      matches colour temperature. Falls back to the raw composite if
+      the fal call errors so we never block on it.
 - `2026-05-19` — Renders trapped in "running" for 5+ minutes. Root
   cause: status route did Flux finalise AND picking-list build inside
   a single 60s function, but the picking list (Florence-2 + 15 Claude

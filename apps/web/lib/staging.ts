@@ -24,6 +24,7 @@ import {
   cutoutProduct,
   compositeProductIntoRoom,
   compositeMultipleProducts,
+  harmoniseComposite,
   type PixelBbox,
 } from '@/lib/composite';
 
@@ -157,12 +158,18 @@ export async function stageMultipleProducts({
   cutouts.sort((a, b) => b.bbox.w * b.bbox.h - a.bbox.w * a.bbox.h);
 
   // 4. Single composite pass — one webp encode for all N products.
-  const compositeBuf = await compositeMultipleProducts({
+  const rawComposite = await compositeMultipleProducts({
     roomBuf: photoBuf,
     items: cutouts,
   });
 
-  // 5. Persist + insert staged_images row.
+  // 5. Harmonise the whole composite in one pass. Multi-stage saves
+  //    one fal call here (vs one harmonise per product) and lets Flux
+  //    integrate all the items into the scene together rather than
+  //    separately.
+  const compositeBuf = await harmoniseComposite(rawComposite);
+
+  // 6. Persist + insert staged_images row.
   const label = buildStagingLabel(items.map((it) => it.product));
   const { imageUrl, storageKey, stagedImageId } = await persistComposite({
     admin,
