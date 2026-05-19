@@ -151,22 +151,56 @@ function temperatureDescriptor(palette: PromptPalette): string {
   return 'warm neutral'; // honest-essentials, silhouette-and-pale, etc.
 }
 
-// Concrete wall directive built from the palette's named wall colour.
-// Hex codes are gibberish tokens to Flux — the model sees "#E8D5B7" as
-// random characters and ignores it. "Wheat tone walls" is a real
-// colour vocab Flux trained on. Adversarial language at the end is
-// the closest thing to a negative prompt we have (Flux's classic CFG
-// doesn't expose negatives) — Claude evaluator explicitly asked for
-// it after surface-transformation scored 2/10 when this was missing.
+// Enriched colour vocab per palette family. Round 3 wall directive
+// said "wheat tones" + "NO cool grey, NO blue-grey, NO white" — Flux
+// went green/sage anyway because (a) "wheat" alone can read as
+// wheat-field plant rather than wheat-the-colour, and (b) our negative
+// list didn't mention green so the model thought sage was a valid
+// "warm earth" interpretation. Round 4 fix: layer multiple concrete
+// colour synonyms for the positive vocab, and extend negatives to
+// cover the actual observed failure mode (sage / green / khaki for
+// warm palettes; warm tones for cool palettes; etc.).
+function paletteWallVocab(palette: PromptPalette): { positive: string; negative: string } {
+  const name = (palette.name ?? '').toLowerCase();
+  const wall = palette.colors?.find((c) => c.role === 'wall');
+  const wallName = wall?.name?.toLowerCase() ?? 'palette wall tone';
+
+  if (/warm[-\s]grounded|honest|mahogany|tomato|silhouette/.test(name)) {
+    return {
+      positive: `warm ${wallName}, biscuit, cream, clay and oat tones — a soft warm beige`,
+      negative:
+        'NO cool grey walls. NO blue-grey. NO white walls. NO green. NO sage. NO mint. NO khaki. NO olive',
+    };
+  }
+  if (/teal|misty[-\s]blue|coastal|mint|sea[-\s]breeze|pale[-\s]mint/.test(name)) {
+    return {
+      positive: `cool ${wallName}, soft dove, airy pale tones`,
+      negative:
+        'NO warm beige walls. NO peach. NO terracotta. NO ochre. NO yellow walls. NO sage',
+    };
+  }
+  if (/moss|ochre|pistachio/.test(name)) {
+    return {
+      positive: `soft ${wallName}, muted herb, dried-grass and stone tones`,
+      negative: 'NO bright pink walls. NO purple. NO neon. NO cool grey',
+    };
+  }
+  // Fallback for unrecognised palettes — still better than just the name.
+  return {
+    positive: `${wallName} tones`,
+    negative: 'NO cool grey, NO blue-grey, NO white walls if the palette tone is not white',
+  };
+}
+
 function describeWall(palette: PromptPalette): string | null {
   const wall = palette.colors?.find((c) => c.role === 'wall');
   const wallName = wall?.name?.toLowerCase();
   if (!wallName) return null;
+  const vocab = paletteWallVocab(palette);
   return (
-    `walls painted in ${wallName} tones — fully repaint EVERY wall surface ` +
+    `walls painted in ${vocab.positive} — fully repaint EVERY wall surface ` +
     `including any panelling, board-and-batten, picture rails or accent walls. ` +
-    `The walls MUST take on the ${wallName} tone. NO cool grey walls. ` +
-    `NO blue-grey. NO white walls.`
+    `The walls MUST take on the ${wallName} tone. ${vocab.negative}.`
   );
 }
 
@@ -215,20 +249,14 @@ export function buildPrompt(
   // avoid — EXCEPT for the wall directive where "no cool grey, no
   // white" adversarial language is the only way to break Flux's
   // default cool-neutral bias on bedroom interiors.
-  const base = [
-    style.descriptor,
-    facts?.room_type ? `${factsRoomType(facts.room_type)}, fully restyled` : null,
-    'photorealistic interior photography',
-    'natural daylight, soft shadows',
-    '35mm lens, architectural digest editorial',
-    'tack-sharp detail, accurate scale',
-  ].filter(Boolean) as string[];
+  // Lead with the palette directives when one is provided. Round 3
+  // had the style.descriptor first, which for Contemporary AU
+  // includes "eucalyptus green accents" — that token competed with
+  // the palette's warm directive and Flux defaulted to sage-green.
+  // Front-loading the palette lets it anchor before any conflicting
+  // style descriptor colour words reach the sampler.
+  const base: string[] = [];
 
-  // PALETTE DIRECTIVES — front-loaded, named, role-aware. Flux pays
-  // most attention to early tokens. Naming concrete colour words
-  // (Wheat, Caramel, Walnut) instead of hex codes is what moves the
-  // sampler — the first iteration shipped hex codes and surface
-  // transformation collapsed to 2/10 because Flux can't read hex.
   if (palette) {
     base.push(
       `COLOUR PALETTE: ${paletteName} — ${temperatureDescriptor(promptPalette)}`,
@@ -238,6 +266,25 @@ export function buildPrompt(
     const rolesLine = describeRoles(promptPalette);
     if (rolesLine) base.push(rolesLine);
   }
+
+  base.push(
+    // When a palette is selected, strip colour-name fragments from
+    // the style descriptor — "eucalyptus green accents" would
+    // contradict a "warm wheat" palette. We keep the structural and
+    // material vocab (pale oak floors, lime-washed plaster) but drop
+    // any "<word> accents" fragments which is where the style file
+    // tends to pin specific accent colours.
+    palette ? stripAccentColours(style.descriptor) : style.descriptor,
+  );
+  base.push(
+    ...([
+      facts?.room_type ? `${factsRoomType(facts.room_type)}, fully restyled` : null,
+      'photorealistic interior photography',
+      'natural daylight, soft shadows',
+      '35mm lens, architectural digest editorial',
+      'tack-sharp detail, accurate scale',
+    ].filter(Boolean) as string[]),
+  );
 
   if (facts) {
     // Geometry-preservation only. We never lock floor *material* or wall
@@ -277,19 +324,17 @@ export function buildPrompt(
   base.push(
     'identical room geometry to reference: same walls, same window openings, same door openings, same ceiling height, same camera angle',
   );
-  // Anti-hallucination — view only. The second eval (3.3/10) showed
-  // that adding a parallel "CRITICAL: ceiling IDENTICAL" directive
-  // over-constrained Flux: the model generalised "don't change X" to
-  // "don't change much" and surface transformation collapsed from 4
-  // to 2. Canny ControlNet at 0.65 already pins ceiling fixtures via
-  // edge detection — we don't need a redundant prompt directive
-  // fighting the palette transformation. The ceiling speaker
-  // hallucination from run 1 was a one-off (run 2 ceiling looked
-  // fine without the CRITICAL line). View drift is the persistent
-  // failure mode — keep that directive but softened (no all-caps
-  // CRITICAL — same intent, less preservation-anchor pressure).
+  // Anti-hallucination — view back to CRITICAL. Round 2 had BOTH
+  // ceiling + view CRITICAL stacked → over-constrained, surface
+  // transformation collapsed to 2/10. Round 3 dropped both and
+  // softened the view directive → view drifted from "elevated dusk
+  // suburban" to "ground-level red-roof house and lawn" in the eval
+  // run. The over-constraint was the STACK of two CRITICALs, not a
+  // single CRITICAL on its own. Round 4: one CRITICAL on view only.
+  // Canny at 0.75 handles ceiling preservation via edges so we still
+  // skip a parallel ceiling CRITICAL.
   base.push(
-    'exterior view through windows stays as in reference — same sky, weather, time of day, vegetation, buildings, horizon. Do not invent new landscapes, lawns or outdoor scenes.',
+    'CRITICAL: exterior view through every window stays IDENTICAL to reference — same sky, weather, time of day, vegetation, buildings, horizon, elevation. Do NOT invent landscapes, lawns, fences, or outdoor scenes. Do NOT swap a dusk skyline for a daytime garden or vice-versa.',
   );
 
   if (mode === 'bold') {
@@ -341,4 +386,28 @@ function describeProduct(p: HeroProductDescriptor): string {
 
 function factsRoomType(raw: string): string {
   return raw.replace(/_/g, ' ').toLowerCase();
+}
+
+// Strip "<colour-word> accents" fragments from a style descriptor when
+// the user has selected a palette. The style.descriptor strings in
+// STYLES are written to stand alone (Contemporary AU includes
+// "eucalyptus green accents", Hamptons might include "navy and white
+// accents", etc.) — but when paired with a user-selected palette,
+// those baked-in colour words conflict with the palette directive and
+// confuse Flux. Round 3 eval went sage-green precisely because
+// "eucalyptus green accents" was in the prompt ahead of the palette
+// directive. We remove only the "<word> accents" / "<word> tones"
+// fragments so the structural vocab (pale oak floors, lime-washed
+// plaster) survives.
+function stripAccentColours(descriptor: string): string {
+  return descriptor
+    // "eucalyptus green accents", "navy and white accents", etc.
+    .replace(/\b[\w-]+(?:\s+(?:and|&)\s+[\w-]+)?\s+(?:green|blue|red|yellow|pink|grey|gray|white|black|brown|orange|purple|teal|navy|cream|beige|sage|mint|ochre|terracotta|tan|gold|silver|copper)\s+(?:accents?|tones?)\b/gi, '')
+    // any leftover "<colour> accents/tones" without a preceding adjective
+    .replace(/\b(?:green|blue|red|yellow|pink|grey|gray|white|black|brown|orange|purple|teal|navy|cream|beige|sage|mint|ochre|terracotta|tan|gold|silver|copper)\s+(?:accents?|tones?)\b/gi, '')
+    // double-comma / dangling comma cleanup
+    .replace(/,\s*,/g, ',')
+    .replace(/,\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

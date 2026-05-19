@@ -58,18 +58,20 @@ function renderInput(input: DepthRenderInput) {
     //   Round 1 @ strength 0.87, guidance 4.0 → palette adherence 4/10,
     //     hallucinated ceiling speaker, view drift.
     //   Round 2 @ strength 0.80, guidance 4.0, with CRITICAL ceiling
-    //     directive added → palette adherence COLLAPSED to 2/10. The
-    //     reduced freedom plus the over-rigid preservation prompt
-    //     froze the model into the original cool-grey composition.
-    //   Round 3 (current) → strength 0.85 splits the difference;
-    //     guidance bumped to 5.0 to push named palette tokens harder
-    //     (Wheat, Caramel, Walnut etc. now in the prompt instead of
-    //     hex codes — Flux can act on words, not #E8D5B7).
-    // Canny stays at 0.65 — pins ceiling fixtures via edges so we
-    // no longer need the CRITICAL ceiling prompt directive that was
-    // over-constraining surface transformation in round 2.
+    //     directive added → palette adherence COLLAPSED to 2/10.
+    //   Round 3 @ strength 0.85, guidance 5.0, named palette tokens →
+    //     palette adherence 3/10, surface 4/10, hallucination 5/10.
+    //     Still drifted to sage-green walls; view still hallucinated
+    //     (suburban dusk → ground-floor red-roof house).
+    //   Round 4 (current) → canny bumped 0.65 → 0.75 to lock geometry +
+    //     ceiling height harder (eval reported spatial compression);
+    //     prompt-side: enriched wall vocab with multiple synonyms
+    //     ("warm wheat, biscuit, cream and oat tones") + adversarial
+    //     "NO green, NO sage, NO khaki" to block the round-3 failure
+    //     mode + single CRITICAL on view (round 2's two-CRITICAL stack
+    //     was the over-constraint, not one alone).
     strength: input.strength ?? 0.85,
-    control_lora_strength: 0.65,
+    control_lora_strength: 0.75,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),

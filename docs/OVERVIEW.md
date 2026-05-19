@@ -25,6 +25,38 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Render prompt round 4 + Dulux library expansion.
+  Round 3 eval (4.5/10 avg, palette adherence 3/10) revealed Flux had
+  drifted the Warm Grounded Earth palette to cool sage-green. Two
+  fixes landed:
+  (a) **Dulux scraper rewrite**: was walking 9 `/colour/<hue>/popular`
+      index pages and capping at 200 colours (we only got 187). Now
+      walks the public sitemap.xml for 1,259 individual colour pages
+      across 11 hues (whitelist excludes design-effects, colour-trends,
+      colorbond, metalshield, etc.) with parallel batched fetches
+      (8 concurrent, 250ms inter-batch). Re-ingest landed 1,144 of
+      1,259 paints (115 correctly palette-filtered as off-palette).
+      Per-palette Dulux coverage now 431–828 candidates each (was
+      ~30 each). The Atlas (`/specifier/colour/colour-atlas/`) would
+      have given ~3,000+ via JS click-to-expand on each family card
+      but is more complex to scrape AND past 1,000 paints the
+      wall-matcher's marginal precision is diminishing — sitemap is
+      the right cost/benefit point.
+  (b) **Prompt round 4**: palette directive moved to FRONT of prompt
+      (was after style.descriptor — Contemporary AU's descriptor has
+      "eucalyptus green accents" baked in, which contradicted any
+      palette and likely caused the sage-green drift). Added
+      `stripAccentColours()` helper that removes "<colour> accents/
+      tones" fragments from style.descriptor when a palette is
+      selected. Wall vocab enriched per palette family: warm palettes
+      now read "walls painted in warm wheat, biscuit, cream, clay and
+      oat tones — a soft warm beige" with extended adversarial list
+      "NO green. NO sage. NO mint. NO khaki. NO olive" (round 3 only
+      blocked grey/blue-grey/white). View directive re-strengthened
+      to single CRITICAL (round 2's overconstraint came from STACKED
+      ceiling + view criticals, not view alone). Canny strength
+      bumped 0.65 → 0.75 to lock geometry against the spatial
+      compression the eval flagged.
 - `2026-05-20` — Carpet Court scraper shipped (task #90 — closes the
   flooring + curtain catalogue gap and supersedes the cancelled Carpet
   Call task #86). Carpet Court runs on Magento 2 with a 5s
