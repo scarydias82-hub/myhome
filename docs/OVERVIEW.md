@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `a4be44c` (will
+**Last verified:** 2026-05-19 · most recent material commit: `84ca096` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,16 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Stage 3a (parallel) catalog batch shipped (task #84):
+  six new retailer scrapers — Koala (Shopify), Beacon Lighting (Magento
+  +Playwright, desk+floor lamps only), Freedom (Angular SPA+Playwright,
+  mirrors+rugs+sofas), Dulux (Cheerio-free HTML scrape of the colour
+  library), Woodcut (WordPress HTML scrape, engineered timber), Carpet
+  Call (Magento+Playwright with bot bypass, wool+synthetic). Orchestrator
+  rewritten to Promise.allSettled — one retailer crashing no longer
+  takes down the batch. New npm scripts scrape:koala, scrape:beacon,
+  scrape:freedom, scrape:dulux, scrape:woodcut, scrape:carpetcall.
+  Tasks #79 (Beacon Lighting) and #64 (Freedom) closed.
 - `2026-05-19` — Claude opinion: vision step now defaults `existing_furniture.condition`
   to "replace" rather than "keep". Designer system prompt reframed —
   "same room *reimagined*" — and instructed to interrogate every "keep"
@@ -618,10 +628,18 @@ Stage 1 is live; the rest is sequenced.
   both modes on submit, let the user pick. Captures emotion preference
   as data. Only build this if Stage 1 turns out too aggressive for
   some cohorts; otherwise skip.
-- **#79 — Stage 3a: Beacon Lighting scraper.** Highest-impact next
-  scrape. Lighting is the second-most-detected item after furniture
-  and we currently have only a handful of Lighting SKUs across the
-  three live retailers.
+- **#84 — Stage 3a: 6-retailer parallel scrape batch. SHIPPED.**
+  Koala (sofas+beds), Beacon Lighting (desk+floor lamps), Freedom
+  (mirrors+rugs+sofas), Dulux (paint colour library), Woodcut (engineered
+  timber flooring), Carpet Call (wool+synthetic carpets). All run in
+  parallel via `pnpm scrape`. Paint, Flooring, Carpet are new categories
+  — they land in the catalogue but don't appear in render picking
+  lists yet (Florence-2 doesn't detect surface-level products as
+  discrete objects). The surface-paint / floor-overlay UI is part of
+  Stage 4 emotional UX (task #82).
+- **#79 — Stage 3a: Beacon Lighting scraper. SHIPPED** (covered by #84).
+  Highest-impact lighting catalogue add. Desk + floor lamps only for
+  the first cohort.
 - **#80 — Stage 3b: Spotlight + Adairs curtains/textiles.** Curtains
   is a brand-new category as of Stage 1 — empty catalog today.
 - **#81 — Stage 3c: The Rug Establishment + Choices Flooring.** Rugs
