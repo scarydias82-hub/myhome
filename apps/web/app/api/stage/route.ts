@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { stageProduct } from '@/lib/staging';
+import { appendRevision } from '@/lib/revisions';
 
 export const runtime = 'nodejs';
 // fal inpaint typically returns in 15-25s; bump headroom.
@@ -115,10 +116,30 @@ export async function POST(request: NextRequest) {
         materials: product.materials ?? [],
       },
     });
+
+    // Persist this staging as a new revision so the render page picks
+    // it up as the active view. Without this the composite is saved to
+    // staged_images + the renders bucket but the page still shows the
+    // original — the staged image effectively "vanishes" on modal close.
+    let revisionId: string | null = null;
+    if (result.storageKey) {
+      revisionId = await appendRevision({
+        admin,
+        renderId: render.id,
+        userId: user.id,
+        kind: 'staged',
+        imageBucket: 'renders',
+        imagePath: result.storageKey,
+        sourceStagedImageId: result.stagedImageId,
+        label: `+ ${cleanLabel(product.name)}`,
+      });
+    }
+
     return NextResponse.json({
       imageUrl: result.imageUrl,
       prompt: result.prompt,
       stagedImageId: result.stagedImageId,
+      revisionId,
     });
   } catch (err) {
     // fal validation errors carry .body.detail as an array of {loc,msg,type}.
@@ -139,4 +160,10 @@ export async function POST(request: NextRequest) {
       'Staging failed';
     return NextResponse.json({ error: summary }, { status: 500 });
   }
+}
+
+// Strip retailer variant suffix so the revision label reads cleanly.
+// 'Westwood Bench - Tobacco Ash' → 'Westwood Bench'.
+function cleanLabel(name: string): string {
+  return name.replace(/\s*[-–]\s*[^-–]+$/, '').trim();
 }

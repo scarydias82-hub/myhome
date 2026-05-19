@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `84ca096` (will
+**Last verified:** 2026-05-19 · most recent material commit: `95ad388` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,15 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Render revision history shipped (task #85). New
+  `render_revisions` table + `renders.active_revision_id` pointer.
+  Every original render + every staging is now a versioned revision;
+  the render page reads the active one as the "after" image. A
+  RevisionStrip below the before/after slider lets the user click any
+  past revision to revert or roll forward — no fal calls, pure
+  pointer flip via `PATCH /api/renders/[id]/revisions`. Fixes the bug
+  where staging composites appeared briefly in the modal then "vanished"
+  because the page kept showing `renders.output_url`.
 - `2026-05-19` — Stage 3a (parallel) catalog batch shipped (task #84):
   six new retailer scrapers — Koala (Shopify), Beacon Lighting (Magento
   +Playwright, desk+floor lamps only), Freedom (Angular SPA+Playwright,
@@ -410,6 +419,7 @@ making sure each user has a great first render — concierge-style if needed.
 | `style_profiles`   | Descriptor + palette + materials + mood (per render, per board).     |
 | `renders`          | One row per render attempt. Holds `fal_request_id`, `picking_list`, `cost_estimate_aud`, `status`, `output_url`. |
 | `staged_images`    | One row per virtual-staging call. Single or multi-product.           |
+| `render_revisions` | Version history per render. Original + every staging is one row. `renders.active_revision_id` points at the displayed revision. |
 | `products`         | Shared catalogue. Read for all authed users; service role writes.    |
 | `shortlist_items`  | Per-project picks promoted from a render or a staged image.          |
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
@@ -690,6 +700,11 @@ Stage 1 is live; the rest is sequenced.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
+- Render revision history (#85) — every staging now persists as a
+  versioned revision linked to the parent render. Render page reads
+  the active revision; users can revert/roll forward from a strip
+  below the before/after slider. Fixes the "staged image vanishes
+  when you close the modal" bug.
 - Editorial rebrand across all internal surfaces (#77) — `/projects/[id]`,
   `/renders/[id]`, `/rooms/new`, `/catalogue`, `/privacy`, etc. now
   render in the editorial brand via globals.css CSS-variable flip plus

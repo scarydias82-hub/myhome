@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
@@ -61,6 +62,7 @@ export function PickingListPanel({
   renderId,
   projectId,
 }: PickingListPanelProps) {
+  const router = useRouter();
   const [staging, setStaging] = useState<StagingTarget | null>(null);
   const [multiOpen, setMultiOpen] = useState(false);
   const [multi, setMulti] = useState<MultiSelection[]>([]);
@@ -145,7 +147,14 @@ export function PickingListPanel({
       {staging ? (
         <StagingModal
           open
-          onClose={() => setStaging(null)}
+          // Every modal close path also refreshes the server component
+          // so the new revision (just inserted by /api/stage) becomes
+          // the active "after" image and shows up in the revision strip
+          // without a manual reload.
+          onClose={() => {
+            setStaging(null);
+            router.refresh();
+          }}
           renderId={renderId}
           itemIndex={staging.itemIndex}
           projectId={projectId ?? null}
@@ -198,13 +207,17 @@ export function PickingListPanel({
       {multiOpen ? (
         <MultiStagingModal
           open
-          onClose={() => setMultiOpen(false)}
+          onClose={() => {
+            setMultiOpen(false);
+            router.refresh();
+          }}
           renderId={renderId}
           projectId={projectId ?? null}
           selections={multi}
           onSuccess={() => {
             setMulti([]);
             setMultiOpen(false);
+            router.refresh();
           }}
         />
       ) : null}

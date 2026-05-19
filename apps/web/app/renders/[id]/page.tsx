@@ -11,6 +11,7 @@ import { DesignerRead } from '@/components/renders/designer-read';
 import { RenderPoll } from '@/components/renders/render-poll';
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
+import { RevisionStrip, type RevisionStripItem } from '@/components/renders/revision-strip';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -26,6 +27,17 @@ interface RenderRow {
   project_id: string | null;
   picking_list: PickingListItem[] | null;
   cost_estimate_aud: number | null;
+  active_revision_id: string | null;
+}
+
+interface RevisionRow {
+  id: string;
+  kind: 'original' | 'staged' | 'multi_staged';
+  image_bucket: string;
+  image_path: string;
+  label: string | null;
+  sort_order: number;
+  created_at: string;
 }
 interface RoomRow {
   photo_url: string;
@@ -50,7 +62,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
 
   const renderRes = await supabase
     .from('renders')
-    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud')
+    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud, active_revision_id')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -70,14 +82,53 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
     .single();
   const profile = profileRes.data as ProfileRow | null;
 
+  // Fetch every revision so the strip can show full history and we know
+  // which image to render as the "after". Once the 20260520 migration has
+  // run, every succeeded render has at least an 'original' revision; older
+  // rows without one fall back to render.output_url below.
+  const revisionsRes = await supabase
+    .from('render_revisions')
+    .select('id, kind, image_bucket, image_path, label, sort_order, created_at')
+    .eq('render_id', render.id)
+    .order('sort_order', { ascending: true });
+  const revisions = (revisionsRes.data as RevisionRow[] | null) ?? [];
+
+  // Pick the active revision. If active_revision_id is set, use it;
+  // otherwise the latest by sort_order; otherwise null (fall back to
+  // render.output_url for ancient rows).
+  const activeRevision =
+    (render.active_revision_id ? revisions.find((r) => r.id === render.active_revision_id) : null) ??
+    revisions[revisions.length - 1] ??
+    null;
+
   // Sign URLs server-side so the browser can render private storage objects.
   const admin = createAdminClient();
   const beforeSigned = room?.photo_url
     ? await admin.storage.from('rooms').createSignedUrl(room.photo_url, 60 * 60)
     : null;
-  const afterSigned = render.output_url
-    ? await admin.storage.from('renders').createSignedUrl(render.output_url, 60 * 60)
-    : null;
+  const afterSigned = activeRevision
+    ? await admin.storage
+        .from(activeRevision.image_bucket)
+        .createSignedUrl(activeRevision.image_path, 60 * 60)
+    : render.output_url
+      ? await admin.storage.from('renders').createSignedUrl(render.output_url, 60 * 60)
+      : null;
+
+  // Pre-sign thumbnail URLs for every revision so the strip can render
+  // without round-tripping the GET endpoint.
+  const signedRevisions: RevisionStripItem[] = await Promise.all(
+    revisions.map(async (r) => {
+      const sig = await admin.storage.from(r.image_bucket).createSignedUrl(r.image_path, 60 * 60);
+      return {
+        id: r.id,
+        kind: r.kind,
+        label: r.label,
+        imageUrl: sig.data?.signedUrl ?? null,
+        createdAt: r.created_at,
+      };
+    }),
+  );
+  const activeRevisionId = activeRevision?.id ?? null;
 
   const isDone = render.status === 'succeeded' && afterSigned?.data?.signedUrl;
   const isFailed = render.status === 'failed' || render.status === 'cancelled';
@@ -135,14 +186,21 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
         </div>
 
         {isDone && beforeSigned?.data?.signedUrl && afterSigned?.data?.signedUrl ? (
-          <ShoppableRender
-            beforeUrl={beforeSigned.data.signedUrl}
-            afterUrl={afterSigned.data.signedUrl}
-            items={render.picking_list ?? []}
-            totalEstimateAud={render.cost_estimate_aud}
-            renderId={render.id}
-            projectId={render.project_id}
-          />
+          <>
+            <ShoppableRender
+              beforeUrl={beforeSigned.data.signedUrl}
+              afterUrl={afterSigned.data.signedUrl}
+              items={render.picking_list ?? []}
+              totalEstimateAud={render.cost_estimate_aud}
+              renderId={render.id}
+              projectId={render.project_id}
+            />
+            <RevisionStrip
+              renderId={render.id}
+              revisions={signedRevisions}
+              activeRevisionId={activeRevisionId}
+            />
+          </>
         ) : isFailed ? (
           <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">
             <p className="font-display text-h3 text-ink">Something went sideways.</p>

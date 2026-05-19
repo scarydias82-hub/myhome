@@ -12,6 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { stageMultipleProducts, type MultiStageItem } from '@/lib/staging';
+import { appendRevision } from '@/lib/revisions';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -148,10 +149,29 @@ export async function POST(request: NextRequest) {
       projectId: render.project_id,
       items: stagingItems,
     });
+
+    // Persist this multi-stage as a new revision so the render page
+    // picks it up as the active view. Label names the count for the
+    // revision strip ('+ 3 products').
+    let revisionId: string | null = null;
+    if (result.storageKey) {
+      revisionId = await appendRevision({
+        admin,
+        renderId: render.id,
+        userId: user.id,
+        kind: 'multi_staged',
+        imageBucket: 'renders',
+        imagePath: result.storageKey,
+        sourceStagedImageId: result.stagedImageId,
+        label: `+ ${stagingItems.length} products`,
+      });
+    }
+
     return NextResponse.json({
       imageUrl: result.imageUrl,
       prompt: result.prompt,
       stagedImageId: result.stagedImageId,
+      revisionId,
     });
   } catch (err) {
     const e = err as {
