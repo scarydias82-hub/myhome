@@ -48,7 +48,7 @@ const SYSTEM = `You are a room-analysis vision model for myMaison, an Australian
 Be precise. Use null for any field you cannot infer confidently from the image — do not guess. Surface dimensions should be given in metres; if you cannot estimate confidently, use null. Hex codes should reflect the dominant colour of each surface as it actually appears. The output JSON must validate against this shape:
 
 {
-  "room_type": "living_room" | "bedroom" | "kitchen" | "dining_room" | "bathroom" | "study" | "outdoor" | "other" | null,
+  "room_type": "living_room" | "lounge_room" | "bedroom" | "kitchen" | "dining_room" | "bathroom" | "study" | "outdoor" | "other" | null,
   "dimensions_approximate_m": { "width": number | null, "depth": number | null, "height": number | null },
   "existing_colours": [{ "surface": "wall" | "floor" | "ceiling" | "trim" | "furniture", "hex": string | null, "description": string }],
   "light": { "direction": "north" | "south" | "east" | "west" | "skylit" | "interior" | null, "quality": string | null, "notes": string | null },

@@ -39,19 +39,26 @@ const palettesPath = path.resolve('..', 'web', 'lib', 'palettes.json');
 const palettesFile = JSON.parse(await readFile(palettesPath, 'utf-8'));
 const palettes = palettesFile.palettes;
 
-// Curated combinations — one row of the dashboard's TRENDS FOR YOU strip.
-// Each combo says: this palette shines in this room type.
-const COMBOS = [
-  { paletteId: 'warm-grounded-earth', roomType: 'living_room' },
-  { paletteId: 'transformative-teal', roomType: 'bathroom' },
-  { paletteId: 'misty-blue-neutral', roomType: 'bedroom' },
-  { paletteId: 'mossy-green-ochre', roomType: 'kitchen' },
-  { paletteId: 'warm-mahogany-clay', roomType: 'dining_room' },
-  { paletteId: 'silhouette-and-pale', roomType: 'library' },
-  { paletteId: 'honest-essentials', roomType: 'open_plan' },
-  { paletteId: 'pale-mint-sea-breeze', roomType: 'bedroom' },
-  { paletteId: 'pistachio-chocolate', roomType: 'kitchen' },
+// Every palette × every room type the upload form's palette picker
+// needs to surface a matching preview for. Six room types covers the
+// realistic uploads we see; the picker also falls back to ANY room
+// type if a specific one's missing, so this set is the floor not the
+// ceiling.
+const ROOM_TYPES = [
+  'bedroom',
+  'living_room',
+  'dining_room',
+  'kitchen',
+  'bathroom',
+  'lounge_room',
 ];
+
+// Cross-product. 10 palettes × 6 rooms = 60 cards on a fresh run; ~$0.05
+// per card (Flux dev + 2 Claude calls) → ~$3 total. Reruns skip
+// anything already in trend_cards unless --refresh is passed.
+const COMBOS = palettes.flatMap((p) =>
+  ROOM_TYPES.map((roomType) => ({ paletteId: p.id, roomType })),
+);
 
 function buildPrompt(palette, roomType) {
   const wall = palette.room_roles.wall;
@@ -152,11 +159,13 @@ let made = 0;
 let skipped = 0;
 const errors = [];
 
-for (const combo of COMBOS) {
+// Generate ONE (palette, room) combo. Pulled out as a function so we
+// can run the 6 room types of a single palette in parallel — saves
+// ~80% wall-time on a fresh run without flooding fal's queue.
+async function generateCombo(combo) {
   const palette = palettes.find((p) => p.id === combo.paletteId);
   if (!palette) {
-    errors.push({ combo, error: 'palette not found' });
-    continue;
+    return { combo, status: 'error', error: 'palette not found' };
   }
 
   // Skip if already done unless --refresh.
@@ -167,15 +176,10 @@ for (const combo of COMBOS) {
       .eq('palette_id', combo.paletteId)
       .eq('room_type', combo.roomType)
       .maybeSingle();
-    if (data) {
-      console.log(`skip ${combo.paletteId} / ${combo.roomType} (exists)`);
-      skipped++;
-      continue;
-    }
+    if (data) return { combo, status: 'skipped' };
   }
 
   try {
-    console.log(`generating ${combo.paletteId} / ${combo.roomType}…`);
     const [imageUrl, headline, description] = await Promise.all([
       generateImage(palette, combo.roomType),
       generateHeadline(palette, combo.roomType),
@@ -197,15 +201,38 @@ for (const combo of COMBOS) {
       .from('trend_cards')
       .upsert(row, { onConflict: 'palette_id,room_type' });
     if (error) {
-      errors.push({ combo, error: error.message });
-      console.error('  upsert failed:', error.message);
-    } else {
-      console.log(`  ✓ ${headline}`);
-      made++;
+      return { combo, status: 'error', error: error.message };
     }
+    return { combo, status: 'made', headline };
   } catch (err) {
-    errors.push({ combo, error: String(err?.message ?? err) });
-    console.error(`  ✗ ${combo.paletteId}/${combo.roomType}: ${err}`);
+    return { combo, status: 'error', error: String(err?.message ?? err) };
+  }
+}
+
+// Process palette by palette — 6 room types in parallel within a
+// palette, then move to the next. Keeps fal's concurrent load at
+// ~6 requests at a time, which is well within rate limits.
+const byPalette = new Map();
+for (const combo of COMBOS) {
+  const list = byPalette.get(combo.paletteId) ?? [];
+  list.push(combo);
+  byPalette.set(combo.paletteId, list);
+}
+
+for (const [paletteId, combos] of byPalette.entries()) {
+  console.log(`\n=== ${paletteId} (${combos.length} room types) ===`);
+  const results = await Promise.all(combos.map(generateCombo));
+  for (const r of results) {
+    if (r.status === 'skipped') {
+      skipped++;
+      console.log(`  – ${r.combo.roomType} (exists)`);
+    } else if (r.status === 'made') {
+      made++;
+      console.log(`  ✓ ${r.combo.roomType}: ${r.headline}`);
+    } else {
+      errors.push({ combo: r.combo, error: r.error });
+      console.error(`  ✗ ${r.combo.roomType}: ${r.error}`);
+    }
   }
 }
 
