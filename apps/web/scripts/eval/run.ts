@@ -99,35 +99,45 @@ interface IterationResult {
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const runDir = path.join(RESULTS_ROOT, stamp);
-await mkdir(runDir, { recursive: true });
 
-console.log(`\nEval run → ${runDir}\n`);
+// Wrapped in async main() because tsx-on-Node-26 transpiles to CJS,
+// which doesn't support top-level await. ESM-only Node would allow it,
+// but tsx's default target keeps us CJS-compatible.
+async function main(): Promise<void> {
+  await mkdir(runDir, { recursive: true });
 
-const results: IterationResult[] = [];
+  console.log(`\nEval run → ${runDir}\n`);
 
-for (const fixture of toRun) {
-  console.log(`\n=== ${fixture.id} ===`);
-  const started = Date.now();
-  try {
-    const r = await runIteration(fixture);
-    results.push(r);
-    const dur = ((r.durationMs / 1000) || 0).toFixed(1);
-    console.log(`  ✓ ${fixture.id} done in ${dur}s (picking list: ${r.pickingListSize} items)`);
-    if (r.scorecard) {
-      const s = r.scorecard;
-      console.log(
-        `    scores: direction ${s.directionMatch.score}, geometry ${s.geometryPreserved.score}, ` +
-          `surfaces ${s.surfaceTransformation.score}, hallucinations ${s.hallucinationFreedom.score}, ` +
-          `picking-list ${s.pickingListDensity.score}, palette ${s.paletteAdherence.score}`,
-      );
+  const results: IterationResult[] = [];
+
+  for (const fixture of toRun) {
+    console.log(`\n=== ${fixture.id} ===`);
+    try {
+      const r = await runIteration(fixture);
+      results.push(r);
+      const dur = ((r.durationMs / 1000) || 0).toFixed(1);
+      console.log(`  ✓ ${fixture.id} done in ${dur}s (picking list: ${r.pickingListSize} items)`);
+      if (r.scorecard) {
+        const s = r.scorecard;
+        console.log(
+          `    scores: direction ${s.directionMatch.score}, geometry ${s.geometryPreserved.score}, ` +
+            `surfaces ${s.surfaceTransformation.score}, hallucinations ${s.hallucinationFreedom.score}, ` +
+            `picking-list ${s.pickingListDensity.score}, palette ${s.paletteAdherence.score}`,
+        );
+      }
+    } catch (err) {
+      console.error(`  ✗ ${fixture.id} failed:`, err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.error(`  ✗ ${fixture.id} failed:`, err instanceof Error ? err.message : err);
   }
+
+  await writeSummary(results, runDir);
+  console.log(`\nDone. Summary: ${path.join(runDir, 'summary.md')}\n`);
 }
 
-await writeSummary(results, runDir);
-console.log(`\nDone. Summary: ${path.join(runDir, 'summary.md')}\n`);
+main().catch((err) => {
+  console.error('\neval crashed:', err instanceof Error ? err.stack ?? err.message : err);
+  process.exit(1);
+});
 
 // --- iteration --------------------------------------------------------
 

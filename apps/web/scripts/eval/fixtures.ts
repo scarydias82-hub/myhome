@@ -14,29 +14,13 @@ export interface Fixture {
 }
 
 export const FIXTURES: Fixture[] = [
-  // Add your real fixtures here. Examples to copy:
-  //
-  // {
-  //   id: 'bedroom-upstairs',
-  //   description: 'Upstairs master bedroom, panelled wall behind bed, late afternoon light',
-  //   imageFile: 'bedroom-upstairs.jpg',
-  //   style: 'contemporary-au',
-  //   paletteId: 'warm-grounded-earth',
-  // },
-  // {
-  //   id: 'living-room-warm',
-  //   description: 'North-facing living room, neutral walls, mid-century pieces',
-  //   imageFile: 'living-room-warm.jpg',
-  //   style: 'japandi',
-  //   paletteId: 'misty-blue-neutral',
-  // },
-  // {
-  //   id: 'kitchen-bright',
-  //   description: 'Galley kitchen, white cabinetry, single window',
-  //   imageFile: 'kitchen-bright.jpg',
-  //   style: 'coastal',
-  //   paletteId: 'pale-mint-sea-breeze',
-  // },
+  {
+    id: 'bedroom-upstairs',
+    description: 'Upstairs bedroom, panelled wall behind bed',
+    imageFile: 'master_bed.png',
+    style: 'contemporary-au',
+    paletteId: 'warm-grounded-earth',
+  },
 ];
 
 export function getFixture(id: string): Fixture | undefined {
