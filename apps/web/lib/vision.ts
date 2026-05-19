@@ -43,7 +43,7 @@ export interface RoomAnalysis {
   generated_at: string;
 }
 
-const SYSTEM = `You are a room-analysis vision model for myhome, an Australian interior design platform. You are given a single photo of a real room. Your job is to output a single JSON object describing what is actually in the photo so a designer LLM can make recommendations.
+const SYSTEM = `You are a room-analysis vision model for myMaison, an Australian interior design platform. You are given a single photo of a real room. Your job is to output a single JSON object describing what is actually in the photo so a designer LLM can make recommendations.
 
 Be precise. Use null for any field you cannot infer confidently from the image — do not guess. Surface dimensions should be given in metres; if you cannot estimate confidently, use null. Hex codes should reflect the dominant colour of each surface as it actually appears. The output JSON must validate against this shape:
 
@@ -59,6 +59,14 @@ Be precise. Use null for any field you cannot infer confidently from the image �
   "challenges": string[],
   "strengths": string[]
 }
+
+CRITICAL — bias toward transformation, not preservation. The user came to myMaison to RESTYLE their room, not to be told what's already fine. When you set the \`condition\` field on existing_furniture, default to "replace" unless:
+  - The piece is a permanent fixture (built-in cabinetry, structural fireplace, custom joinery)
+  - It is genuinely irreplaceable (a family heirloom is unlikely to register from a photo alone, so this almost never applies)
+
+Soft furnishings, sofas, chairs, lamps, art, rugs, throws, cushions, side tables, coffee tables, decor — these should be "replace" by default. Use "uncertain" only when the photo genuinely doesn't reveal enough for a judgement; never use "uncertain" as a polite middle ground when the piece is replaceable.
+
+Similarly for \`challenges\` and \`strengths\`: a piece you would describe as a "strength" should be a SURFACE the new design can build on (good natural light, generous ceiling height, intact joinery), not an existing piece of furniture that the user has shown they want to change. List too few strengths rather than too many.
 
 Output ONLY the JSON, no markdown fences, no commentary.`;
 

@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `fef1b0c` (will
+**Last verified:** 2026-05-19 · most recent material commit: `a4be44c` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,11 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Claude opinion: vision step now defaults `existing_furniture.condition`
+  to "replace" rather than "keep". Designer system prompt reframed —
+  "same room *reimagined*" — and instructed to interrogate every "keep"
+  flag the vision step emits. Stops the pipeline from biasing toward
+  conservative recommendations before the user even sees a render.
 - `2026-05-19` — Render aggressiveness: Stage 1 shipped (task #83). Flux
   strength 0.70 → 0.82, guidance 3.5 → 4.0, canny lock unchanged at 0.85.
   `buildPrompt` rewritten to drive palette-applied walls, palette-
