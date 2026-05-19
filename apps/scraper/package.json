@@ -13,7 +13,6 @@
     "scrape:freedom": "node scrapers/freedom.js",
     "scrape:dulux": "node scrapers/dulux.js",
     "scrape:woodcut": "node scrapers/woodcut.js",
-    "scrape:carpetcall": "node scrapers/carpetCall.js",
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",

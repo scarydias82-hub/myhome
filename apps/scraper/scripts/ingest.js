@@ -9,6 +9,7 @@ import 'dotenv/config';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { classifyProduct } from '../utils/paletteMatch.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -67,6 +68,7 @@ async function* walkRetailerDirs() {
 let total = 0;
 let inserted = 0;
 let skipped = 0;
+let skippedPalette = 0;
 const errors = [];
 
 // Reject rows that obviously aren't real products. Earlier scrapes
@@ -90,6 +92,23 @@ for await (const { retailer, products } of walkRetailerDirs()) {
       skipped++;
       continue;
     }
+    // Palette filter — only products whose dominant colour falls into at
+    // least one app palette's tonal family survive. Paint products that
+    // already carry dimensions.hex skip the fetch and use the swatch
+    // hex directly (Dulux fast path).
+    const existingHex = row.dimensions && typeof row.dimensions === 'object'
+      ? row.dimensions.hex ?? null
+      : null;
+    const { hex, tags } = await classifyProduct({
+      imageUrl: row.image_url,
+      existingHex,
+    });
+    if (tags.length === 0) {
+      skippedPalette++;
+      continue;
+    }
+    row.dimensions = { ...(row.dimensions ?? {}), hex };
+    row.palette_tags = tags;
     const { error } = await supabase
       .from('products')
       .upsert(row, { onConflict: 'retailer,sku' });
@@ -104,10 +123,11 @@ for await (const { retailer, products } of walkRetailerDirs()) {
 }
 
 console.log('\n=== Summary ===');
-console.log(`  total seen:   ${total}`);
-console.log(`  upserted:     ${inserted}`);
-console.log(`  skipped:      ${skipped}`);
-console.log(`  errors:       ${errors.length}`);
+console.log(`  total seen:        ${total}`);
+console.log(`  upserted:          ${inserted}`);
+console.log(`  skipped (junk):    ${skipped}`);
+console.log(`  skipped (palette): ${skippedPalette}`);
+console.log(`  errors:            ${errors.length}`);
 if (errors.length > 0) {
   console.log('\nFirst 5 errors:');
   for (const e of errors.slice(0, 5)) console.log(`  ${e.sku}: ${e.error}`);

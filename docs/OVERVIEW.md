@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `499fab2` (will
+**Last verified:** 2026-05-20 · most recent material commit: `499fab2` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,23 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Palette-match catalog filter shipped (task #89). Every
+  scraped product now runs through `apps/scraper/utils/paletteMatch.js`
+  at ingest time. The module extracts a dominant colour from the product
+  image (sharp centre-crop → resize-to-1px), converts to CIE Lab, and
+  tags the row with the IDs of every palette whose colours fall within
+  ΔE 20 of that dominant. Products that match no palette are dropped at
+  the ingest step — they'd never surface in a picking list anyway.
+  Paint products (Dulux) skip the image fetch and use the
+  retailer-published swatch hex in `dimensions.hex` directly. New
+  column `products.palette_tags text[]` with a GIN index supports
+  fast `palette_tags @> ARRAY[$paletteId]` filtering at picking-list
+  query time. Threshold tunable via `PALETTE_MATCH_THRESHOLD` env.
+  Dry-run against all 9 existing retailers showed 100% pass-rate —
+  consistent with AU interior catalogues already trending neutral/earth;
+  the matcher correctly admits everything except saturated off-palette
+  outliers. Also cancelled the Carpet Call task (#86, 403'd bot
+  detection) since Carpet Court (#90) covers the same brief.
 - `2026-05-19` — Beacon Lighting scraper poisoning the catalogue.
   Sitemap entries outlive product pages, so visits returned 404 pages;
   the scraper happily stored those as products with name='404 Not
@@ -522,7 +539,7 @@ making sure each user has a great first render — concierge-style if needed.
 | **Vision validation + rank**  | Anthropic Claude Haiku 4.5             | Crops each detection and asks Claude to classify (drops anything it reads as architecture, walls, doorways). Then ranks the catalogue against each detection by vision. Replaced an earlier CLIP-based ranker that wouldn't deploy reliably on Vercel. |
 | **Designer LLM**              | Anthropic Claude Sonnet 4.6            | Reads the room analysis, the chosen palette, the matched products, and 5–8 RAG chunks from the design-knowledge corpus. Returns the editorial "designer read" shown on the render page. |
 | **Room vision analysis**      | Anthropic Claude Haiku 4.5             | One-shot structured JSON from the uploaded room photo: dimensions estimate, light direction, existing materials, architecture features. Cached on `rooms.analysis` so we never re-pay for the same upload. |
-| **Catalogue scrapers**        | `apps/scraper`                         | Standalone pnpm app. Coco Republic (BigCommerce sitemap), Poliform (Shopify JSON), GlobeWest (Magento + Playwright). Writes to `products` via service role. ~236 SKUs today. |
+| **Catalogue scrapers**        | `apps/scraper`                         | Standalone pnpm app. Coco Republic (BigCommerce sitemap), Poliform (Shopify JSON), GlobeWest (Magento + Playwright). Each scrape writes JSON to `output/<retailer>/`, then `pnpm ingest` (single shared script) runs every product through `utils/paletteMatch.js` (Lab ΔE filter against the 10 app palettes), drops products that match no palette, and upserts to `products` via service role with `palette_tags text[]` populated. ~236 SKUs today. |
 | **Trend generator**           | `apps/scraper/scripts/generate-trends.js` | Cron-run script that produces a Flux trend card per (palette × room type) and writes to `trend_cards`. Shown on the dashboard. |
 | **Design knowledge RAG**      | `apps/scraper/data/design-knowledge-seed.json` → `design_knowledge` + CLIP-text embeddings | Curated 25-chunk AU corpus (Dulux 2026, S-W, Pantone, AIDA, Vogue Living AU, House & Garden, climate/building-stock notes). Retrieved via `match_design_knowledge` RPC. |
 | **Hosting**                   | Vercel (region `syd1`)                 | Auto-deploy from `main`. Function timeout 60s — render and stage are async (queue submit + poll) to live within it. |
