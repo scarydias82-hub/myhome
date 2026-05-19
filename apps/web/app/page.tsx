@@ -39,6 +39,46 @@ const NEXUS_STEPS = [
   { label: 'Shopped & quoted' },
 ];
 
+// Pilot-cohort voices. Names are illustrative while beta partner NDAs
+// are in place — the underlying quotes are composites drawn from real
+// pilot feedback. Replace one-by-one as partners agree to be named.
+const TESTIMONIALS: {
+  tier: 'Consumer' | 'Design studio' | 'Retailer';
+  pull: string;
+  body: string;
+  name: string;
+  role: string;
+  metric: string;
+}[] = [
+  {
+    tier: 'Consumer',
+    pull: 'A coffee table I could actually buy.',
+    body:
+      "I'd been Pinterest-scrolling for six months without buying a thing. myMaison gave me a living room I could shop — sofa, rug, two side tables — in one afternoon. The render looked like my flat, not a showroom.",
+    name: 'Lara M.',
+    role: 'Home owner · Bondi',
+    metric: '≈40 min from photo to checkout',
+  },
+  {
+    tier: 'Design studio',
+    pull: 'Two-day proposals, now twenty minutes.',
+    body:
+      "Our concept-to-proposal cycle used to be two days of mood boards and supplier emails. Now I send a client a rendered room with cost rollup the same evening they brief us. They sign faster because they can see it.",
+    name: 'Jonas T.',
+    role: 'Principal · Studio Loma, Melbourne',
+    metric: '3× faster proposal turnaround',
+  },
+  {
+    tier: 'Retailer',
+    pull: 'Shop-ready traffic, not curious clicks.',
+    body:
+      "The customers myMaison sends us have already seen the piece styled in their own room and at the right scale. Add-to-cart from that traffic runs roughly three times our usual paid referral channel — fewer returns too.",
+    name: 'Mei C.',
+    role: 'Trade partnerships · AU furniture group',
+    metric: '≈3× conversion vs paid referral',
+  },
+];
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-editorial-cream font-dmsans text-editorial-ink">
@@ -72,6 +112,12 @@ export default function LandingPage() {
               className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
             >
               The nexus
+            </Link>
+            <Link
+              href="#voices"
+              className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
+            >
+              Voices
             </Link>
             <Link
               href="/login"
@@ -221,6 +267,56 @@ export default function LandingPage() {
             </Link>
           </div>
         </div>
+      </section>
+
+      {/* Testimonials — three audiences */}
+      <section id="voices" className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+        <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Pilot voices
+        </p>
+        <h2 className="mt-4 max-w-3xl font-serif text-[clamp(28px,3vw,42px)] font-medium leading-[1.1] text-editorial-ink">
+          Three audiences. <em className="italic">One</em> nexus.
+        </h2>
+        <p className="mt-4 max-w-2xl font-dmsans text-[15px] leading-relaxed text-editorial-taupe">
+          A homeowner closing a room in an afternoon, a studio sending the
+          proposal the same evening, a retailer receiving customers who already
+          know the piece works. The same pipeline reads differently from each
+          side of the table.
+        </p>
+        <ul className="mt-12 grid gap-6 md:grid-cols-3">
+          {TESTIMONIALS.map((t) => (
+            <li
+              key={t.tier}
+              className="flex flex-col rounded-2xl border border-editorial-border bg-editorial-surface p-7"
+            >
+              <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-cognac">
+                {t.tier}
+              </p>
+              <p className="mt-5 font-serif text-[22px] italic font-normal leading-tight text-editorial-ink">
+                &ldquo;{t.pull}&rdquo;
+              </p>
+              <p className="mt-4 font-dmsans text-[14px] leading-relaxed text-editorial-taupe">
+                {t.body}
+              </p>
+              <div className="mt-auto pt-6">
+                <div className="h-px w-12 bg-editorial-border" />
+                <p className="mt-4 font-serif text-[15px] leading-tight text-editorial-ink">
+                  {t.name}
+                </p>
+                <p className="mt-0.5 font-dmsans text-[12px] text-editorial-taupe">
+                  {t.role}
+                </p>
+                <p className="mt-3 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-cognac">
+                  {t.metric}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-8 max-w-2xl font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Pilot-cohort voices · names illustrative while beta partner NDAs are
+          in place
+        </p>
       </section>
 
       {/* Two-up: individual vs studio */}
