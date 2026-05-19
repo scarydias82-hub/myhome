@@ -94,9 +94,14 @@ export async function buildPickingList({
   }
 
   const rawBoxes = await detectObjects(renderImageUrl);
-  const boxes = dedupeBoxes(rawBoxes)
+  const sized = dedupeBoxes(rawBoxes)
     .filter((b) => (b.w * b.h) / (imageWidth * imageHeight) >= MIN_BOX_AREA_RATIO)
-    .slice(0, MAX_ITEMS);
+    .slice(0, MAX_ITEMS + 3); // pull a couple extra — validator may drop some
+
+  // Claude-vision sanity pass: drops architectural false-positives (open
+  // doorways read as "mirror", walls read as "art") and corrects mislabels
+  // (a bed Florence-2 calls "sofa", a side table called "ottoman").
+  const boxes = await validateBoxesWithClaude(imgBuf, sized, imageWidth, imageHeight);
 
   const settled = await Promise.allSettled(
     boxes.map((box) => buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box })),
@@ -269,4 +274,124 @@ function parseRanking(raw: string, max: number): number[] {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
+}
+
+// --- Claude vision validation --------------------------------------------
+//
+// Florence-2 has known weak spots:
+//   - open doorways into other rooms read as "mirror" (rectangular dark
+//     region with reflections of the next space)
+//   - beds read as "sofa" or "couch" depending on bedding cropping
+//   - walls / windows occasionally read as "art"
+// We send each crop to Claude Haiku and ask it to label or reject. Drops
+// architectural false-positives and relabels what Florence-2 got wrong.
+
+const VALID_LABELS = new Set([
+  'sofa',
+  'armchair',
+  'chair',
+  'dining chair',
+  'bench',
+  'stool',
+  'ottoman',
+  'bed',
+  'bedside table',
+  'coffee table',
+  'side table',
+  'dining table',
+  'console',
+  'sideboard',
+  'rug',
+  'floor lamp',
+  'table lamp',
+  'pendant light',
+  'mirror',
+  'art',
+  'plant',
+  'vase',
+  'cushion',
+  'throw',
+]);
+
+async function validateBoxesWithClaude(
+  imgBuf: Buffer,
+  boxes: Bbox[],
+  imageWidth: number,
+  imageHeight: number,
+): Promise<Bbox[]> {
+  if (boxes.length === 0) return [];
+
+  const settled = await Promise.allSettled(
+    boxes.map(async (box) => {
+      const cropBuf = await sharp(imgBuf)
+        .extract({
+          left: clamp(Math.round(box.x), 0, imageWidth - 1),
+          top: clamp(Math.round(box.y), 0, imageHeight - 1),
+          width: clamp(Math.round(box.w), 1, imageWidth - Math.round(box.x)),
+          height: clamp(Math.round(box.h), 1, imageHeight - Math.round(box.y)),
+        })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      const verdict = await classifyCropWithClaude(cropBuf, box.label);
+      return { box, verdict };
+    }),
+  );
+
+  const out: Bbox[] = [];
+  for (const r of settled) {
+    if (r.status !== 'fulfilled') continue;
+    const { box, verdict } = r.value;
+    if (verdict.kind === 'drop') continue;
+    out.push({ ...box, label: verdict.label });
+  }
+  return out;
+}
+
+type Verdict =
+  | { kind: 'keep'; label: string }
+  | { kind: 'drop'; reason: string };
+
+async function classifyCropWithClaude(cropBuf: Buffer, hint: string): Promise<Verdict> {
+  try {
+    const client = getAnthropic();
+    const cropBase64 = cropBuf.toString('base64');
+    const allowed = [...VALID_LABELS].join(', ');
+    const message = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 30,
+      system: `You classify a cropped region of an interior photo. Reply with EXACTLY ONE token from this list, no other words:
+${allowed}, architecture, other
+
+Use "architecture" if the region is a doorway, an opening into another room, a wall section, a window, a ceiling, or any structural element — NOT a piece of furniture or decor. A reflection visible through an open doorway is NOT a mirror; reply "architecture".
+Use "other" for anything that isn't furniture, decor, or architecture (a person, an animal, etc.).
+Otherwise pick the closest match from the list.`,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `Florence-2 thinks this is "${hint}". What is it really?` },
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
+            },
+          ],
+        },
+      ],
+    });
+    const raw = message.content
+      .filter((c): c is Anthropic.TextBlock => c.type === 'text')
+      .map((c) => c.text)
+      .join(' ')
+      .toLowerCase()
+      .trim()
+      .replace(/[.,]$/, '');
+    if (raw === 'architecture') return { kind: 'drop', reason: 'architecture' };
+    if (raw === 'other') return { kind: 'drop', reason: 'other' };
+    if (VALID_LABELS.has(raw)) return { kind: 'keep', label: raw };
+    // Couldn't parse — trust Florence-2's original guess.
+    return { kind: 'keep', label: hint };
+  } catch (err) {
+    console.error('validator call failed, keeping original label', err);
+    return { kind: 'keep', label: hint };
+  }
 }
