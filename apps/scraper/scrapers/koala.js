@@ -15,7 +15,11 @@ import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
 
-const ORIGIN = 'https://koala.com.au';
+// au.koala.com is the Australian Shopify store. koala.com.au doesn't
+// exist (SERVFAIL on DNS); koala.com is the US/global brand site
+// without the AU catalogue. Verified via `nslookup au.koala.com` →
+// CNAME shops.myshopify.com.
+const ORIGIN = 'https://au.koala.com';
 const RETAILER = 'Koala';
 const RETAILER_SLUG = 'koala';
 const TARGET_MAX = 80;
