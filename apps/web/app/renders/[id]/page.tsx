@@ -262,6 +262,16 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
           />
         )}
 
+        {/* Designer read sits IMMEDIATELY under the image area — both
+            during the wait (placeholder gives the user something to
+            engage with for the 25-60s Flux pass) and after completion
+            (full critique). The supporting profile/palette/materials
+            row sits BELOW the designer read, since by then the designer
+            voice has framed what the palette means for this room. */}
+        <section className="mt-10">
+          <DesignerRead advice={render.designer_read} />
+        </section>
+
         {profile ? (
           <section className="mt-12 grid gap-8 md:grid-cols-3">
             <div className="md:col-span-1">
@@ -290,16 +300,6 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             </div>
           </section>
         ) : null}
-
-        {/* Designer read sits BELOW the render area on every state —
-            visible during the wait (placeholder) and after completion
-            (full critique). The critique itself doesn't depend on the
-            rendered output, so it's available the moment Claude
-            finishes reading the room photo + palette, typically 15-25s
-            into the render wait. */}
-        <section className="mt-12">
-          <DesignerRead advice={render.designer_read} />
-        </section>
       </main>
     </>
   );

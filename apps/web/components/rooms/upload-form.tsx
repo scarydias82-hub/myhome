@@ -76,6 +76,11 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   const [heroLoading, setHeroLoading] = useState(false);
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
 
+  // Trend-card previews per palette — loaded once the analysis confirms,
+  // filtered by the room_type Claude identified so the palette swatches
+  // show the user what each palette looks like in a room LIKE theirs.
+  const [trendPreviews, setTrendPreviews] = useState<Map<string, TrendPreview>>(new Map());
+
   useEffect(() => {
     if (!analysisConfirmed) return;
     let cancelled = false;
@@ -92,6 +97,27 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       cancelled = true;
     };
   }, [analysisConfirmed, style, paletteId]);
+
+  useEffect(() => {
+    if (!analysisConfirmed) return;
+    const roomType = analysis?.room_type ?? null;
+    const url = roomType
+      ? `/api/trend-previews?roomType=${encodeURIComponent(roomType)}`
+      : '/api/trend-previews';
+    let cancelled = false;
+    fetch(url)
+      .then((r) => r.json())
+      .then((j: { previews?: TrendPreview[] }) => {
+        if (cancelled) return;
+        const map = new Map<string, TrendPreview>();
+        for (const p of j.previews ?? []) map.set(p.paletteId, p);
+        setTrendPreviews(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisConfirmed, analysis?.room_type]);
 
   const isMobile =
     typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -334,7 +360,13 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       ) : null}
 
       {analysisConfirmed ? (
-        <Step3Style style={style} onStyleChange={setStyle} paletteId={paletteId} onPaletteChange={setPaletteId} />
+        <Step3Style
+          style={style}
+          onStyleChange={setStyle}
+          paletteId={paletteId}
+          onPaletteChange={setPaletteId}
+          trendPreviews={trendPreviews}
+        />
       ) : null}
 
       {analysisConfirmed ? (
@@ -734,16 +766,26 @@ function Step5HeroProducts({
   );
 }
 
+interface TrendPreview {
+  paletteId: string;
+  headline: string;
+  roomType: string;
+  matchedRoomType: boolean;
+  imageUrl: string;
+}
+
 function Step3Style({
   style,
   onStyleChange,
   paletteId,
   onPaletteChange,
+  trendPreviews,
 }: {
   style: StyleSlug;
   onStyleChange: (s: StyleSlug) => void;
   paletteId: string;
   onPaletteChange: (p: string) => void;
+  trendPreviews: Map<string, TrendPreview>;
 }) {
   return (
     <>
@@ -787,9 +829,10 @@ function Step3Style({
         <p className="mt-2 max-w-xl text-[15px] text-ink-soft">
           Optional. Overrides the style's base palette with a trend-forward 2026 palette.
         </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {listPalettes().map((p) => {
             const selected = paletteId === p.id;
+            const preview = trendPreviews.get(p.id);
             return (
               <button
                 key={p.id}
@@ -797,15 +840,45 @@ function Step3Style({
                 onClick={() => onPaletteChange(p.id)}
                 aria-pressed={selected}
                 className={cn(
-                  'group flex flex-col gap-3 rounded-xl border p-4 text-left transition',
+                  'group flex flex-col overflow-hidden rounded-xl border text-left transition',
                   selected
                     ? 'border-clay/60 bg-cream shadow-soft'
                     : 'border-ink/[0.06] bg-paper-warm bg-grain hover:border-ink/20 hover:bg-cream',
                 )}
               >
-                <PaletteStrip colors={paletteSwatch(p)} className="h-7" />
-                <p className="font-display text-h4 text-ink">{p.name}</p>
-                <p className="mt-1 text-[13px] text-ink-soft">{p.vibe}</p>
+                {/* Trend-card preview image — pre-rendered Flux output
+                    showing what this palette looks like in a similar
+                    room. Falls back to a swatch-only header when no
+                    trend card is available for this palette. */}
+                <div className="relative aspect-[4/3] w-full overflow-hidden bg-ink/5">
+                  {preview?.imageUrl ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={preview.imageUrl}
+                        alt={`${p.name} applied to a ${preview.roomType.replace(/_/g, ' ')}`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                      {!preview.matchedRoomType ? (
+                        <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-paper">
+                          {preview.roomType.replace(/_/g, ' ')} sample
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 grid place-items-center">
+                      <div className="w-2/3">
+                        <PaletteStrip colors={paletteSwatch(p)} className="h-7" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <PaletteStrip colors={paletteSwatch(p)} className="h-5" />
+                  <p className="mt-3 font-display text-h4 text-ink">{p.name}</p>
+                  <p className="mt-1 text-[13px] text-ink-soft">{p.vibe}</p>
+                </div>
               </button>
             );
           })}
