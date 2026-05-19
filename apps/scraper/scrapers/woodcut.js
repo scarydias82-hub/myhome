@@ -1,8 +1,9 @@
-// Woodcut Australia — engineered timber flooring brand. Brochure-style
-// WordPress site with no e-commerce and no prices (typical for trade
-// flooring). We scrape the collection landing pages, follow each finish
-// URL, and extract finish name, species, image, and product page url.
-// price_aud is null (quote-based — flooring is sold by the square metre).
+// Woodcut Australia — engineered timber flooring. WordPress brochure
+// site, no e-commerce, no prices. Previous version of this scraper
+// looked for `/wood-finishes/<slug>/` URLs which don't exist — the
+// actual product URL pattern is `/wood/<slug>/`. Fixed by reading the
+// sitemap directly and filtering for that pattern (~175 product URLs
+// covered, no collection-index parsing needed).
 
 import path from 'node:path';
 import { delay } from '../utils/delay.js';
@@ -15,25 +16,44 @@ const ORIGIN = 'https://woodcut.com.au';
 const RETAILER = 'Woodcut';
 const RETAILER_SLUG = 'woodcut';
 const TARGET_MAX = 80;
-
-const COLLECTION_INDICES = [
-  '/premium-collection/',
-  '/essence-collection/',
-  '/french-collection/',
-  '/grande-ville-collection/',
-];
+const SITEMAP_URL = `${ORIGIN}/sitemap.xml`;
 
 async function fetchText(url) {
-  const res = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html' } });
+  const res = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xml' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
 }
 
-function pickAll(html, regex) {
-  const out = [];
+// Read the sitemap. It may be a sitemap index (links to child sitemaps)
+// or a flat URLset. Walk one level deep.
+async function collectSitemapUrls() {
+  const root = await fetchText(SITEMAP_URL);
+  const out = new Set();
+  const re = /<loc>([^<]+)<\/loc>/g;
+  const children = [];
   let m;
-  while ((m = regex.exec(html))) out.push(m[1]);
-  return out;
+  while ((m = re.exec(root))) {
+    const u = m[1].trim();
+    if (u.endsWith('.xml')) children.push(u);
+    else out.add(u);
+  }
+  for (const child of children) {
+    try {
+      const body = await fetchText(child);
+      let cm;
+      const cre = /<loc>([^<]+)<\/loc>/g;
+      while ((cm = cre.exec(body))) out.add(cm[1].trim());
+      await delay(400);
+    } catch (err) {
+      console.warn(`[${RETAILER}] child sitemap ${child} failed: ${err.message}`);
+    }
+  }
+  return [...out];
+}
+
+// Product URL pattern verified from the live site: /wood/<slug>/
+function isFinishUrl(url) {
+  return /\/wood\/[a-z0-9-]+\/?$/i.test(url);
 }
 
 function pickFirst(html, regex) {
@@ -41,38 +61,28 @@ function pickFirst(html, regex) {
   return m ? m[1].trim() : null;
 }
 
-// Collect finish URLs from a collection index. Woodcut's finish detail
-// pages live at /wood-finishes/<slug>/ — links from collection pages
-// point at those.
-function collectFinishUrls(html) {
-  const re = /href="((?:https:\/\/woodcut\.com\.au)?\/wood-finishes\/[a-z0-9-]+\/?)"/gi;
-  const out = new Set();
-  const found = pickAll(html, re);
-  for (const href of found) {
-    const url = href.startsWith('http') ? href : `${ORIGIN}${href}`;
-    out.add(url.replace(/\/$/, '/'));
-  }
-  return [...out];
-}
-
-function extractFinish(html, url) {
-  const name = pickFirst(html, /<h1[^>]*>([^<]+)<\/h1>/i) ||
+function extractFinish(html) {
+  const name =
+    pickFirst(html, /<h1[^>]*>([^<]+)<\/h1>/i) ??
     pickFirst(html, /<meta property="og:title" content="([^"]+)"/i);
-  const description = pickFirst(html, /<meta name="description" content="([^"]+)"/i) ||
+  const description =
+    pickFirst(html, /<meta name="description" content="([^"]+)"/i) ??
     pickFirst(html, /<meta property="og:description" content="([^"]+)"/i);
-  // Hero image — WordPress media. Prefer og:image since the layout puts
-  // multiple swatches on the page.
-  const imageUrl = pickFirst(html, /<meta property="og:image" content="([^"]+)"/i) ||
-    pickFirst(html, /(https:\/\/woodcut\.com\.au\/wp-content\/uploads\/[^"\s)]+\.(?:jpe?g|png|webp))/i);
-  // Species — often appears in the page body, e.g. "European Oak" / "American Walnut"
-  const species = pickFirst(html, /\b(European Oak|American Walnut|American Oak|European Walnut|Spotted Gum|Tasmanian Oak|Blackbutt)\b/i);
-  // Plank width — typical Woodcut spec mentions 150mm / 190mm / 220mm widths
+  const imageUrl =
+    pickFirst(html, /<meta property="og:image" content="([^"]+)"/i) ??
+    pickFirst(
+      html,
+      /(https:\/\/woodcut\.com\.au\/wp-content\/uploads\/[^"\s)]+\.(?:jpe?g|png|webp))/i,
+    );
+  const species = pickFirst(
+    html,
+    /\b(European Oak|American Walnut|American Oak|European Walnut|Spotted Gum|Tasmanian Oak|Blackbutt)\b/i,
+  );
   const widthMm = pickFirst(html, /(\d{2,3})\s*mm\s*(?:wide|width|plank)/i);
 
   if (!name) return null;
-
   return {
-    name,
+    name: String(name).replace(/\s*\|\s*Woodcut.*$/i, '').trim(),
     species,
     widthMm: widthMm ? Number(widthMm) : null,
     imageUrl,
@@ -84,38 +94,27 @@ function slugFromUrl(url) {
   return url.replace(/\/$/, '').split('/').pop().slice(0, 80);
 }
 
-function categoryFromCollection(collectionPath) {
-  // All finishes from Woodcut land under "Flooring" in our catalogue.
-  return 'Flooring';
-}
-
 export async function scrapeWoodcut() {
   console.log(`[${RETAILER}] starting`);
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
 
-  // Harvest finish URLs from each collection.
-  const finishUrls = new Set();
-  for (const indexPath of COLLECTION_INDICES) {
-    const indexUrl = `${ORIGIN}${indexPath}`;
-    if (!(await isAllowed(indexUrl))) {
-      console.warn(`[${RETAILER}] robots disallows ${indexUrl}, skipping`);
-      continue;
-    }
-    try {
-      console.log(`[${RETAILER}] fetching ${indexPath}`);
-      const html = await fetchText(indexUrl);
-      const urls = collectFinishUrls(html);
-      console.log(`[${RETAILER}]   ${urls.length} finishes`);
-      for (const u of urls) finishUrls.add(u);
-      await delay();
-    } catch (err) {
-      errors.push({ url: indexUrl, error: String(err?.message ?? err) });
-    }
+  if (!(await isAllowed(SITEMAP_URL))) {
+    console.warn(`[${RETAILER}] robots disallows sitemap, skipping`);
+    return { retailer: RETAILER, products: [], errors };
   }
 
-  console.log(`[${RETAILER}] ${finishUrls.size} unique finish urls`);
-  const targets = [...finishUrls].slice(0, TARGET_MAX);
+  let allUrls;
+  try {
+    allUrls = await collectSitemapUrls();
+  } catch (err) {
+    errors.push({ url: SITEMAP_URL, error: String(err?.message ?? err) });
+    await writeJson(path.join(outDir, 'errors.json'), errors);
+    return { retailer: RETAILER, products: [], errors };
+  }
+  const finishes = allUrls.filter(isFinishUrl);
+  console.log(`[${RETAILER}] ${allUrls.length} sitemap urls, ${finishes.length} /wood/* finishes`);
+  const targets = finishes.slice(0, TARGET_MAX);
 
   const products = [];
   for (let i = 0; i < targets.length; i++) {
@@ -123,7 +122,7 @@ export async function scrapeWoodcut() {
     try {
       if (!(await isAllowed(url))) continue;
       const html = await fetchText(url);
-      const finish = extractFinish(html, url);
+      const finish = extractFinish(html);
       if (!finish) {
         errors.push({ url, error: 'could not parse finish from html' });
         continue;

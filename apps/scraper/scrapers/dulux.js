@@ -1,15 +1,12 @@
-// Dulux Australia — paint colour library. Not normal e-commerce: products
-// are paint *colours*, not SKUs with prices. Each colour has a name,
-// Atlas code, chip code, hex code, RGB, LRV, and a swatch image.
+// Dulux Australia — paint colour library. Next.js site that embeds the
+// colour metadata as JSON inside <script id="__NEXT_DATA__">. The previous
+// version of this scraper regexed against the raw HTML and ended up
+// matching the page background CSS for every colour (every entry came
+// out as #F7F8F4) — fixed by parsing __NEXT_DATA__ directly, which
+// gives us structured colour objects with hex, atlas code, chip code,
+// LRV, and the per-swatch image URL.
 //
-// Scraping strategy: hit category index pages (whites-and-neutrals,
-// greys, blues, etc.), harvest individual colour URLs, then fetch each
-// colour page and parse hex / image / metadata out of server-rendered
-// HTML (Next.js + Contentful — no JS required to read the data).
-//
-// price_aud is always null. The "product" is the colour, not a tin.
-// Eventually we'll wire this into a separate paint-matching surface
-// (not the picking list, which is for furniture/decor).
+// price_aud stays null. The "product" is the colour, not a tin.
 
 import path from 'node:path';
 import { delay } from '../utils/delay.js';
@@ -23,8 +20,6 @@ const RETAILER = 'Dulux';
 const RETAILER_SLUG = 'dulux';
 const TARGET_MAX = 200;
 
-// The Dulux colour library is organised by hue. We hit each index and
-// follow the popular sub-page which lists the full grid of colours.
 const HUE_INDICES = [
   '/colour/whites-and-neutrals/popular',
   '/colour/greys/popular',
@@ -43,63 +38,153 @@ async function fetchText(url) {
   return res.text();
 }
 
-// Extract colour-detail URLs from an index page. We look for hrefs that
-// match the /colour/<hue>/<slug>/ pattern.
-function collectColourUrls(html, hueIndex) {
-  const out = new Set();
-  const hue = hueIndex.split('/')[2]; // e.g. "whites-and-neutrals"
+function extractNextData(html) {
+  // Next.js always serialises its props into a single script tag.
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]);
+  } catch (err) {
+    return null;
+  }
+}
+
+// Walk an arbitrary object tree and return the first nested object that
+// looks like a Dulux colour record. Schema isn't documented so we
+// pattern-match on the fields we need.
+function findColourObject(node) {
+  if (!node) return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const r = findColourObject(item);
+      if (r) return r;
+    }
+    return null;
+  }
+  if (typeof node !== 'object') return null;
+  // A colour record has at minimum a name + a hex/rgb.
+  const hasHex =
+    typeof node.hex === 'string' ||
+    typeof node.hexCode === 'string' ||
+    typeof node.colourHex === 'string' ||
+    (typeof node.rgb === 'object' && node.rgb !== null);
+  const hasName =
+    typeof node.name === 'string' ||
+    typeof node.colourName === 'string' ||
+    typeof node.title === 'string';
+  if (hasHex && hasName) return node;
+  for (const v of Object.values(node)) {
+    const r = findColourObject(v);
+    if (r) return r;
+  }
+  return null;
+}
+
+function collectColourUrlsFromIndex(html, hueIndex) {
+  // The index page also embeds __NEXT_DATA__ with the full list of
+  // colours in that hue. Pull URLs from there if available; fall back
+  // to href-scan otherwise.
+  const data = extractNextData(html);
+  const urls = new Set();
+  walkForLinks(data, urls, hueIndex);
+  if (urls.size > 0) return [...urls];
+
+  // Fallback: href regex.
+  const hue = hueIndex.split('/')[2];
   const re = new RegExp(`href="(/colour/${hue}/[a-z0-9-]+/?)"`, 'gi');
   let m;
   while ((m = re.exec(html))) {
-    const path = m[1].replace(/\/$/, '');
-    if (path === hueIndex.replace(/\/popular$/, '')) continue;
-    out.add(`${ORIGIN}${path}`);
+    const p = m[1].replace(/\/$/, '');
+    if (p === hueIndex.replace(/\/popular$/, '')) continue;
+    urls.add(`${ORIGIN}${p}`);
   }
-  return [...out];
+  return [...urls];
 }
 
-function pickFirst(html, regex) {
-  const m = html.match(regex);
-  return m ? m[1].trim() : null;
+function walkForLinks(node, out, hueIndex) {
+  if (!node) return;
+  if (Array.isArray(node)) {
+    for (const item of node) walkForLinks(item, out, hueIndex);
+    return;
+  }
+  if (typeof node !== 'object') return;
+  // Look for colour-detail slugs or full URLs embedded in props.
+  for (const [key, value] of Object.entries(node)) {
+    if (typeof value === 'string') {
+      if (value.startsWith('/colour/')) {
+        out.add(`${ORIGIN}${value.replace(/\/$/, '')}`);
+      } else if (value.startsWith(`${ORIGIN}/colour/`)) {
+        out.add(value.replace(/\/$/, ''));
+      }
+    } else if (typeof value === 'object') {
+      walkForLinks(value, out, hueIndex);
+    }
+  }
 }
 
-function extractColour(html, url) {
-  // The colour name is typically the h1 or og:title.
-  const name =
-    pickFirst(html, /<h1[^>]*>([^<]+)<\/h1>/i) ||
-    pickFirst(html, /<meta property="og:title" content="([^"]+)"/i);
+function pickHex(c) {
+  // Possible field names in the JSON.
+  const raw =
+    c.hex ?? c.hexCode ?? c.colourHex ?? c.hexValue ?? (c.rgb ? rgbToHex(c.rgb) : null);
+  if (!raw) return null;
+  const norm = String(raw).trim().toLowerCase();
+  if (norm.startsWith('#')) return norm.length === 7 ? norm : null;
+  if (/^[0-9a-f]{6}$/.test(norm)) return `#${norm}`;
+  return null;
+}
 
-  // Hex code shows up in a swatch style attribute, e.g. style="background-color:#a6acb1"
-  const hex =
-    pickFirst(html, /background-color:\s*(#[0-9a-f]{6})/i) ||
-    pickFirst(html, /background:\s*(#[0-9a-f]{6})/i) ||
-    pickFirst(html, /"hex":\s*"(#[0-9a-f]{6})"/i);
+function rgbToHex(rgb) {
+  const r = Number(rgb.r ?? rgb.red ?? 0);
+  const g = Number(rgb.g ?? rgb.green ?? 0);
+  const b = Number(rgb.b ?? rgb.blue ?? 0);
+  if (![r, g, b].every((n) => Number.isFinite(n))) return null;
+  const h = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
 
-  // Atlas + chip codes — e.g. "SG6G2" and "GR21"
-  const atlasCode = pickFirst(html, /Atlas Code[:\s]*<[^>]*>\s*([A-Z0-9]+)/i) ||
-    pickFirst(html, /atlasCode[":]+\s*"?([A-Z0-9]+)"?/i);
-  const chipCode = pickFirst(html, /Chip Code[:\s]*<[^>]*>\s*([A-Z0-9]+)/i) ||
-    pickFirst(html, /chipCode[":]+\s*"?([A-Z0-9]+)"?/i);
+function pickName(c) {
+  const raw = c.name ?? c.colourName ?? c.title ?? null;
+  if (!raw) return null;
+  // Strip the " | Dulux" page-title suffix if it sneaks in.
+  return String(raw).replace(/\s*\|\s*Dulux\s*$/i, '').trim();
+}
 
-  // LRV (Light Reflectance Value) — useful for designer reads.
-  const lrv = pickFirst(html, /LRV[:\s]*<[^>]*>\s*([0-9.]+)/i);
+function pickAtlasCode(c) {
+  return c.atlasCode ?? c.atlas ?? c.code ?? null;
+}
 
-  // Swatch image — Contentful CDN url
-  const imageUrl =
-    pickFirst(html, /(https:\/\/images\.ctfassets\.net\/[^"\s)]+)/i) ||
-    pickFirst(html, /<meta property="og:image" content="([^"]+)"/i);
+function pickChipCode(c) {
+  return c.chipCode ?? c.chip ?? null;
+}
 
-  if (!name || !hex) return null;
+function pickLrv(c) {
+  const raw = c.lrv ?? c.lightReflectanceValue ?? null;
+  return raw != null && Number.isFinite(Number(raw)) ? Number(raw) : null;
+}
 
-  return {
-    name,
-    hex,
-    atlasCode,
-    chipCode,
-    lrv: lrv ? Number(lrv) : null,
-    imageUrl,
-    url,
-  };
+function pickImageUrl(c) {
+  // Try several shapes — Contentful often nests under `fields` or `file`.
+  const direct = c.image ?? c.swatchImage ?? c.swatch ?? c.imageUrl ?? null;
+  if (typeof direct === 'string') return normaliseContentful(direct);
+  if (direct && typeof direct === 'object') {
+    const fileUrl =
+      direct.url ??
+      direct.src ??
+      direct.fields?.file?.url ??
+      direct.file?.url ??
+      null;
+    if (typeof fileUrl === 'string') return normaliseContentful(fileUrl);
+  }
+  return null;
+}
+
+function normaliseContentful(u) {
+  if (!u) return null;
+  let url = u.trim();
+  if (url.startsWith('//')) url = `https:${url}`;
+  if (!url.startsWith('http')) return null;
+  // HTML-escaped ampersands break image downloads — un-escape.
+  return url.replace(/&amp;/g, '&');
 }
 
 function slugFromUrl(url) {
@@ -111,7 +196,6 @@ export async function scrapeDulux() {
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
 
-  // Harvest colour URLs from each hue index.
   const allColourUrls = new Set();
   for (const hueIndex of HUE_INDICES) {
     const indexUrl = `${ORIGIN}${hueIndex}`;
@@ -122,7 +206,7 @@ export async function scrapeDulux() {
     try {
       console.log(`[${RETAILER}] fetching ${hueIndex}`);
       const html = await fetchText(indexUrl);
-      const urls = collectColourUrls(html, hueIndex);
+      const urls = collectColourUrlsFromIndex(html, hueIndex);
       console.log(`[${RETAILER}]   ${urls.length} colours`);
       for (const u of urls) allColourUrls.add(u);
       await delay();
@@ -140,44 +224,54 @@ export async function scrapeDulux() {
     try {
       if (!(await isAllowed(url))) continue;
       const html = await fetchText(url);
-      const colour = extractColour(html, url);
+      const data = extractNextData(html);
+      if (!data) {
+        errors.push({ url, error: 'no __NEXT_DATA__ on page' });
+        continue;
+      }
+      const colour = findColourObject(data);
       if (!colour) {
-        errors.push({ url, error: 'could not parse name+hex from html' });
+        errors.push({ url, error: 'no colour object in __NEXT_DATA__' });
         continue;
       }
 
+      const name = pickName(colour);
+      const hex = pickHex(colour);
+      if (!name || !hex) {
+        errors.push({ url, error: `incomplete colour: name=${name} hex=${hex}` });
+        continue;
+      }
+      const atlasCode = pickAtlasCode(colour);
+      const chipCode = pickChipCode(colour);
+      const lrv = pickLrv(colour);
+      const imageUrl = pickImageUrl(colour);
+
       const slug = slugFromUrl(url);
       let hero = null;
-      if (colour.imageUrl) {
+      if (imageUrl) {
         try {
-          const dl = await downloadImage({ url: colour.imageUrl, retailerDir: outDir, slug, index: 0 });
+          const dl = await downloadImage({ url: imageUrl, retailerDir: outDir, slug, index: 0 });
           hero = dl.localPath;
         } catch (err) {
-          errors.push({ url: colour.imageUrl, error: String(err?.message ?? err), productUrl: url });
+          errors.push({ url: imageUrl, error: String(err?.message ?? err), productUrl: url });
         }
       }
 
       products.push({
         id: slug,
         retailer: RETAILER,
-        name: `${colour.name}${colour.atlasCode ? ` (${colour.atlasCode})` : ''}`,
+        name: atlasCode ? `${name} (${atlasCode})` : name,
         category: 'Paint',
         price: null,
         currency: 'AUD',
-        // Stash colour metadata in the dimensions slot until we add a real
-        // metadata jsonb column on products. Downstream consumers can pluck
-        // hex/lrv/codes from here.
-        dimensions: {
-          hex: colour.hex,
-          atlasCode: colour.atlasCode,
-          chipCode: colour.chipCode,
-          lrv: colour.lrv,
-        },
-        images: { hero, downloaded: hero != null, source: colour.imageUrl, all: hero ? [hero] : [] },
+        // Stash colour metadata in the dimensions slot until a real
+        // metadata jsonb column lands on products.
+        dimensions: { hex, atlasCode, chipCode, lrv },
+        images: { hero, downloaded: hero != null, source: imageUrl, all: hero ? [hero] : [] },
         product_url: url,
-        description: colour.atlasCode
-          ? `Dulux ${colour.name} — Atlas ${colour.atlasCode}${colour.chipCode ? `, Chip ${colour.chipCode}` : ''}${colour.lrv != null ? `, LRV ${colour.lrv}` : ''}`
-          : `Dulux ${colour.name}`,
+        description: atlasCode
+          ? `Dulux ${name} — Atlas ${atlasCode}${chipCode ? `, Chip ${chipCode}` : ''}${lrv != null ? `, LRV ${lrv}` : ''}`
+          : `Dulux ${name}`,
         scraped_at: new Date().toISOString(),
       });
       if ((i + 1) % 25 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);

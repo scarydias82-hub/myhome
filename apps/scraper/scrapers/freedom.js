@@ -1,10 +1,15 @@
-// Freedom Furniture — Angular SPA, sitemap of ~84k product URLs. JSON-LD
-// embedded in product pages but only after Angular hydrates, so Playwright
-// is required. Scope: mirrors + rugs + sofas (per product owner). The
-// product-id-only URL pattern (/product/12345) makes pre-filtering
-// impossible — we have to visit each product and inspect breadcrumbs to
-// know what category it's in. We limit total visits to keep the scrape
-// finite; downstream we cap per-category.
+// Freedom Furniture — Angular SPA. Category landing pages are SSR shell
+// only; product cards are injected client-side after hydration. The
+// previous version used a 1.2s scroll loop which finished before
+// hydration completed, so we got zero product URLs.
+//
+// Fix: longer total wait (up to 25s per category page), wait
+// explicitly for the product card class to appear, AND fall back to
+// intercepting the `api-prod.freedom.com.au` JSON responses that the
+// SPA fires during hydration. Whichever yields URLs first wins.
+//
+// Scope: mirrors + rugs + sofas (per product owner). Per-category cap
+// keeps the total visit count finite.
 
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -18,44 +23,101 @@ import { writeJson, retailerOutputDir } from '../utils/storage.js';
 const ORIGIN = 'https://www.freedom.com.au';
 const RETAILER = 'Freedom';
 const RETAILER_SLUG = 'freedom';
-const PER_CATEGORY_MAX = 30; // 30 sofas + 30 rugs + 30 mirrors = 90 products
+const PER_CATEGORY_MAX = 30;
 
-// Three category landing URLs we can visit to harvest product links.
 const CATEGORY_LANDINGS = [
   { url: `${ORIGIN}/sofas-and-armchairs/c/all-sofas`, category: 'Sofas' },
   { url: `${ORIGIN}/rugs/c/all-rugs`, category: 'Rugs' },
   { url: `${ORIGIN}/wall-art-mirrors-and-lighting/wall-decor-and-mirrors/c/mirrors`, category: 'Mirrors' },
 ];
 
+// Try several selectors — Freedom's Angular components don't expose a
+// stable class hierarchy, so we accept any `a` whose href matches the
+// product-id pattern, regardless of wrapper class.
+const PRODUCT_SELECTOR = 'a[href*="/product/"]';
+
 async function collectProductUrls(page, landingUrl) {
+  // Network interceptor — captures the SPA's API responses while we
+  // give the page time to hydrate. Often the product list comes back
+  // before any DOM is populated, so this is a useful fallback even when
+  // the DOM scrape works.
+  const apiProductUrls = new Set();
+  const onResponse = async (response) => {
+    const url = response.url();
+    if (!url.includes('api-prod.freedom.com.au')) return;
+    try {
+      const ct = response.headers()['content-type'] ?? '';
+      if (!ct.includes('json')) return;
+      const json = await response.json();
+      walkForFreedomProductIds(json, apiProductUrls);
+    } catch {
+      /* not JSON or error fetching — ignore */
+    }
+  };
+  page.on('response', onResponse);
+
   try {
     await page.goto(landingUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
   } catch {
+    page.off('response', onResponse);
     return [];
   }
-  // Wait for product grid to hydrate.
+
+  // Give the Angular bundle time to fetch + render product cards.
+  // networkidle never fires on this site (persistent analytics), so we
+  // wait explicitly for the selector AND swallow the timeout if it
+  // never appears — we still have the API interceptor as fallback.
   try {
-    await page.waitForSelector('a[href*="/product/"]', { timeout: 15000 });
+    await page.waitForSelector(PRODUCT_SELECTOR, { timeout: 20000 });
   } catch {
-    return [];
+    /* DOM hydration may have failed — rely on API interceptor */
   }
-  // Scroll to load more.
-  for (let i = 0; i < 8; i++) {
+
+  // Scroll to ensure lazy-loaded cards mount.
+  for (let i = 0; i < 12; i++) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(900);
   }
-  return page.evaluate(() => {
+
+  const domUrls = await page.evaluate((sel) => {
     const seen = new Set();
-    for (const a of document.querySelectorAll('a[href*="/product/"]')) {
+    for (const a of document.querySelectorAll(sel)) {
       const href = a.href;
       if (!href) continue;
-      // Strip query/hash and stop after the numeric product id.
       const m = href.match(/\/product\/(\d+)/);
       if (!m) continue;
       seen.add(`https://www.freedom.com.au/product/${m[1]}`);
     }
     return [...seen];
-  });
+  }, PRODUCT_SELECTOR);
+
+  page.off('response', onResponse);
+
+  // Merge DOM + API results, dedupe.
+  const all = new Set([...domUrls, ...apiProductUrls]);
+  return [...all];
+}
+
+// Walk a JSON tree and collect any Freedom product-id-shaped strings.
+// The SPA's API responses bury product ids under varying keys
+// (results.products, items, etc.) — pattern-matching the id shape is
+// more robust than guessing the schema.
+function walkForFreedomProductIds(node, out) {
+  if (!node) return;
+  if (Array.isArray(node)) {
+    for (const v of node) walkForFreedomProductIds(v, out);
+    return;
+  }
+  if (typeof node !== 'object') return;
+  for (const [key, value] of Object.entries(node)) {
+    if (typeof value === 'number' && /^id$|productId|product_id/i.test(key) && value > 1_000_000) {
+      out.add(`https://www.freedom.com.au/product/${value}`);
+    } else if (typeof value === 'string' && /^\d{7,9}$/.test(value) && /id$|productId|product_id/i.test(key)) {
+      out.add(`https://www.freedom.com.au/product/${value}`);
+    } else if (typeof value === 'object') {
+      walkForFreedomProductIds(value, out);
+    }
+  }
 }
 
 function parsePriceString(s) {
@@ -68,34 +130,28 @@ function slugFromUrl(url) {
   return url.replace(/\/$/, '').split('/').pop().slice(0, 80);
 }
 
-async function extractProduct(page, url, category) {
+async function extractProduct(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  // Product pages are server-rendered with JSON-LD embedded — wait for
+  // h1 to confirm hydration, then read.
   try {
     await page.waitForSelector('h1', { timeout: 12000 });
   } catch {
-    /* fall through, may still have JSON-LD */
+    /* fall through */
   }
   await page.waitForTimeout(1500);
   return page.evaluate(() => {
     const text = (s) => document.querySelector(s)?.innerText?.trim() ?? null;
     const meta = (p) => document.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content ?? null;
-    // JSON-LD product schema is the most reliable price source on this site.
     const ldNodes = [...document.querySelectorAll('script[type="application/ld+json"]')]
       .map((n) => {
-        try {
-          return JSON.parse(n.innerText);
-        } catch {
-          return null;
-        }
+        try { return JSON.parse(n.innerText); } catch { return null; }
       })
       .filter(Boolean);
     const flat = [];
     const walk = (n) => {
       if (Array.isArray(n)) n.forEach(walk);
-      else if (n && typeof n === 'object') {
-        flat.push(n);
-        Object.values(n).forEach(walk);
-      }
+      else if (n && typeof n === 'object') { flat.push(n); Object.values(n).forEach(walk); }
     };
     ldNodes.forEach(walk);
     const productLd = flat.find((n) => n['@type'] === 'Product' || (Array.isArray(n['@type']) && n['@type'].includes('Product')));
@@ -129,7 +185,14 @@ export async function scrapeFreedom() {
 
   const browser = await chromium.launch();
   try {
-    const ctx = await browser.newContext({ userAgent: USER_AGENT, viewport: { width: 1280, height: 1600 } });
+    const ctx = await browser.newContext({
+      userAgent: USER_AGENT,
+      viewport: { width: 1280, height: 1600 },
+      extraHTTPHeaders: { 'accept-language': 'en-AU,en;q=0.9' },
+    });
+    // Block heavy assets we don't need (we still get image URLs from
+    // the DOM / API responses; we just don't fetch the binaries during
+    // category browsing).
     await ctx.route('**/*', (route) => {
       const t = route.request().resourceType();
       if (t === 'image' || t === 'media' || t === 'font') return route.abort();
@@ -139,8 +202,9 @@ export async function scrapeFreedom() {
 
     const all = [];
     for (const { url, category } of CATEGORY_LANDINGS) {
+      console.log(`[${RETAILER}] ${category}: loading ${url}`);
       const urls = await collectProductUrls(page, url);
-      console.log(`[${RETAILER}] ${category}: ${urls.length} urls`);
+      console.log(`[${RETAILER}] ${category}: ${urls.length} product urls`);
       const slice = urls.slice(0, PER_CATEGORY_MAX);
       for (const u of slice) all.push({ url: u, category });
       await delay();
@@ -151,7 +215,7 @@ export async function scrapeFreedom() {
       const { url, category } = all[i];
       try {
         if (!(await isAllowed(url))) continue;
-        const raw = await extractProduct(page, url, category);
+        const raw = await extractProduct(page, url);
         const slug = slugFromUrl(url);
         const heroSrc = raw.heroImg ?? raw.ogImage;
         const price = raw.ldPrice ? Number(raw.ldPrice) : parsePriceString(raw.priceTexts[0]);

@@ -16,7 +16,11 @@ import { scrapeBeaconLighting } from './beaconLighting.js';
 import { scrapeFreedom } from './freedom.js';
 import { scrapeDulux } from './dulux.js';
 import { scrapeWoodcut } from './woodcut.js';
-import { scrapeCarpetCall } from './carpetCall.js';
+// Carpet Call is intentionally not imported in the default batch — the
+// site returns 403 to every automated request (Cloudflare/WAF-level bot
+// detection that Playwright can't bypass without residential proxies or
+// a partner API). Run it via `pnpm scrape:carpetcall` if you've sorted
+// access; otherwise the standalone file still exists for future revival.
 
 const SCRAPERS = [
   { name: 'Poliform', run: scrapePoliform },
@@ -27,7 +31,6 @@ const SCRAPERS = [
   { name: 'Freedom', run: scrapeFreedom },
   { name: 'Dulux', run: scrapeDulux },
   { name: 'Woodcut', run: scrapeWoodcut },
-  { name: 'Carpet Call', run: scrapeCarpetCall },
 ];
 
 const started = Date.now();

@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `95ad388` (will
+**Last verified:** 2026-05-19 · most recent material commit: `bd21482` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,17 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Scraper triage from first parallel batch run. Koala TLD
+  fix (`koala.com` → `koala.com.au`). Dulux rewritten to parse
+  `__NEXT_DATA__` JSON instead of regex (the previous version was
+  matching the page background CSS so every colour came out as
+  `#F7F8F4` — now pulls structured hex / Atlas code / Chip code / LRV
+  per swatch). Woodcut rewritten to read sitemap + `/wood/<slug>/`
+  URL pattern (was looking for `/wood-finishes/<slug>/` which doesn't
+  exist). Freedom enhanced with longer hydration wait + API-response
+  interception fallback for the Angular SPA. Carpet Call removed from
+  default orchestrator (403 bot detection — needs partner API,
+  memoed as task #86).
 - `2026-05-19` — Render revision history shipped (task #85). New
   `render_revisions` table + `renders.active_revision_id` pointer.
   Every original render + every staging is now a versioned revision;

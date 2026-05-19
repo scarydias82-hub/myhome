@@ -11,7 +11,7 @@ import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
 
-const ORIGIN = 'https://koala.com';
+const ORIGIN = 'https://koala.com.au';
 const RETAILER = 'Koala';
 const RETAILER_SLUG = 'koala';
 const TARGET_MAX = 80;
