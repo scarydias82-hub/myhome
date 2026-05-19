@@ -77,9 +77,17 @@ const errors = [];
 // scraper, we want a belt-and-braces guard at the ingest step so junk
 // can't reach the picking list.
 function isJunkRow(row) {
-  if (!row.image_url || !row.name) return true;
+  if (!row.name) return true;
   if (/404|not\s*found|page\s*not\s*available/i.test(row.name)) return true;
-  if (/logo\.svg|product_label|brand|banner/i.test(row.image_url)) return true;
+  // Paint products (Dulux) are legitimately image-less — the swatch
+  // hex in dimensions.hex IS the product. The wall-paint picking-list
+  // builder special-cases them via lib/matching.ts buildWallPaintItem
+  // and renders a coloured swatch in the UI instead of an img tag.
+  // Without this exception, the first ingest dropped 186 of 187 Dulux
+  // records as junk and broke the wall-paint matcher entirely.
+  const hasHex = row.dimensions && typeof row.dimensions === 'object' && row.dimensions.hex;
+  if (!row.image_url && !hasHex) return true;
+  if (row.image_url && /logo\.svg|product_label|brand|banner/i.test(row.image_url)) return true;
   return false;
 }
 
