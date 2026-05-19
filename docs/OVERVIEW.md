@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `a9182a0` (will
+**Last verified:** 2026-05-19 · most recent material commit: `5c6e3ce` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,15 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — SKU fidelity fix shipped (task #73). Staging no longer
+  goes through Flux Pro Fill with a text description (which invented a
+  generic version of whatever you picked). New pipeline: background-
+  remove the product image via `fal-ai/birefnet/v2`, composite the
+  actual pixels onto the room photo with sharp at the picking-list
+  bbox, add a soft drop shadow for grounding. Multi-stage runs all the
+  birefnet calls in parallel and z-orders by bbox area so larger items
+  composite first. The selected SKU is now exactly what lands in the
+  scene.
 - `2026-05-19` — Aggression dial pushed harder. The first test showed
   Stage 1 settings still left walls + flooring + curtains untouched —
   canny LoRA at 0.85 was locking the surface textures even with
@@ -648,11 +657,11 @@ task IDs; reference them when briefing Claude Code.
 - **#26, #27 — Industry curation flow + curation-rich render.**
 
 ### 6.5 Render fidelity
-- **#73 — SKU fidelity via reference-image inpainting.** Flux Pro Fill
-  takes prompt + mask but **no reference image** — that's why a marble
-  coffee table can render as a plain wood one. Needs IP-Adapter,
-  multi-image controlnet, or a model variant that accepts a conditioning
-  image of the selected SKU.
+- **#73 — SKU fidelity. SHIPPED.** Replaced Flux Pro Fill (no
+  reference image possible) with a composite pipeline:
+  background-remove → resize → composite → drop shadow. The actual
+  SKU pixels land in the scene. Trade-off: synthesised shadow vs
+  Flux-inferred shadow. Worth it for SKU fidelity.
 
 ### 6.6 AR / discovery
 - **#56 — Real AR-card compat scores.** Today's score is a placeholder.
@@ -738,6 +747,10 @@ Stage 1 is live; the rest is sequenced.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
+- SKU fidelity (#73) — staging now composites the actual product
+  pixels into the room rather than asking Flux to invent something
+  matching a text description. Birefnet cutout → sharp composite →
+  drop shadow.
 - Render revision history (#85) — every staging now persists as a
   versioned revision linked to the parent render. Render page reads
   the active revision; users can revert/roll forward from a strip
