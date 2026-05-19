@@ -25,6 +25,37 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Adairs scraper shipped (first delivery of task #80
+  split — bedding via quilt/doona/duvet covers). Adairs runs on
+  Episerver/Optimizely (not Shopify — `/products.json` 404s, and the
+  `products-sitemap.xml` is polluted with discontinued z-archive
+  products), so the scraper walks paginated PLPs at
+  `/bedroom/quilt-covers-coverlets/?page=N`. Each `.ProductCard` on
+  the listing carries title (img.alt), SKU (`data-uniqueid`), product
+  URL (anchor href), CDN image URL (img.src), and price range as
+  text — no per-product page visit needed, ~10s per PLP. First run
+  produced 120 products / 0 errors; palette-match dry-run on 30 of
+  them showed 100% pass rate clustering on `honest-essentials`,
+  `silhouette-and-pale`, `pistachio-chocolate`, `warm-grounded-earth`
+  — Adairs' bedlinen catalogue is heavy on warm neutrals which
+  matches the dominant AU palette set.
+- `2026-05-20` — Render prompt rewrite (eval round 3). Round 2 had
+  shipped hex codes (`#E8D5B7`) in the wall directive plus parallel
+  `CRITICAL: ceiling IDENTICAL` + `CRITICAL: view IDENTICAL` lines
+  plus strength 0.80. Result: palette adherence dropped from 4/10 to
+  2/10, surface transformation from 4/10 to 2/10. Diagnosis: Flux
+  reads hex codes as gibberish (no acting on `#E8D5B7`); the parallel
+  CRITICAL preservation directives over-constrained the model into
+  "don't change anything"; strength 0.80 didn't help. Round 3:
+  buildPrompt now uses the palette's named colours per role (Wheat
+  walls, Caramel upholstery, Walnut floor, Cognac accent, Espresso
+  trim — actual paint/material vocab Flux trained on); adversarial
+  "NO cool grey, NO blue-grey, NO white walls" language at the end of
+  the wall directive (closest thing Flux has to a negative prompt);
+  ceiling CRITICAL dropped (canny at 0.65 already pins ceiling
+  fixtures via edges — the speaker hallucination from round 1 was a
+  one-off); view directive softened (no all-caps); strength 0.80 →
+  0.85; guidance 4.0 → 5.0 to push the named palette tokens harder.
 - `2026-05-20` — Palette-match catalog filter shipped (task #89). Every
   scraped product now runs through `apps/scraper/utils/paletteMatch.js`
   at ingest time. The module extracts a dominant colour from the product

@@ -134,7 +134,59 @@ export type PromptMode = 'subtle' | 'bold';
 // the full lib/palettes module just for a type alias.
 export interface PromptPalette {
   name?: string;
+  vibe?: string;
   colors?: Array<{ hex: string; role?: string | null; name?: string | null }>;
+}
+
+// Map palette name → a temperature descriptor Flux understands as a
+// single token anchor ("warm earth-toned", "cool airy"). Flux pays
+// heavy attention to these umbrella adjectives early in the prompt —
+// they shape the sampler's colour distribution more than a list of
+// hex codes or palette names ever will.
+function temperatureDescriptor(palette: PromptPalette): string {
+  const name = (palette.name ?? '').toLowerCase();
+  if (/warm|earth|mahogany|terra|cognac|clay|umber|tomato|red/.test(name)) return 'warm earth-toned';
+  if (/teal|blue|misty|coastal|mint|sea/.test(name)) return 'cool airy coastal';
+  if (/green|moss|ochre|pistachio|sage/.test(name)) return 'warm botanical';
+  return 'warm neutral'; // honest-essentials, silhouette-and-pale, etc.
+}
+
+// Concrete wall directive built from the palette's named wall colour.
+// Hex codes are gibberish tokens to Flux — the model sees "#E8D5B7" as
+// random characters and ignores it. "Wheat tone walls" is a real
+// colour vocab Flux trained on. Adversarial language at the end is
+// the closest thing to a negative prompt we have (Flux's classic CFG
+// doesn't expose negatives) — Claude evaluator explicitly asked for
+// it after surface-transformation scored 2/10 when this was missing.
+function describeWall(palette: PromptPalette): string | null {
+  const wall = palette.colors?.find((c) => c.role === 'wall');
+  const wallName = wall?.name?.toLowerCase();
+  if (!wallName) return null;
+  return (
+    `walls painted in ${wallName} tones — fully repaint EVERY wall surface ` +
+    `including any panelling, board-and-batten, picture rails or accent walls. ` +
+    `The walls MUST take on the ${wallName} tone. NO cool grey walls. ` +
+    `NO blue-grey. NO white walls.`
+  );
+}
+
+// Role-aware furniture / finish directive. Uses named colours like
+// "caramel upholstery, walnut timber floor, cognac leather accents" —
+// concrete vocab Flux can paint with, not opaque hex strings.
+function describeRoles(palette: PromptPalette): string | null {
+  if (!palette.colors || palette.colors.length === 0) return null;
+  const role = (r: string) => palette.colors!.find((c) => c.role === r);
+  const parts: string[] = [];
+  const sofa = role('sofa');
+  const floor = role('floor');
+  const accent = role('accent');
+  const trim = role('trim');
+  if (sofa?.name) parts.push(`${sofa.name.toLowerCase()} upholstery`);
+  if (floor?.name) parts.push(`${floor.name.toLowerCase()} timber flooring`);
+  if (accent?.name) parts.push(`${accent.name.toLowerCase()} leather and metal accents`);
+  if (trim?.name) parts.push(`${trim.name.toLowerCase()} trim and hardware`);
+  if (parts.length === 0) return null;
+  return parts.join(', ') + ' — apply across furniture, bedding, art and decor';
 }
 
 export function buildPrompt(
@@ -150,18 +202,19 @@ export function buildPrompt(
   // was told to use Contemporary AU's neutral palette anyway. The
   // walls then stayed cool grey. This was the single biggest reason
   // surface transformation scored 4/10 in the first eval run.
-  const effectiveHexes: string[] =
-    palette?.colors && palette.colors.length >= 3
-      ? palette.colors.map((c) => c.hex)
-      : style.palette;
   const paletteName = palette?.name ?? style.name;
-  const wallTone = effectiveHexes[0];
-  const accentTone = effectiveHexes[effectiveHexes.length - 1];
+  const promptPalette: PromptPalette = palette ?? {
+    name: style.name,
+    colors: style.palette.map((hex) => ({ hex, role: null, name: null })),
+  };
 
-  // The architecture-preservation tokens at the end matter as much as the
-  // style descriptor. Flux respects positive-language directives much better
-  // than negative ones (it doesn't have classic negative prompts), so we ask
-  // for what we want rather than listing what to avoid.
+  // Architecture-preservation tokens at the end matter as much as the
+  // style descriptor. Flux respects positive-language directives much
+  // better than negative ones (it doesn't have classic negative
+  // prompts), so we ask for what we want rather than listing what to
+  // avoid — EXCEPT for the wall directive where "no cool grey, no
+  // white" adversarial language is the only way to break Flux's
+  // default cool-neutral bias on bedroom interiors.
   const base = [
     style.descriptor,
     facts?.room_type ? `${factsRoomType(facts.room_type)}, fully restyled` : null,
@@ -171,27 +224,19 @@ export function buildPrompt(
     'tack-sharp detail, accurate scale',
   ].filter(Boolean) as string[];
 
-  // STRONGEST wall directive — placed near the front and named with the
-  // actual palette hex so Flux can't slide back to default neutral. The
-  // previous "palette across walls" line was too weak; Claude evaluator
-  // explicitly called out walls staying cool-grey despite a warm palette
-  // being selected.
-  if (wallTone) {
+  // PALETTE DIRECTIVES — front-loaded, named, role-aware. Flux pays
+  // most attention to early tokens. Naming concrete colour words
+  // (Wheat, Caramel, Walnut) instead of hex codes is what moves the
+  // sampler — the first iteration shipped hex codes and surface
+  // transformation collapsed to 2/10 because Flux can't read hex.
+  if (palette) {
     base.push(
-      `walls painted in ${wallTone} (${paletteName} dominant tone) — fully repaint EVERY wall including any panelling, board-and-batten, picture rails, accent walls. Walls must NOT remain white or off-white if the palette tone is not white`,
+      `COLOUR PALETTE: ${paletteName} — ${temperatureDescriptor(promptPalette)}`,
     );
-  }
-
-  // Full palette directive — secondary cue listing the rest of the
-  // colour story so Flux applies it across fabric/decor/accents.
-  if (effectiveHexes.length >= 3) {
-    const palette = effectiveHexes.slice(0, 5).join(', ');
-    base.push(
-      `palette ${palette} (${paletteName}) — apply across soft furnishings, decor, accent surfaces`,
-    );
-  }
-  if (accentTone && accentTone !== wallTone) {
-    base.push(`accent tone ${accentTone} for cushions, art, decorative objects`);
+    const wallLine = describeWall(promptPalette);
+    if (wallLine) base.push(wallLine);
+    const rolesLine = describeRoles(promptPalette);
+    if (rolesLine) base.push(rolesLine);
   }
 
   if (facts) {
@@ -228,30 +273,30 @@ export function buildPrompt(
     if (featured) base.push(`featuring ${featured}`);
   }
 
-  // Room-bones lock. Geometry never moves. Critical directives go EARLY
-  // and use imperative phrasing — Flux dilutes long directives that
-  // come after many "soft" tokens, so we keep these terse.
+  // Room-bones lock. Geometry never moves.
   base.push(
     'identical room geometry to reference: same walls, same window openings, same door openings, same ceiling height, same camera angle',
   );
-  // Anti-hallucination directives. Even at canny 0.65 + strength 0.80,
-  // featureless areas (sky through glass, smooth ceilings) drift unless
-  // we lock them explicitly. The first eval flagged ceiling vent +
-  // exterior view drift as the top hallucinations.
+  // Anti-hallucination — view only. The second eval (3.3/10) showed
+  // that adding a parallel "CRITICAL: ceiling IDENTICAL" directive
+  // over-constrained Flux: the model generalised "don't change X" to
+  // "don't change much" and surface transformation collapsed from 4
+  // to 2. Canny ControlNet at 0.65 already pins ceiling fixtures via
+  // edge detection — we don't need a redundant prompt directive
+  // fighting the palette transformation. The ceiling speaker
+  // hallucination from run 1 was a one-off (run 2 ceiling looked
+  // fine without the CRITICAL line). View drift is the persistent
+  // failure mode — keep that directive but softened (no all-caps
+  // CRITICAL — same intent, less preservation-anchor pressure).
   base.push(
-    'CRITICAL: exterior view through every window stays IDENTICAL to reference — same sky, weather, time of day, vegetation, buildings, horizon, elevation. Do not invent landscapes, lawns, fences, or new outdoor scenes.',
-  );
-  base.push(
-    'CRITICAL: ceiling stays IDENTICAL to reference — no added vents, fans, downlights, sprinklers, speakers, skylights, beams. Ceiling height stays the same — do not compress or alter ceiling proportions.',
+    'exterior view through windows stays as in reference — same sky, weather, time of day, vegetation, buildings, horizon. Do not invent new landscapes, lawns or outdoor scenes.',
   );
 
   if (mode === 'bold') {
-    // Aggressive surface transformation. Each line below is a separate
-    // directive that pushes Flux to actually USE the chosen palette across
-    // every visible surface, not just retint upholstery.
-    base.push(
-      'apply palette tone to wall surfaces — soft tonal wash in lighter palette colours, optional accent wall in a deeper palette tone',
-    );
+    // Aggressive surface transformation. The wall directive itself
+    // lives in the palette block above (with named colours + the
+    // adversarial "no grey / no white" anti-cool language). This
+    // block handles the other surfaces.
     // Decorative wall features (panelling, wainscoting, mouldings,
     // brick) need explicit protection — Flux at strength 0.87 with
     // canny at 0.55 will flatten them into plain paint otherwise. We

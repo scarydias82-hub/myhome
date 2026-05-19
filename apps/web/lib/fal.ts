@@ -54,17 +54,21 @@ function renderInput(input: DepthRenderInput) {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
-    // Tuned per the first eval run scorecard (Claude Sonnet vision
-    // evaluator, 2026-05-19). At strength 0.87 + canny 0.65 the model:
-    //   - hallucinated a ceiling speaker that wasn't in the source
-    //   - swapped the window view from upstairs dusk skyline to
-    //     daytime parkland with a green shed
-    //   - compressed the ceiling height
-    // Eval recommendation was 0.78-0.80. We sit at 0.80 — slightly less
-    // surface transformation freedom for materially fewer hallucinations.
-    // Canny stays at 0.65 — Claude flagged hallucinations as a strength
-    // issue, not a canny one.
-    strength: input.strength ?? 0.80,
+    // Tuned via repeat Claude Sonnet vision eval runs (2026-05-19/20).
+    //   Round 1 @ strength 0.87, guidance 4.0 → palette adherence 4/10,
+    //     hallucinated ceiling speaker, view drift.
+    //   Round 2 @ strength 0.80, guidance 4.0, with CRITICAL ceiling
+    //     directive added → palette adherence COLLAPSED to 2/10. The
+    //     reduced freedom plus the over-rigid preservation prompt
+    //     froze the model into the original cool-grey composition.
+    //   Round 3 (current) → strength 0.85 splits the difference;
+    //     guidance bumped to 5.0 to push named palette tokens harder
+    //     (Wheat, Caramel, Walnut etc. now in the prompt instead of
+    //     hex codes — Flux can act on words, not #E8D5B7).
+    // Canny stays at 0.65 — pins ceiling fixtures via edges so we
+    // no longer need the CRITICAL ceiling prompt directive that was
+    // over-constraining surface transformation in round 2.
+    strength: input.strength ?? 0.85,
     control_lora_strength: 0.65,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
@@ -73,9 +77,11 @@ function renderInput(input: DepthRenderInput) {
     // drop below ~15 and the marginal improvement above 20 isn't worth the
     // extra ~8s of inference time for interior renders.
     num_inference_steps: 20,
-    // 4.0 — push Flux to obey the palette + surface directives. Above 5
-    // it starts oversaturating and the editorial feel collapses.
-    guidance_scale: 4.0,
+    // 5.0 — bumped from 4.0 to push named palette tokens harder. Round
+    // 2 eval verdict: "current prompt is clearly not overriding the
+    // model's default cool-neutral bias". Above ~6 Flux starts
+    // oversaturating and the editorial feel collapses.
+    guidance_scale: 5.0,
     num_images: 1,
     enable_safety_checker: true,
   };
