@@ -54,20 +54,17 @@ function renderInput(input: DepthRenderInput) {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
-    // Aggressive default — Flux is encouraged to repaint walls, swap
-    // flooring, drape windows, add statement lighting. The two knobs:
-    //   - strength (img2img): how much Flux can deviate from the init
-    //     image. 0.87 is firm but still recognisable; 0.90+ starts
-    //     hallucinating extra windows.
-    //   - control_lora_strength (canny): how strictly the canny LoRA
-    //     enforces existing edges. 0.85 locked surface textures too
-    //     hard (no repaint of walls or floors). 0.55 was too loose —
-    //     window content drifted (upstairs view became ground-floor
-    //     with a fence) and Flux invented ceiling vents that weren't
-    //     in the source. 0.65 anchors architectural detail (ceiling,
-    //     window frames, fixtures) while still letting Flux repaint
-    //     wall surfaces and flooring freely.
-    strength: input.strength ?? 0.87,
+    // Tuned per the first eval run scorecard (Claude Sonnet vision
+    // evaluator, 2026-05-19). At strength 0.87 + canny 0.65 the model:
+    //   - hallucinated a ceiling speaker that wasn't in the source
+    //   - swapped the window view from upstairs dusk skyline to
+    //     daytime parkland with a green shed
+    //   - compressed the ceiling height
+    // Eval recommendation was 0.78-0.80. We sit at 0.80 — slightly less
+    // surface transformation freedom for materially fewer hallucinations.
+    // Canny stays at 0.65 — Claude flagged hallucinations as a strength
+    // issue, not a canny one.
+    strength: input.strength ?? 0.80,
     control_lora_strength: 0.65,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }

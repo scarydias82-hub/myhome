@@ -200,6 +200,7 @@ export async function POST(request: NextRequest) {
       style,
       room.analysis as RoomFacts | null,
       heroProducts.length > 0 ? heroProducts : null,
+      palette,
     );
     // Read the source photo's dimensions so Flux outputs at the same
     // aspect — portrait stays portrait, landscape stays landscape.

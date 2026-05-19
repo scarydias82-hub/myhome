@@ -130,12 +130,34 @@ export interface HeroProductDescriptor {
 //     emotional attachment — the user sees their room as a *new* room.
 export type PromptMode = 'subtle' | 'bold';
 
+// Minimal palette shape we accept from /api/render. Avoids importing
+// the full lib/palettes module just for a type alias.
+export interface PromptPalette {
+  name?: string;
+  colors?: Array<{ hex: string; role?: string | null; name?: string | null }>;
+}
+
 export function buildPrompt(
   style: HardcodedStyle,
   facts?: RoomFacts | null,
   heroProducts?: HeroProductDescriptor[] | null,
+  palette?: PromptPalette | null,
   mode: PromptMode = 'bold',
 ): string {
+  // Use the USER'S selected palette if one was provided. Without this,
+  // buildPrompt was only seeing the style's default palette — so when a
+  // user picked "Warm Grounded Earth" on a Contemporary AU base, Flux
+  // was told to use Contemporary AU's neutral palette anyway. The
+  // walls then stayed cool grey. This was the single biggest reason
+  // surface transformation scored 4/10 in the first eval run.
+  const effectiveHexes: string[] =
+    palette?.colors && palette.colors.length >= 3
+      ? palette.colors.map((c) => c.hex)
+      : style.palette;
+  const paletteName = palette?.name ?? style.name;
+  const wallTone = effectiveHexes[0];
+  const accentTone = effectiveHexes[effectiveHexes.length - 1];
+
   // The architecture-preservation tokens at the end matter as much as the
   // style descriptor. Flux respects positive-language directives much better
   // than negative ones (it doesn't have classic negative prompts), so we ask
@@ -149,15 +171,27 @@ export function buildPrompt(
     'tack-sharp detail, accurate scale',
   ].filter(Boolean) as string[];
 
-  // Explicit palette directive — name the actual hex codes so Flux applies
-  // them across walls, fabric, decor instead of approximating from the style
-  // descriptor alone. This is what makes the "Sandstone 2026" palette
-  // actually show up *as* sandstone in the final render.
-  if (style.palette && style.palette.length >= 3) {
-    const palette = style.palette.slice(0, 5).join(', ');
+  // STRONGEST wall directive — placed near the front and named with the
+  // actual palette hex so Flux can't slide back to default neutral. The
+  // previous "palette across walls" line was too weak; Claude evaluator
+  // explicitly called out walls staying cool-grey despite a warm palette
+  // being selected.
+  if (wallTone) {
     base.push(
-      `palette ${palette} — apply across walls, soft furnishings, decor, accent surfaces`,
+      `walls painted in ${wallTone} (${paletteName} dominant tone) — fully repaint EVERY wall including any panelling, board-and-batten, picture rails, accent walls. Walls must NOT remain white or off-white if the palette tone is not white`,
     );
+  }
+
+  // Full palette directive — secondary cue listing the rest of the
+  // colour story so Flux applies it across fabric/decor/accents.
+  if (effectiveHexes.length >= 3) {
+    const palette = effectiveHexes.slice(0, 5).join(', ');
+    base.push(
+      `palette ${palette} (${paletteName}) — apply across soft furnishings, decor, accent surfaces`,
+    );
+  }
+  if (accentTone && accentTone !== wallTone) {
+    base.push(`accent tone ${accentTone} for cushions, art, decorative objects`);
   }
 
   if (facts) {
@@ -194,20 +228,21 @@ export function buildPrompt(
     if (featured) base.push(`featuring ${featured}`);
   }
 
-  // Room-bones lock. Same across both modes — geometry never moves.
+  // Room-bones lock. Geometry never moves. Critical directives go EARLY
+  // and use imperative phrasing — Flux dilutes long directives that
+  // come after many "soft" tokens, so we keep these terse.
   base.push(
-    'preserve room geometry exactly: same wall positions, same window openings, same door openings, same ceiling height',
+    'identical room geometry to reference: same walls, same window openings, same door openings, same ceiling height, same camera angle',
   );
-  base.push('same camera angle and room proportions as reference photo');
-  // Anti-hallucination directives. Canny conditioning is loose enough
-  // for surface repaints; without these, Flux fills empty regions with
-  // "expected" features (a vent in the ceiling, a fence outside a
-  // first-floor window). Be explicit about what stays.
+  // Anti-hallucination directives. Even at canny 0.65 + strength 0.80,
+  // featureless areas (sky through glass, smooth ceilings) drift unless
+  // we lock them explicitly. The first eval flagged ceiling vent +
+  // exterior view drift as the top hallucinations.
   base.push(
-    'preserve the view through every window exactly — same horizon level, same sky, same vegetation, same neighbouring structures, same elevation, same distance to horizon as the reference photo. If the room is upstairs the view stays upstairs.',
+    'CRITICAL: exterior view through every window stays IDENTICAL to reference — same sky, weather, time of day, vegetation, buildings, horizon, elevation. Do not invent landscapes, lawns, fences, or new outdoor scenes.',
   );
   base.push(
-    'preserve the ceiling exactly as it appears in the reference — same surface, same colour, no added ceiling vents, fans, fixtures, downlights, fire alarms, sprinklers or skylights that are not already there',
+    'CRITICAL: ceiling stays IDENTICAL to reference — no added vents, fans, downlights, sprinklers, speakers, skylights, beams. Ceiling height stays the same — do not compress or alter ceiling proportions.',
   );
 
   if (mode === 'bold') {

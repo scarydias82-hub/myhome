@@ -110,8 +110,18 @@ export async function evaluateRender(input: EvaluateInput): Promise<Scorecard> {
     );
   }
 
+  // Claude sometimes returns scores as nested {score, notes} objects
+  // and sometimes as bare numbers. Handle both — fall through to a
+  // sibling `<key>Notes` field if the model put scores and notes in
+  // separate keys.
   const toBlock = (k: string): ScoreBlock => {
     const v = parsed[k];
+    if (typeof v === 'number') {
+      const notesKey = `${k}Notes`;
+      const sibling = parsed[notesKey];
+      const notes = typeof sibling === 'string' ? sibling : '';
+      return { score: v, notes };
+    }
     if (v && typeof v === 'object') {
       const obj = v as { score?: unknown; notes?: unknown };
       const score = typeof obj.score === 'number' ? obj.score : 5;
