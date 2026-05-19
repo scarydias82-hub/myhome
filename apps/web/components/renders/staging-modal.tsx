@@ -5,12 +5,14 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
+import { ShortlistButton } from '@/components/projects/shortlist-button';
 
 interface StagingModalProps {
   open: boolean;
   onClose: () => void;
   renderId: string;
   itemIndex: number;
+  projectId?: string | null;
   product: {
     productId: string;
     name: string;
@@ -21,10 +23,18 @@ interface StagingModalProps {
   };
 }
 
-export function StagingModal({ open, onClose, renderId, itemIndex, product }: StagingModalProps) {
+export function StagingModal({
+  open,
+  onClose,
+  renderId,
+  itemIndex,
+  projectId,
+  product,
+}: StagingModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [stagedImageId, setStagedImageId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -39,10 +49,14 @@ export function StagingModal({ open, onClose, renderId, itemIndex, product }: St
       body: JSON.stringify({ renderId, itemIndex, productId: product.productId }),
     })
       .then((res) => res.json())
-      .then((json: { imageUrl?: string; error?: string }) => {
+      .then((json: { imageUrl?: string; stagedImageId?: string; error?: string }) => {
         if (cancelled) return;
-        if (json.imageUrl) setResult(json.imageUrl);
-        else setError(json.error ?? 'Staging failed. Try again.');
+        if (json.imageUrl) {
+          setResult(json.imageUrl);
+          setStagedImageId(json.stagedImageId ?? null);
+        } else {
+          setError(json.error ?? 'Staging failed. Try again.');
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -118,18 +132,28 @@ export function StagingModal({ open, onClose, renderId, itemIndex, product }: St
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink/[0.06] p-5">
-          <p className="max-w-md text-[13px] text-ink-soft">
+          <p className="max-w-sm text-[13px] text-ink-soft">
             AI composite. Final fit, scale and finish may vary — confirm with retailer dimensions
             before buying.
           </p>
-          <a
-            href={buyHref}
-            target="_blank"
-            rel="noopener noreferrer sponsored"
-            className="rounded-pill bg-ink px-5 py-2 font-mono text-meta uppercase tracking-eyebrow text-paper hover:bg-ink-soft"
-          >
-            View at {product.retailer} ↗
-          </a>
+          <div className="flex flex-wrap items-center gap-3">
+            {stagedImageId ? (
+              <ShortlistButton
+                projectId={projectId ?? null}
+                kind="staged"
+                sourceId={stagedImageId}
+                label="Add to review"
+              />
+            ) : null}
+            <a
+              href={buyHref}
+              target="_blank"
+              rel="noopener noreferrer sponsored"
+              className="rounded-pill bg-ink px-5 py-2 font-mono text-meta uppercase tracking-eyebrow text-paper hover:bg-ink-soft"
+            >
+              View at {product.retailer} ↗
+            </a>
+          </div>
         </div>
       </div>
     </div>

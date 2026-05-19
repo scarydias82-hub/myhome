@@ -12,6 +12,7 @@ interface ShoppableRenderProps {
   items: PickingListItem[];
   totalEstimateAud: number | null;
   renderId: string;
+  projectId?: string | null;
 }
 
 type View = 'shop' | 'compare';
@@ -28,6 +29,7 @@ export function ShoppableRender({
   items,
   totalEstimateAud,
   renderId,
+  projectId,
 }: ShoppableRenderProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [view, setView] = useState<View>('shop');
@@ -116,6 +118,7 @@ export function ShoppableRender({
           activeIndex={activeIndex}
           onHover={handleHover}
           renderId={renderId}
+          projectId={projectId ?? null}
         />
       </div>
     </div>

@@ -31,14 +31,20 @@ export interface StagingProduct {
 export interface StagingResult {
   imageUrl: string;
   prompt: string;
+  stagedImageId: string | null;
+  storageKey: string | null;
 }
 
 export interface StagingInput {
   admin: SupabaseClient;
-  roomPhotoKey: string; // storage key for the original room photo
-  bbox: { x: number; y: number; w: number; h: number }; // percentages 0..1
+  roomPhotoKey: string;
+  bbox: { x: number; y: number; w: number; h: number };
   product: StagingProduct;
+  productId: string;
   userId: string;
+  renderId: string;
+  itemIndex: number;
+  projectId: string | null;
 }
 
 export async function stageProduct({
@@ -46,7 +52,11 @@ export async function stageProduct({
   roomPhotoKey,
   bbox,
   product,
+  productId,
   userId,
+  renderId,
+  itemIndex,
+  projectId,
 }: StagingInput): Promise<StagingResult> {
   // 1. Get the room photo bytes + dimensions.
   const { data: download, error: downloadError } = await admin.storage
@@ -125,11 +135,33 @@ export async function stageProduct({
     upsert: true,
   });
   if (compUp.error) {
-    // Non-fatal — return the fal URL anyway (expires after a few days).
-    return { imageUrl, prompt };
+    return { imageUrl, prompt, stagedImageId: null, storageKey: null };
   }
+
+  // 7. Insert a staged_images row so the user can shortlist this composite
+  // and reference it later in Review / Complete.
+  const insertRes = await admin
+    .from('staged_images')
+    .insert({
+      user_id: userId,
+      project_id: projectId,
+      render_id: renderId,
+      product_id: productId,
+      item_index: itemIndex,
+      image_storage_key: outKey,
+      prompt,
+    })
+    .select('id')
+    .single();
+  const stagedImageId = (insertRes.data as { id: string } | null)?.id ?? null;
+
   const signed = await admin.storage.from('renders').createSignedUrl(outKey, 60 * 60 * 24);
-  return { imageUrl: signed.data?.signedUrl ?? imageUrl, prompt };
+  return {
+    imageUrl: signed.data?.signedUrl ?? imageUrl,
+    prompt,
+    stagedImageId,
+    storageKey: outKey,
+  };
 }
 
 async function buildMask({

@@ -10,6 +10,7 @@ import { ShoppableRender } from '@/components/renders/shoppable-render';
 import { DesignerRead } from '@/components/renders/designer-read';
 import { RenderPoll } from '@/components/renders/render-poll';
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
+import { ShortlistButton } from '@/components/projects/shortlist-button';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -22,6 +23,7 @@ interface RenderRow {
   completed_at: string | null;
   room_id: string;
   style_profile_id: string;
+  project_id: string | null;
   picking_list: PickingListItem[] | null;
   cost_estimate_aud: number | null;
 }
@@ -48,7 +50,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
 
   const renderRes = await supabase
     .from('renders')
-    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, picking_list, cost_estimate_aud')
+    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -114,13 +116,21 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             </DisplayHeading>
           </div>
           {isDone && afterSigned?.data?.signedUrl ? (
-            <a
-              href={afterSigned.data.signedUrl}
-              download
-              className="font-mono text-meta uppercase tracking-eyebrow text-clay hover:underline"
-            >
-              ↓ Download render
-            </a>
+            <div className="flex flex-wrap items-center gap-4">
+              <ShortlistButton
+                projectId={render.project_id}
+                kind="render"
+                sourceId={render.id}
+                label="Add render to review"
+              />
+              <a
+                href={afterSigned.data.signedUrl}
+                download
+                className="font-mono text-meta uppercase tracking-eyebrow text-clay hover:underline"
+              >
+                ↓ Download render
+              </a>
+            </div>
           ) : null}
         </div>
 
@@ -131,6 +141,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             items={render.picking_list ?? []}
             totalEstimateAud={render.cost_estimate_aud}
             renderId={render.id}
+            projectId={render.project_id}
           />
         ) : isFailed ? (
           <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">

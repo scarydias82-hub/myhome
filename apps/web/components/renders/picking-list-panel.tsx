@@ -31,6 +31,7 @@ interface PickingListPanelProps {
   activeIndex: number | null;
   onHover: (index: number | null) => void;
   renderId: string;
+  projectId?: string | null;
 }
 
 interface StagingTarget {
@@ -44,7 +45,13 @@ const aud = new Intl.NumberFormat('en-AU', {
   maximumFractionDigits: 0,
 });
 
-export function PickingListPanel({ items, activeIndex, onHover, renderId }: PickingListPanelProps) {
+export function PickingListPanel({
+  items,
+  activeIndex,
+  onHover,
+  renderId,
+  projectId,
+}: PickingListPanelProps) {
   const [staging, setStaging] = useState<StagingTarget | null>(null);
 
   if (items.length === 0) {
@@ -99,6 +106,7 @@ export function PickingListPanel({ items, activeIndex, onHover, renderId }: Pick
           onClose={() => setStaging(null)}
           renderId={renderId}
           itemIndex={staging.itemIndex}
+          projectId={projectId ?? null}
           product={{
             productId: staging.match.productId,
             name: staging.match.name,

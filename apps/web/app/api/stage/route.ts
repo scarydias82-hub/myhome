@@ -26,6 +26,7 @@ interface RenderRow {
   id: string;
   user_id: string;
   room_id: string;
+  project_id: string | null;
   picking_list: Array<{
     itemLabel: string;
     category: string;
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   const renderRes = await admin
     .from('renders')
-    .select('id, user_id, room_id, picking_list')
+    .select('id, user_id, room_id, project_id, picking_list')
     .eq('id', body.renderId)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -101,6 +102,10 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       roomPhotoKey: room.photo_url,
       bbox: item.bbox,
+      productId: product.id,
+      renderId: render.id,
+      itemIndex: body.itemIndex,
+      projectId: render.project_id,
       product: {
         name: product.name,
         category: product.category,
@@ -110,7 +115,11 @@ export async function POST(request: NextRequest) {
         materials: product.materials ?? [],
       },
     });
-    return NextResponse.json({ imageUrl: result.imageUrl, prompt: result.prompt });
+    return NextResponse.json({
+      imageUrl: result.imageUrl,
+      prompt: result.prompt,
+      stagedImageId: result.stagedImageId,
+    });
   } catch (err) {
     // fal validation errors carry .body.detail as an array of {loc,msg,type}.
     // Stringify the whole thing so the next 422 is debuggable from logs.
