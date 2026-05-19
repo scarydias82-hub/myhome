@@ -1,28 +1,14 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Geist, Geist_Mono, Playfair_Display, DM_Sans, DM_Mono } from 'next/font/google';
+import { Playfair_Display, DM_Sans, DM_Mono } from 'next/font/google';
 import './globals.css';
 import { PostHogProvider } from '@/components/posthog-provider';
 
-// Legacy Saltbush kit — still in use across /rooms/new, /renders, /projects.
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-  axes: ['opsz'],
-});
-const geist = Geist({
-  subsets: ['latin'],
-  variable: '--font-body',
-  display: 'swap',
-});
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  display: 'swap',
-});
-
-// Editorial kit — used on /dashboard and the new nexus surfaces per the
-// myhome dashboard brief. Warm-luxury interior magazine feel.
+// Editorial brand fonts — Playfair Display (display), DM Sans (body),
+// DM Mono (metadata + caps). The legacy Saltbush font vars
+// (--font-display, --font-body, --font-mono) are aliased to these in
+// globals.css so existing `font-display`/`font-sans`/`font-mono`
+// Tailwind classes also render the editorial fonts. The Fraunces / Geist
+// imports were removed when the rebrand swept across all surfaces.
 const playfair = Playfair_Display({
   subsets: ['latin'],
   variable: '--font-serif',
@@ -61,9 +47,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en-AU"
       suppressHydrationWarning
-      className={`${fraunces.variable} ${geist.variable} ${geistMono.variable} ${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}
+      className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}
     >
-      <body className="min-h-screen bg-paper bg-grain text-ink antialiased">
+      <body className="min-h-screen bg-editorial-cream bg-grain font-dmsans text-editorial-ink antialiased">
         <PostHogProvider>{children}</PostHogProvider>
       </body>
     </html>

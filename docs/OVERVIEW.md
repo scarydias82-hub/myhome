@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `d35d7e1` (will
+**Last verified:** 2026-05-19 · most recent material commit: `30c5362` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,13 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Finished the editorial rebrand. Flipped the CSS
+  variable values in globals.css so every legacy class (bg-paper,
+  text-ink, text-clay, font-display) now renders the editorial palette
+  / fonts. Logo no longer says "saltbush." — it now renders the
+  myMaison wordmark with the Beta chip. `/projects/[id]`, `/renders/[id]`,
+  `/rooms/new` and every other internal surface auto-rebrand without
+  source changes. Task #77 closed.
 - `2026-05-19` — Fixed landing testimonials melting into the cream
   background on mobile. Cards now ride a cognac left-bar with stronger
   border + shadow-card lift, so they survive without the desktop grid
@@ -516,9 +523,13 @@ The editorial dashboard at `/dashboard` is built from small primitives in
 - **Copy.** Sentence case, never Title Case. Em-dashes welcome. The
   designer read can italicise inside the copy with `<em>`.
 
-The older "Saltbush" kit (Fraunces / Geist / clay) still ships for legacy
-internal surfaces, but the public chrome — landing, login, signup,
-dashboard, projects, renders — is all editorial.
+The legacy "Saltbush" kit no longer exists as a separate visual kit.
+The CSS variables (`--paper`, `--ink`, `--clay`, `--font-display`, etc.)
+were remapped in `app/globals.css` to the editorial palette and fonts,
+so every legacy Tailwind class (`bg-paper`, `text-ink`, `text-clay`,
+`font-display`) auto-renders editorial output. The `components/saltbush/`
+file path is preserved only because every internal surface imports from
+there — the path is historical, the visual is current.
 
 ---
 
@@ -609,7 +620,12 @@ task IDs; reference them when briefing Claude Code.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
-- Editorial hero canvas on landing — palette-true gradient + architectural motif.
+- Editorial rebrand across all internal surfaces (#77) — `/projects/[id]`,
+  `/renders/[id]`, `/rooms/new`, `/catalogue`, `/privacy`, etc. now
+  render in the editorial brand via globals.css CSS-variable flip plus
+  font aliasing. The `<Logo>` component was rewritten to render the
+  myMaison wordmark in place of the old "saltbush." text.
+- Testimonials mobile fix — cognac left-bar + shadow lift.
 - Closed-beta lock on public sign-ups (manual provisioning).
 - Living-doc protocol + `CLAUDE.md`.
 - Three-audience testimonials on landing.

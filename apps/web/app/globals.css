@@ -19,28 +19,47 @@
   }
 }
 
-/* Saltbush design tokens. See docs/DESIGN-BRIEF.md §2. */
+/* Brand tokens.
+ *
+ * Originally the Saltbush kit; remapped to the editorial myMaison
+ * palette so every legacy class (bg-paper, text-ink, text-clay, etc.)
+ * auto-rebrands without touching consumers. The editorial-* Tailwind
+ * tokens in tailwind.config.ts still exist for explicit editorial work;
+ * these legacy var names just point at the same colours now.
+ *
+ * Hex values mirror the editorial palette in tailwind.config.ts.
+ * Convert hex → HSL when adjusting.
+ */
 @layer base {
   :root {
-    /* Surfaces — warm paper, never pure white */
-    --paper: 39 37% 93%; /* #F4EFE6 */
-    --paper-warm: 39 36% 88%; /* #ECE4D5 */
-    --paper-deep: 40 30% 80%; /* #DCD0BA */
-    --cream: 42 53% 97%; /* #FBF8F2 */
+    /* Surfaces — warm cream, never pure white */
+    --paper: 38 38% 96%; /* editorial-cream  #FAF7F2 */
+    --paper-warm: 39 36% 86%; /* editorial-border #E8E0D0 */
+    --paper-deep: 38 32% 75%; /* editorial-borderStrong #D4C5A9 */
+    --cream: 36 53% 98%; /* editorial-surface #FDFAF6 */
 
-    /* Ink — off-black, never #000 */
-    --ink: 24 14% 9%; /* #1B1815 */
-    --ink-soft: 33 7% 34%; /* #5C5851 */
-    --ink-faint: 35 8% 51%; /* #8B847A */
+    /* Ink — warm off-black */
+    --ink: 26 36% 13%; /* editorial-ink   #2C1F14 */
+    --ink-soft: 31 23% 44%; /* editorial-taupe #8B7355 */
+    --ink-faint: 35 13% 62%; /* lighter taupe   ~#ABA290 */
 
     /* Accents */
-    --clay: 12 50% 48%; /* #B7553C */
-    --clay-soft: 22 56% 81%; /* #E8C8B7 */
-    --olive: 86 16% 36%; /* #5E6A4D */
-    --gold: 35 39% 47%; /* #A6824A */
+    --clay: 28 41% 59%; /* editorial-cognac #C4956A — was burnt-orange clay */
+    --clay-soft: 28 50% 85%; /* lighter cognac   ~#F2D6B8 */
+    --olive: 120 25% 38%; /* editorial-sage  #4A7A4A */
+    --gold: 35 39% 47%; /* warm gold (unchanged) */
 
-    /* Lines */
-    --line: 24 14% 9%; /* base for rgba lines, used with /12 and /6 */
+    /* Lines — tied to ink so borders go warm with the rest */
+    --line: 26 36% 13%; /* matches --ink */
+
+    /* Font aliases — point the legacy Saltbush var names at the editorial
+       fonts loaded by next/font. So `font-display` (which references
+       `--font-display` via tailwind.config.ts) now renders Playfair, not
+       Fraunces; `font-sans`/`font-body` renders DM Sans; `font-mono`
+       renders DM Mono. Existing Tailwind classes auto-rebrand. */
+    --font-display: var(--font-serif);
+    --font-body: var(--font-dmsans);
+    --font-mono: var(--font-dmmono);
 
     /* Radii */
     --radius-sm: 4px;
