@@ -1,190 +1,289 @@
 import Link from 'next/link';
-import { ArrowUpRight } from 'lucide-react';
-import { Logo } from '@/components/saltbush/logo';
-import { Eyebrow } from '@/components/saltbush/eyebrow';
-import { DisplayHeading } from '@/components/saltbush/display-heading';
-import { Pill } from '@/components/saltbush/pill';
-import { Button } from '@/components/ui/button';
+
+// Public landing page. Editorial-luxury treatment per the myMaison brand
+// guidelines: Playfair Display headlines, DM Sans body, DM Mono metadata,
+// warm cream surfaces, espresso ink, cognac accents. Sentence case
+// throughout — never Title Case.
+
+const RETAILERS = [
+  { name: 'Coco Republic', tagline: 'Considered AU heritage' },
+  { name: 'Poliform', tagline: 'Italian milled luxury' },
+  { name: 'GlobeWest', tagline: 'Designer-trade favourites' },
+  { name: 'Freedom', tagline: 'Coming soon' },
+  { name: 'Bunnings', tagline: 'Paint · finishes · coming soon' },
+];
+
+const STEPS = [
+  {
+    n: '01',
+    t: 'Take a photo of your room',
+    d: 'Daylight works best. We read the dimensions, the light, the existing materials, and the architecture — and lock them so the restyle stays your room.',
+  },
+  {
+    n: '02',
+    t: 'Choose a direction',
+    d: 'Eight curated Australian aesthetics, ten 2026 palettes, or connect your Pinterest. The designer LLM grounds every choice in real AU climate and building stock.',
+  },
+  {
+    n: '03',
+    t: 'Render, refine, shop',
+    d: 'A photorealistic restyle in under a minute. Every visible piece maps to a real product from an AU retailer with price, dimensions, and a buy link.',
+  },
+];
+
+const NEXUS_STEPS = [
+  { label: 'Inspiration absorbed' },
+  { label: 'Room analysed' },
+  { label: 'Products matched' },
+  { label: 'Rendered in your room' },
+  { label: 'Shopped & quoted' },
+];
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-editorial-cream font-dmsans text-editorial-ink">
       {/* Nav */}
-      <header className="sticky top-0 z-30 border-b border-ink/[0.06] bg-paper/85 backdrop-blur">
-        <div className="container flex items-center justify-between py-6">
-          <Logo size="md" />
-          <nav className="hidden gap-9 text-[14px] text-ink-soft md:flex">
-            <Link href="#how" className="transition-colors hover:text-clay">
+      <header className="sticky top-0 z-30 h-[64px] border-b border-editorial-border bg-editorial-cream/85 backdrop-blur">
+        <div className="mx-auto flex h-full max-w-[1200px] items-center justify-between px-6">
+          <Link href="/" className="flex items-center gap-2" aria-label="myMaison — home">
+            <span className="font-serif text-[22px] leading-none">
+              <span className="italic font-normal text-editorial-taupe">my</span>
+              <span className="font-medium text-editorial-ink">Maison</span>
+            </span>
+            <span className="rounded-full bg-editorial-cognac/15 px-1.5 py-0.5 font-dmmono text-[9px] uppercase tracking-[0.14em] text-editorial-cognac">
+              Beta
+            </span>
+          </Link>
+          <nav className="hidden gap-7 md:flex">
+            <Link
+              href="#how"
+              className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
+            >
               How it works
             </Link>
-            <Link href="#styles" className="transition-colors hover:text-clay">
-              Styles
-            </Link>
-            <Link href="#retailers" className="transition-colors hover:text-clay">
+            <Link
+              href="#retailers"
+              className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
+            >
               Retailers
             </Link>
-            <Link href="#journal" className="transition-colors hover:text-clay">
-              Journal
+            <Link
+              href="#nexus"
+              className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
+            >
+              The nexus
+            </Link>
+            <Link
+              href="/login"
+              className="font-dmsans text-[13px] font-medium text-editorial-taupe transition hover:text-editorial-ink"
+            >
+              Sign in
             </Link>
           </nav>
-          <Button asChild variant="primary" size="sm">
-            <Link href="/signup">Start free</Link>
-          </Button>
+          <Link
+            href="/signup"
+            className="rounded-full bg-editorial-ink px-4 py-2 font-dmsans text-[13px] font-medium text-editorial-cream transition hover:opacity-90"
+          >
+            Start free
+          </Link>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="container grid items-center gap-16 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
-        <div>
-          <Eyebrow>An Australian styling studio · in your camera roll</Eyebrow>
-          <DisplayHeading level={1} className="mt-7">
-            Your room, styled like a <em>magazine</em>.
-          </DisplayHeading>
-          <p className="mt-7 max-w-[480px] text-[18px] leading-relaxed text-ink-soft">
-            Take a photo of your living room. Pick a style — or connect your Pinterest. We give you
-            back a photorealistic restyle where every piece is a real product from an Australian
-            retailer.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center gap-4">
-            <Button asChild variant="cta" size="lg">
-              <Link href="/signup">
-                Style my room
-              </Link>
-            </Button>
-            <Link
-              href="#how"
-              className="inline-flex items-center gap-2 text-[14px] text-ink-soft underline-offset-4 hover:text-clay hover:underline"
-            >
-              See how it works
-              <ArrowUpRight className="h-4 w-4" strokeWidth={1.5} />
-            </Link>
-          </div>
-          <p className="mt-6 font-mono text-[12px] uppercase tracking-eyebrow text-ink-faint">
-            Free to try · 3 renders included · No card required
-          </p>
-        </div>
-
-        {/* Hero visual — gradient placeholders; replace with real photography */}
-        <div className="relative aspect-[4/5] w-full">
-          <div
-            aria-hidden
-            className="absolute inset-[8%_30%_14%_0] -rotate-3 overflow-hidden rounded-lg shadow-soft"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(0,0,0,0.2)), linear-gradient(135deg, #c4b8a3, #9a8f7b)',
-            }}
+      <section className="mx-auto max-w-[1200px] px-6 pt-16 pb-20 md:pt-24 md:pb-28">
+        <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Your personal design studio · Australia
+        </p>
+        <h1 className="mt-5 max-w-3xl font-serif text-[clamp(38px,6vw,72px)] font-normal leading-[1.02] text-editorial-ink">
+          From inspiration to a <em className="italic">fully shopped room</em> — in minutes.
+        </h1>
+        <p className="mt-6 max-w-2xl font-dmsans text-[16px] leading-relaxed text-editorial-taupe">
+          myMaison is the nexus between your Pinterest board, your actual room photo, the
+          Australian retailer catalogue, and a senior-designer-grade AI. Pick a direction. See
+          your room rendered with real, buyable products. Walk past analysis paralysis straight
+          to a quote.
+        </p>
+        <div className="mt-9 flex flex-wrap items-center gap-4">
+          <Link
+            href="/signup"
+            className="rounded-full bg-editorial-cognac px-6 py-3 font-dmsans text-[14px] font-medium text-editorial-ink transition hover:opacity-90"
           >
-            <span className="absolute bottom-3.5 left-4 font-mono text-[10px] uppercase tracking-eyebrow text-cream/90">
-              Before · Living room, Northcote
-            </span>
-          </div>
-          <div
-            aria-hidden
-            className="absolute inset-[18%_0_0_28%] rotate-2 overflow-hidden rounded-lg shadow-soft"
-            style={{
-              background:
-                'linear-gradient(160deg, rgba(255,238,210,0.4), rgba(0,0,0,0.25)), linear-gradient(135deg, #b8956f, #7a5d3f)',
-            }}
+            Style my room
+          </Link>
+          <Link
+            href="#how"
+            className="font-dmsans text-[14px] font-medium text-editorial-taupe underline-offset-4 transition hover:text-editorial-ink hover:underline"
           >
-            <span className="absolute bottom-3.5 left-4 font-mono text-[10px] uppercase tracking-eyebrow text-cream">
-              After · Warm Japandi
-            </span>
-          </div>
-          <div className="absolute right-[4%] top-[38%]">
-            <Pill withDot>
-              Aurora sofa <span className="font-mono text-[10px] text-ink-soft">$2,199</span>
-            </Pill>
-          </div>
-          <div className="absolute left-[32%] top-[68%]">
-            <Pill withDot>
-              Oak side table <span className="font-mono text-[10px] text-ink-soft">$849</span>
-            </Pill>
-          </div>
+            See how it works →
+          </Link>
         </div>
+        <p className="mt-6 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Free for individuals · three renders included · no card required
+        </p>
       </section>
 
       {/* Retailer strip */}
-      <section id="retailers" className="border-y border-ink/[0.06] bg-paper-warm">
-        <div className="container flex flex-wrap items-center gap-14 py-10">
-          <p className="max-w-[160px] font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            Stocked from
+      <section
+        id="retailers"
+        className="border-y border-editorial-border bg-editorial-surface"
+      >
+        <div className="mx-auto max-w-[1200px] px-6 py-12">
+          <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+            Stocked from a curated AU catalogue
           </p>
-          <div className="flex flex-1 flex-wrap items-center gap-12 text-ink-soft">
-            <span className="font-display text-[19px] tracking-wide">Temple &amp; Webster</span>
-            <span className="font-display text-[19px] italic">Castlery</span>
-            <span className="font-display text-[19px]">Freedom</span>
-            <span className="font-display text-[14px] font-medium uppercase tracking-[0.18em]">
-              IKEA AU
-            </span>
-            <span className="font-display text-[19px]">Coco Republic</span>
-          </div>
+          <ul className="mt-6 grid gap-6 md:grid-cols-5">
+            {RETAILERS.map((r) => (
+              <li
+                key={r.name}
+                className="flex flex-col gap-1 rounded-xl border border-editorial-border bg-editorial-cream p-4"
+              >
+                <p className="font-serif text-[17px] leading-tight text-editorial-ink">{r.name}</p>
+                <p className="font-dmsans text-[12px] text-editorial-taupe">{r.tagline}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 max-w-2xl font-dmsans text-[13px] leading-relaxed text-editorial-taupe">
+            We're building toward 500+ Australian SKUs across furniture, lighting, decor, and
+            paint — so every visible piece in your render maps to something you can actually buy
+            today.
+          </p>
         </div>
       </section>
 
       {/* How it works */}
-      <section id="how" className="container py-24 lg:py-28">
-        <Eyebrow>How it works</Eyebrow>
-        <DisplayHeading level={2} className="mt-4 max-w-[720px]">
-          Three steps from <em>photo</em> to picking list.
-        </DisplayHeading>
-        <div className="mt-16 grid gap-12 md:grid-cols-3">
-          {[
-            {
-              n: '01',
-              t: 'Snap your room',
-              d: 'Daylight, wide angle, all four walls in shot. We do the rest — depth, geometry, lighting.',
-            },
-            {
-              n: '02',
-              t: 'Pick or import a style',
-              d: 'Start with one of eight curated Australian aesthetics, or connect your Pinterest and let us read your taste.',
-            },
-            {
-              n: '03',
-              t: 'Shop the look',
-              d: 'Every visible piece maps to a real, in-stock product from an AU retailer. Prices in AUD, GST inclusive.',
-            },
-          ].map((s) => (
-            <div key={s.n}>
-              <span className="font-display text-[56px] italic font-light leading-none text-clay">
+      <section id="how" className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+        <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          How it works
+        </p>
+        <h2 className="mt-4 max-w-3xl font-serif text-[clamp(28px,3vw,42px)] font-medium leading-[1.1] text-editorial-ink">
+          Three steps from <em className="italic">photo</em> to picking list.
+        </h2>
+        <ol className="mt-12 grid gap-10 md:grid-cols-3">
+          {STEPS.map((s) => (
+            <li key={s.n}>
+              <span className="font-serif text-[64px] italic font-normal leading-none text-editorial-cognac">
                 {s.n}
               </span>
-              <div className="mb-6 mt-5 h-px w-14 bg-ink/12" />
-              <h3 className="mb-3 font-display text-2xl font-normal tracking-tight text-ink">
+              <div className="my-5 h-px w-12 bg-editorial-border" />
+              <h3 className="font-serif text-[20px] font-medium leading-tight text-editorial-ink">
                 {s.t}
               </h3>
-              <p className="text-[15px] leading-relaxed text-ink-soft">{s.d}</p>
-            </div>
+              <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-editorial-taupe">
+                {s.d}
+              </p>
+            </li>
           ))}
+        </ol>
+      </section>
+
+      {/* The nexus */}
+      <section id="nexus" className="bg-editorial-ink py-20 text-editorial-cream md:py-28">
+        <div className="mx-auto max-w-[1100px] px-6">
+          <p className="font-dmmono text-[11px] uppercase tracking-[0.16em] text-editorial-cognac">
+            The myMaison nexus
+          </p>
+          <h2 className="mt-4 max-w-3xl font-serif text-[clamp(28px,3.2vw,46px)] font-medium leading-[1.1] text-editorial-cream">
+            Abstract idea → <em className="italic">fully shopped room</em>.
+          </h2>
+          <p className="mt-5 max-w-2xl font-dmsans text-[15px] leading-relaxed text-editorial-cream/70">
+            Pinterest aesthetic, Claude vision, fal Flux generation, Australian retailer
+            catalogue, and a designer LLM read — all converge into one pipeline. You move from
+            intent to a decision in minutes, not weekends. Designers can take a brief from client
+            address to PDF proposal in the same evening.
+          </p>
+          <ol className="mt-12 grid gap-3 md:grid-cols-5">
+            {NEXUS_STEPS.map((s, i) => (
+              <li
+                key={s.label}
+                className="rounded-2xl border border-editorial-cream/15 bg-editorial-ink/40 p-4 text-editorial-cream/80"
+              >
+                <p className="font-dmmono text-[10px] uppercase tracking-[0.12em] text-editorial-cognac">
+                  {`0${i + 1}`}
+                </p>
+                <p className="mt-3 font-serif text-[15px] leading-tight text-editorial-cream">
+                  {s.label}
+                </p>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-12 flex flex-wrap gap-3">
+            <Link
+              href="/signup"
+              className="rounded-full bg-editorial-cognac px-6 py-3 font-dmsans text-[14px] font-medium text-editorial-ink transition hover:opacity-90"
+            >
+              Start your first project
+            </Link>
+            <Link
+              href="/login"
+              className="rounded-full border border-editorial-cream/40 px-6 py-3 font-dmsans text-[14px] font-medium text-editorial-cream transition hover:bg-editorial-cream/10"
+            >
+              Sign in
+            </Link>
+          </div>
         </div>
       </section>
 
-      {/* Quote */}
-      <section className="border-t border-ink/[0.06] bg-paper-warm">
-        <div className="container py-24 lg:py-28">
-          <blockquote className="mx-auto max-w-[900px] text-center font-display text-[clamp(28px,3.4vw,38px)] font-light italic leading-tight tracking-tight">
-            “It read my Pinterest board better than my partner does. The sofa it suggested is
-            currently in our living room.”
-          </blockquote>
-          <p className="mt-8 text-center font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            <strong className="font-medium text-clay">Maya R.</strong> · Northcote, VIC · beta tester
-          </p>
+      {/* Two-up: individual vs studio */}
+      <section className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+        <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Two ways in
+        </p>
+        <h2 className="mt-4 max-w-2xl font-serif text-[clamp(26px,2.8vw,38px)] font-medium leading-[1.1] text-editorial-ink">
+          Style your home. Or your <em className="italic">clients'</em> homes.
+        </h2>
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          <div className="rounded-2xl border border-editorial-border bg-editorial-surface p-8">
+            <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+              Individual · free
+            </p>
+            <p className="mt-3 font-serif text-[22px] font-medium leading-tight text-editorial-ink">
+              My own home.
+            </p>
+            <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-editorial-taupe">
+              For homeowners. Three renders to start, all the catalogue + designer reads + virtual
+              staging. Free forever.
+            </p>
+            <Link
+              href="/signup?type=individual"
+              className="mt-6 inline-block rounded-full bg-editorial-ink px-5 py-2.5 font-dmsans text-[13px] font-medium text-editorial-cream transition hover:opacity-90"
+            >
+              Sign up free
+            </Link>
+          </div>
+          <div className="rounded-2xl border border-editorial-cognac/40 bg-editorial-surface p-8">
+            <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-cognac">
+              Design studio · paid plan
+            </p>
+            <p className="mt-3 font-serif text-[22px] font-medium leading-tight text-editorial-ink">
+              Client work, end-to-end.
+            </p>
+            <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-editorial-taupe">
+              Manage multiple clients with their own addresses, render their rooms, generate a
+              myMaison-branded PDF proposal with cost breakdown — all from one place.
+            </p>
+            <Link
+              href="/signup?type=studio"
+              className="mt-6 inline-block rounded-full bg-editorial-cognac px-5 py-2.5 font-dmsans text-[13px] font-medium text-editorial-ink transition hover:opacity-90"
+            >
+              Talk to us about studio access
+            </Link>
+          </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-ink/12">
-        <div className="container flex flex-col items-start justify-between gap-3 py-10 font-mono text-meta uppercase tracking-[0.1em] text-ink-faint md:flex-row md:items-center">
-          <span>© {new Date().getFullYear()} saltbush · made in AU</span>
+      <footer className="border-t border-editorial-border">
+        <div className="mx-auto flex max-w-[1200px] flex-col items-start justify-between gap-3 px-6 py-10 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe md:flex-row md:items-center">
+          <span>© {new Date().getFullYear()} myMaison · made in Australia</span>
           <div className="flex gap-6">
-            <Link href="/privacy" className="hover:text-clay">
+            <Link href="/privacy" className="hover:text-editorial-ink">
               Privacy
             </Link>
-            <Link href="/terms" className="hover:text-clay">
+            <Link href="/terms" className="hover:text-editorial-ink">
               Terms
             </Link>
-            <Link href="/design-system" className="hover:text-clay">
-              Design system
+            <Link href="/dashboard" className="hover:text-editorial-ink">
+              Dashboard
             </Link>
           </div>
         </div>
