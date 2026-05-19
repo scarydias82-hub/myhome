@@ -57,8 +57,10 @@ async function computeFluxDimensions(buf: Buffer): Promise<{ width: number; heig
 }
 
 export const runtime = 'nodejs';
-// Submit is a fast call — generous budget but typical run is <8s now.
-export const maxDuration = 30;
+// Submit itself is fast (~5-8s) but we now kick off the designer LLM
+// via after() in the same function — that needs another 15-25s. Bump
+// to 60 so the background call has comfortable headroom.
+export const maxDuration = 60;
 
 interface Body {
   roomId?: string;
