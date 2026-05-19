@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `30c5362` (will
+**Last verified:** 2026-05-19 · most recent material commit: `3b612c3` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,10 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Fixed §7.3 manual-provisioning SQL recipe. The
+  previous draft referenced `auth.admin_create_user` which is a JS
+  admin SDK method, not a SQL function. Replaced with the proper
+  `insert into auth.users` recipe using `crypt()` + `gen_salt('bf')`.
 - `2026-05-19` — Finished the editorial rebrand. Flipped the CSS
   variable values in globals.css so every legacy class (bg-paper,
   text-ink, text-clay, font-display) now renders the editorial palette
@@ -736,21 +740,45 @@ Supabase Studio dashboard. Two routes:
 6. Send them the magic link: tell them to hit `/login`, sign in, and
    immediately reset their password from Supabase (password-reset email).
 
-**B. SQL via service role (advanced)**
+**B. SQL via the Supabase SQL Editor (advanced)**
 
-Use Supabase's `auth.admin_create_user` from the SQL editor or a
-service-role-keyed script:
+Paste this into Supabase Studio → SQL Editor. It uses `pgcrypto`'s
+`crypt()` + `gen_salt('bf')` to bcrypt the password the way GoTrue
+expects. `email_confirmed_at = now()` skips the confirmation email
+so they can sign in immediately:
 
 ```sql
-select auth.admin_create_user(
-  email := 'jane@example.com',
-  password := 'strong-temp-password',
-  email_confirm := true,
-  user_metadata := '{"full_name":"Jane Smith"}'::jsonb
+insert into auth.users (
+  instance_id, id, aud, role,
+  email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data,
+  created_at, updated_at,
+  confirmation_token, recovery_token,
+  email_change_token_new, email_change
+) values (
+  '00000000-0000-0000-0000-000000000000',
+  gen_random_uuid(),
+  'authenticated',
+  'authenticated',
+  'jane@example.com',
+  crypt('strong-temp-password', gen_salt('bf')),
+  now(),
+  '{"provider":"email","providers":["email"]}',
+  '{}',
+  now(),
+  now(),
+  '',
+  '',
+  '',
+  ''
 );
 ```
 
 The trigger on `auth.users` populates `public.users` automatically.
+
+(The earlier draft of this doc referenced `auth.admin_create_user` —
+that's a method on the JS admin SDK, not a SQL function. Use the
+insert above, or the Studio UI in option A.)
 
 **Re-opening public sign-ups later:**
 
