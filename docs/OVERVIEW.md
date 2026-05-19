@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `cbc5f1c` (will
+**Last verified:** 2026-05-19 · most recent material commit: `955cdc7` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,9 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Memoed terms & conditions acceptance flow as roadmap
+  §6.7 (task #76) — covers /legal/terms + /legal/privacy pages, an
+  acceptance audit log, and the implicit-vs-explicit recommendation.
 - `2026-05-19` — Living-doc protocol + `CLAUDE.md`. Added §3 Business
   strategy. Locked public sign-ups (closed beta — manual provisioning).
   Editorial hero canvas on landing page.
@@ -564,7 +567,44 @@ task IDs; reference them when briefing Claude Code.
 - **#56 — Real AR-card compat scores.** Today's score is a placeholder.
 - **#57 — Persist "Add to project" from AR card.**
 
-### 6.7 Recently shipped (for reference)
+### 6.7 Legal & compliance
+- **#76 — Terms & Conditions acceptance at sign-up.** Today the live
+  sign-up form (when reopened) carries an *implicit*-acceptance footer
+  ("by creating an account you agree to our terms and privacy notice")
+  with links to `/legal/terms` and `/legal/privacy` — both pages don't
+  yet exist. To do, in order:
+
+  1. **Write the pages.** `/legal/terms` and `/legal/privacy`, editorial
+     brand, sentence case. Cover: IP ownership of renders, ACCC affiliate
+     disclosure, acceptable use (no scraping, no reselling), termination,
+     data handling (Pinterest derived-only signal, room-photo retention,
+     Supabase Sydney storage), limitation of liability, governing law
+     (NSW Australia), beta-stage disclaimer. Get lawyer review before
+     they go live — referenced from §3.6 owner's checklist.
+  2. **Add an audit log.** Migration: `acceptance_log` table with
+     `(user_id, terms_version, privacy_version, accepted_at,
+     ip_address, user_agent)`. Service-role-only writes; RLS read for
+     the owning user only.
+  3. **Decide implicit vs explicit acceptance.**
+     - *Implicit* (today's footer) is cheaper but weaker under
+       Australian Consumer Law if a dispute lands. Suits low-risk
+       surface touches.
+     - *Explicit* (required checkbox before submit) is the safer bet.
+       Required when sign-up unlocks paid features or sensitive data
+       capture (Design Studio plan, Pinterest OAuth, client PII).
+     - **Recommendation:** explicit on sign-up *and* on first paid
+       action (Stripe billing init). Implicit elsewhere.
+  4. **Version + re-prompt.** Add a `terms_version` and `privacy_version`
+     constant in `apps/web/lib/legal.ts`. If either bumps, the next
+     sign-in fires a modal that requires re-acceptance before the
+     dashboard renders. Acceptance writes a fresh row to
+     `acceptance_log`.
+  5. **Closed-beta interim.** Even while sign-up is paused, the manually
+     provisioned users in the cohort should still hit a one-time
+     acceptance modal on first sign-in once the pages exist — the audit
+     log starts from day one, no exceptions.
+
+### 6.8 Recently shipped (for reference)
 - Editorial hero canvas on landing — palette-true gradient + architectural motif.
 - Closed-beta lock on public sign-ups (manual provisioning).
 - Living-doc protocol + `CLAUDE.md`.
