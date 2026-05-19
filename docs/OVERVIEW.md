@@ -25,6 +25,23 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Lighting + decorative-wall gaps surfaced from a real
+  bedroom render. Three fixes:
+  (a) Detection vocab expanded to wall sconce / wall light / ceiling
+      light / ceiling fan / downlight / spotlight / vanity light / desk
+      lamp. Previously these were dropped silently — the bedroom render
+      had green wall sconces and they never reached the picking list.
+  (b) Vision step now explicitly captures decorative wall features in
+      architectural_features (panelling, wainscoting, mouldings,
+      picture rails, brick / stone feature walls). Flux at canny 0.55
+      was flattening these into plain paint; now buildPrompt asks for
+      structure preservation with palette-applied finish.
+  (c) Bold-mode prompt also nudges Flux to swap existing wall lights /
+      ceiling lights / sconces for palette-appropriate alternatives
+      rather than leaving them as the original.
+  Plus a memo (task #87) — surface walls themselves as a picking-list
+  item with Dulux paint matches. Florence-2 can't detect surfaces so
+  this is its own work item.
 - `2026-05-19` — Staged composites looked "pasted" — hard edges, wrong
   light direction, blurry cutouts. Three fixes layered on top of the
   composite pipeline shipped earlier:

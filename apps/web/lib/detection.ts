@@ -53,12 +53,24 @@ const FURNITURE_LABELS = new Set([
   'art',
   'picture',
   'painting',
-  // Lighting
+  // Lighting — covers free-standing, ceiling, wall and integrated.
+  // Wall sconces (the orb-shaped lights beside a bedhead) and
+  // ceiling-fan/light combos were missing before, leaving them
+  // off the picking list even when they were clearly visible.
   'lamp',
   'floor lamp',
   'table lamp',
+  'desk lamp',
   'pendant light',
   'chandelier',
+  'wall light',
+  'wall sconce',
+  'sconce',
+  'ceiling light',
+  'ceiling fan',
+  'downlight',
+  'spotlight',
+  'vanity light',
   // Window treatments — new in Stage 1
   'curtain',
   'curtains',
@@ -111,12 +123,23 @@ const LABEL_TO_CATEGORY: Record<string, string> = {
   art: 'Art',
   picture: 'Art',
   painting: 'Art',
-  // Lighting
+  // Lighting — all variants normalise to a single Lighting category.
+  // The catalogue doesn't split sconces vs floor lamps yet; we can
+  // always sub-segment later if the volume warrants it.
   lamp: 'Lighting',
   'floor lamp': 'Lighting',
   'table lamp': 'Lighting',
+  'desk lamp': 'Lighting',
   'pendant light': 'Lighting',
   chandelier: 'Lighting',
+  'wall light': 'Lighting',
+  'wall sconce': 'Lighting',
+  sconce: 'Lighting',
+  'ceiling light': 'Lighting',
+  'ceiling fan': 'Lighting',
+  downlight: 'Lighting',
+  spotlight: 'Lighting',
+  'vanity light': 'Lighting',
   // Window treatments — empty catalog until the textile scrapers land
   curtain: 'Curtains',
   curtains: 'Curtains',
@@ -151,8 +174,11 @@ const PHRASE_LIST =
   'a sofa, an armchair, a coffee table, a side table, a console, a sideboard, ' +
   // Soft floor
   'a rug, ' +
-  // Lighting (including chandelier, which Florence-2 default missed)
-  'a floor lamp, a table lamp, a pendant light, a chandelier, ' +
+  // Lighting — broader than the Florence-2 default object-detection
+  // vocab. Wall sconces, ceiling fans and integrated downlights now
+  // surface explicitly instead of getting dropped silently.
+  'a floor lamp, a table lamp, a desk lamp, a pendant light, a chandelier, ' +
+  'a wall sconce, a wall light, a ceiling light, a ceiling fan, a downlight, ' +
   // Wall + decor
   'wall art, a picture, a mirror, a sculpture, ' +
   // Soft decor

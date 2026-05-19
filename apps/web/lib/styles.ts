@@ -207,6 +207,19 @@ export function buildPrompt(
     base.push(
       'apply palette tone to wall surfaces — soft tonal wash in lighter palette colours, optional accent wall in a deeper palette tone',
     );
+    // Decorative wall features (panelling, wainscoting, mouldings,
+    // brick) need explicit protection — Flux at strength 0.87 with
+    // canny at 0.55 will flatten them into plain paint otherwise. We
+    // ask for the structure to stay and the finish to update.
+    if (
+      facts?.architectural_features?.some((f) =>
+        /(panel|wainscot|shiplap|board-and-batten|moulding|cornice|brick|stone|picture rail|dado)/i.test(f),
+      )
+    ) {
+      base.push(
+        'preserve any existing wall panelling, wainscoting, mouldings, picture rails, brick or stone feature walls — keep their physical structure exactly, only update their finish or paint colour to match the palette',
+      );
+    }
     base.push(
       'reflooring permitted to suit the aesthetic — wide oak boards, honed travertine, wool rug overlay, or herringbone parquet as appropriate',
     );
@@ -214,7 +227,7 @@ export function buildPrompt(
       'drape windows with linen sheers or palette-toned floor-length curtains, never bare',
     );
     base.push(
-      'introduce statement lighting positioned for the room\'s natural light — pendant, floor lamp, or sculptural table lamp',
+      'introduce statement lighting positioned for the room\'s natural light — pendant, floor lamp, sculptural table lamp, or wall sconces — and replace any existing wall lights, ceiling lights or sconces with palette-appropriate alternatives',
     );
     base.push(
       'wall art at eye-level, sculptural decor on surfaces, fresh plants and ceramic vessels',

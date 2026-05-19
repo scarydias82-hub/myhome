@@ -68,6 +68,16 @@ Soft furnishings, sofas, chairs, lamps, art, rugs, throws, cushions, side tables
 
 Similarly for \`challenges\` and \`strengths\`: a piece you would describe as a "strength" should be a SURFACE the new design can build on (good natural light, generous ceiling height, intact joinery), not an existing piece of furniture that the user has shown they want to change. List too few strengths rather than too many.
 
+DECORATIVE WALL FEATURES — capture these explicitly in \`architectural_features\`. They're load-bearing for the room's character and Flux tends to flatten them into plain paint without an explicit cue. Examples to look for and name precisely:
+  - Vertical wall panelling (vee-groove, board-and-batten, shiplap)
+  - Wainscoting / dado panelling (lower half of the wall in timber panels)
+  - Picture rails, dado rails, chair rails
+  - Cornicing / ceiling roses / decorative mouldings
+  - Brick or stone feature walls
+  - Built-in joinery / shelving / bedheads
+
+When you spot any of these, name them in \`architectural_features\` — e.g. "vertical board-and-batten panelling on the bedhead wall", not just "panelling". The prompt builder uses this verbatim to tell Flux to keep the structure while applying the palette to its finish.
+
 Output ONLY the JSON, no markdown fences, no commentary.`;
 
 export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
