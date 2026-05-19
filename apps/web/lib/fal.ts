@@ -54,15 +54,20 @@ function renderInput(input: DepthRenderInput) {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
-    // 0.82 is the bold default — Flux is allowed to repaint walls, swap
-    // flooring, drape windows, add statement lighting. Canny lock at 0.85
-    // still pins the geometry (wall positions, window openings, door
-    // openings) so the room is recognisable. 0.70 (the legacy subtle
-    // default) preserves more surface texture; pass it via input.strength
-    // when running the comparison mode. Above 0.88 the model starts
-    // hallucinating extra windows.
-    strength: input.strength ?? 0.82,
-    control_lora_strength: 0.85,
+    // Aggressive default — Flux is encouraged to repaint walls, swap
+    // flooring, drape windows, add statement lighting. The two knobs:
+    //   - strength (img2img): how much Flux can deviate from the init
+    //     image. 0.87 is firm but still recognisable; 0.90+ starts
+    //     hallucinating extra windows.
+    //   - control_lora_strength (canny): how strictly the canny LoRA
+    //     enforces existing edges. 0.85 locked surface textures too
+    //     hard (walls stayed the same colour, floors kept their boards).
+    //     0.55 lets Flux repaint surfaces freely while canny still
+    //     anchors the room's bones (wall positions, window/door
+    //     openings, ceiling height) via edges that survive at lower
+    //     conditioning strength.
+    strength: input.strength ?? 0.87,
+    control_lora_strength: 0.55,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),
@@ -70,9 +75,8 @@ function renderInput(input: DepthRenderInput) {
     // drop below ~15 and the marginal improvement above 20 isn't worth the
     // extra ~8s of inference time for interior renders.
     num_inference_steps: 20,
-    // 4.0 (was 3.5) — push Flux to obey the palette + surface directives a
-    // touch harder. Above 5 it starts oversaturating and the editorial feel
-    // collapses.
+    // 4.0 — push Flux to obey the palette + surface directives. Above 5
+    // it starts oversaturating and the editorial feel collapses.
     guidance_scale: 4.0,
     num_images: 1,
     enable_safety_checker: true,

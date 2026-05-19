@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `eaba86d` (will
+**Last verified:** 2026-05-19 · most recent material commit: `a9182a0` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,13 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Aggression dial pushed harder. The first test showed
+  Stage 1 settings still left walls + flooring + curtains untouched —
+  canny LoRA at 0.85 was locking the surface textures even with
+  strength bumped to 0.82. Loosened canny to 0.55 (room geometry still
+  anchored, surfaces free to repaint) and bumped strength to 0.87.
+  Above 0.88 strength Flux hallucinates windows, so we sit just under
+  that ceiling.
 - `2026-05-19` — Render quality fixes from first end-to-end test:
   (a) /api/render now reads the source photo's dimensions with sharp
   and computes Flux-valid output dims that preserve aspect — fixes the
