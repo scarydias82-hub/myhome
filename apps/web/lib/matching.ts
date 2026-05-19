@@ -183,48 +183,94 @@ async function buildWallPaintItem({
   paletteHexes: string[];
 }): Promise<PickingListItem | null> {
   const targetHex = paletteHexes[0];
-  if (!targetHex) return null;
-  const target = parseHex(targetHex);
-  if (!target) return null;
-
-  // Fetch every Dulux paint that has a hex in the dimensions blob (set
-  // by apps/scraper/scrapers/dulux.js → dimensions.hex). Limit upfront
-  // so we don't paginate ~108 rows worth of color matching client-side.
-  const { data, error } = await admin
-    .from('products')
-    .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions')
-    .eq('category', 'Paint')
-    .eq('retailer', 'Dulux')
-    .not('image_url', 'is', null)
-    .limit(500);
-  if (error || !data || data.length === 0) {
-    console.log('[wall-paint] no Dulux paints in catalogue yet');
-    return null;
+  const target = targetHex ? parseHex(targetHex) : null;
+  if (!target) {
+    console.log('[wall-paint] no usable target hex from palette', paletteHexes);
   }
 
+  // Fetch every Dulux paint we can find. We try in three widening tiers
+  // so the picking list always surfaces SOMETHING the user can buy:
+  //   1. category='Paint' + retailer='Dulux' + has image
+  //   2. drop the image filter
+  //   3. broaden to any 'Paint' category (any retailer)
+  // Each tier is logged so we can see in Vercel which one fired.
   type PaintRow = {
     id: string;
     name: string;
     retailer: string;
     category: string;
     price_aud: number | null;
-    image_url: string;
+    image_url: string | null;
     product_url: string;
     affiliate_url: string | null;
     dimensions: { hex?: string | null } | null;
   };
 
-  const ranked = (data as PaintRow[])
-    .map((p) => {
-      const hex = p.dimensions?.hex;
-      if (!hex) return null;
-      const rgb = parseHex(hex);
-      if (!rgb) return null;
-      return { paint: p, distance: rgbDistance(target, rgb) };
-    })
-    .filter((x): x is { paint: PaintRow; distance: number } => x !== null)
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, MATCHES_PER_ITEM);
+  let paints: PaintRow[] = [];
+  const dulux = await admin
+    .from('products')
+    .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions')
+    .eq('category', 'Paint')
+    .eq('retailer', 'Dulux')
+    .not('image_url', 'is', null)
+    .limit(500);
+  if (!dulux.error && dulux.data) paints = dulux.data as PaintRow[];
+  console.log(`[wall-paint] tier 1 (Dulux + image): ${paints.length} rows`);
+
+  if (paints.length === 0) {
+    const duluxNoImage = await admin
+      .from('products')
+      .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions')
+      .eq('category', 'Paint')
+      .eq('retailer', 'Dulux')
+      .limit(500);
+    if (!duluxNoImage.error && duluxNoImage.data) paints = duluxNoImage.data as PaintRow[];
+    console.log(`[wall-paint] tier 2 (Dulux any image): ${paints.length} rows`);
+  }
+  if (paints.length === 0) {
+    const anyPaint = await admin
+      .from('products')
+      .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions')
+      .eq('category', 'Paint')
+      .limit(500);
+    if (!anyPaint.error && anyPaint.data) paints = anyPaint.data as PaintRow[];
+    console.log(`[wall-paint] tier 3 (any retailer Paint): ${paints.length} rows`);
+  }
+
+  if (paints.length === 0) {
+    console.log('[wall-paint] no paint products in catalogue at any tier');
+    return null;
+  }
+
+  // Try colour matching first. If we don't have a target or no paints
+  // have hex codes, fall back to "first N paints" so the user still
+  // sees options — the catalog presence matters more than the perfect
+  // shade for surfacing demand.
+  let ranked: Array<{ paint: PaintRow }> = [];
+  if (target) {
+    ranked = paints
+      .map((p) => {
+        const hex = p.dimensions?.hex;
+        if (!hex) return null;
+        const rgb = parseHex(hex);
+        if (!rgb) return null;
+        return { paint: p, distance: rgbDistance(target, rgb) };
+      })
+      .filter((x): x is { paint: PaintRow; distance: number } => x !== null)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, MATCHES_PER_ITEM);
+  }
+  console.log(`[wall-paint] colour-matched: ${ranked.length} rows`);
+
+  if (ranked.length === 0) {
+    // Fallback — no hex codes available (Dulux scrape may have stored
+    // the page background colour for every row before the
+    // __NEXT_DATA__ extractor was fixed). Surface the first N anyway
+    // so the user has paint options to engage with. Demand signal
+    // still flows; we re-rank by hex once they're populated.
+    ranked = paints.slice(0, MATCHES_PER_ITEM).map((paint) => ({ paint }));
+    console.log(`[wall-paint] fallback (no hex match): ${ranked.length} rows`);
+  }
 
   if (ranked.length === 0) return null;
 
@@ -242,7 +288,7 @@ async function buildWallPaintItem({
       retailer: r.paint.retailer,
       category: r.paint.category,
       priceAud: r.paint.price_aud,
-      imageUrl: r.paint.image_url,
+      imageUrl: r.paint.image_url ?? '',
       productUrl: r.paint.product_url,
       affiliateUrl: r.paint.affiliate_url,
       // Convert distance into a 0..1 similarity score. Top match = 1.0;
