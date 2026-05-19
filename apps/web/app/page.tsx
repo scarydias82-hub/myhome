@@ -135,37 +135,58 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-[1200px] px-6 pt-16 pb-20 md:pt-24 md:pb-28">
-        <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
-          Your personal design studio · Australia
-        </p>
-        <h1 className="mt-5 max-w-3xl font-serif text-[clamp(38px,6vw,72px)] font-normal leading-[1.02] text-editorial-ink">
-          From inspiration to a <em className="italic">fully shopped room</em> — in minutes.
-        </h1>
-        <p className="mt-6 max-w-2xl font-dmsans text-[16px] leading-relaxed text-editorial-taupe">
-          myMaison is the nexus between your Pinterest board, your actual room photo, the
-          Australian retailer catalogue, and a senior-designer-grade AI. Pick a direction. See
-          your room rendered with real, buyable products. Walk past analysis paralysis straight
-          to a quote.
-        </p>
-        <div className="mt-9 flex flex-wrap items-center gap-4">
-          <Link
-            href="/signup"
-            className="rounded-full bg-editorial-cognac px-6 py-3 font-dmsans text-[14px] font-medium text-editorial-ink transition hover:opacity-90"
-          >
-            Style my room
-          </Link>
-          <Link
-            href="#how"
-            className="font-dmsans text-[14px] font-medium text-editorial-taupe underline-offset-4 transition hover:text-editorial-ink hover:underline"
-          >
-            See how it works →
-          </Link>
+      {/* Hero — editorial warm canvas in our themes/palettes.
+          A photo would commit to one style; the gradient + arch motif
+          reads "considered design platform" without picking sides. Swap
+          in a Flux-generated hero photograph later if/when we have one
+          in the catalogue that's truly palette-true. */}
+      <section className="relative overflow-hidden">
+        <HeroCanvas />
+
+        <div className="relative mx-auto max-w-[1200px] px-6 pt-16 pb-24 md:pt-24 md:pb-32">
+          <p className="font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+            Your personal design studio · Australia
+          </p>
+
+          {/* Tiny palette strip — visual proof we work in considered tokens. */}
+          <div className="mt-4 flex items-center gap-2.5">
+            <span aria-hidden="true" className="h-3.5 w-3.5 rounded-full bg-editorial-cream ring-1 ring-editorial-border" />
+            <span aria-hidden="true" className="h-3.5 w-3.5 rounded-full bg-[#E8DDC9] ring-1 ring-editorial-border" />
+            <span aria-hidden="true" className="h-3.5 w-3.5 rounded-full bg-editorial-cognac ring-1 ring-editorial-border" />
+            <span aria-hidden="true" className="h-3.5 w-3.5 rounded-full bg-editorial-taupe ring-1 ring-editorial-border" />
+            <span aria-hidden="true" className="h-3.5 w-3.5 rounded-full bg-editorial-ink ring-1 ring-editorial-border" />
+            <span className="ml-2 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+              Sandstone · 2026
+            </span>
+          </div>
+
+          <h1 className="mt-6 max-w-3xl font-serif text-[clamp(38px,6vw,72px)] font-normal leading-[1.02] text-editorial-ink">
+            From inspiration to a <em className="italic">fully shopped room</em> — in minutes.
+          </h1>
+          <p className="mt-6 max-w-2xl font-dmsans text-[16px] leading-relaxed text-editorial-taupe">
+            myMaison is the nexus between your Pinterest board, your actual room photo, the
+            Australian retailer catalogue, and a senior-designer-grade AI. Pick a direction. See
+            your room rendered with real, buyable products. Walk past analysis paralysis straight
+            to a quote.
+          </p>
+          <div className="mt-9 flex flex-wrap items-center gap-4">
+            <Link
+              href="/signup"
+              className="rounded-full bg-editorial-cognac px-6 py-3 font-dmsans text-[14px] font-medium text-editorial-ink transition hover:opacity-90"
+            >
+              Style my room
+            </Link>
+            <Link
+              href="#how"
+              className="font-dmsans text-[14px] font-medium text-editorial-taupe underline-offset-4 transition hover:text-editorial-ink hover:underline"
+            >
+              See how it works →
+            </Link>
+          </div>
+          <p className="mt-6 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+            Closed beta · request access for now · open beta soon
+          </p>
         </div>
-        <p className="mt-6 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
-          Free for individuals · three renders included · no card required
-        </p>
       </section>
 
       {/* Retailer strip */}
@@ -384,6 +405,83 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Editorial hero canvas. Pure CSS + SVG — no external image dependency.
+// Layered so the result reads warm and dimensional without competing
+// with the type:
+//   1. Base cream-to-surface gradient
+//   2. Cognac radial wash from the upper-right (warm "afternoon light")
+//   3. Taupe radial wash from the lower-left (depth, grounding)
+//   4. Architectural arch motif in cognac (low opacity, nods to "home")
+//   5. Subtle grain texture overlay
+//   6. Top + bottom fades so the section blends into the nav + retailer
+//      strip cleanly
+// Every colour value maps to a real editorial token. Themes/palettes,
+// not stock photography.
+// ─────────────────────────────────────────────────────────────────────
+function HeroCanvas() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+      {/* 1 — base */}
+      <div className="absolute inset-0 bg-gradient-to-br from-editorial-cream via-editorial-surface to-editorial-cream" />
+
+      {/* 2 — cognac warm wash, upper-right */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 70% 60% at 88% 12%, rgba(196,149,106,0.32), transparent 60%)',
+        }}
+      />
+
+      {/* 3 — taupe grounding wash, lower-left */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 60% 55% at 12% 88%, rgba(139,115,85,0.20), transparent 65%)',
+        }}
+      />
+
+      {/* 4 — architectural arch motif. Right-side, sits behind the type. */}
+      <svg
+        className="absolute -right-16 top-8 h-[520px] w-[520px] opacity-[0.09] md:-right-8 md:h-[640px] md:w-[640px] md:opacity-[0.11]"
+        viewBox="0 0 600 600"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        stroke="#7A4A2A" /* deeper cognac for line-art legibility */
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      >
+        {/* Floor line */}
+        <line x1="40" y1="540" x2="560" y2="540" strokeWidth="2" />
+        {/* Outer arched window */}
+        <path d="M150 540 V 240 a 100 100 0 0 1 100 -100 h 100 a 100 100 0 0 1 100 100 V 540 Z" />
+        {/* Inner arch */}
+        <path d="M180 540 V 250 a 75 75 0 0 1 75 -75 h 90 a 75 75 0 0 1 75 75 V 540" />
+        {/* Centre mullion */}
+        <line x1="300" y1="175" x2="300" y2="540" />
+        {/* Horizontal cross-bar */}
+        <line x1="180" y1="380" x2="420" y2="380" strokeWidth="1" />
+        {/* Pendant light, hanging from above */}
+        <line x1="300" y1="40" x2="300" y2="115" strokeWidth="1" />
+        <ellipse cx="300" cy="125" rx="14" ry="8" />
+        {/* Sun / orb behind the arch — a quiet warm focal point */}
+        <circle cx="300" cy="275" r="44" strokeWidth="1" opacity="0.7" />
+        {/* Floor shadow hint */}
+        <line x1="80" y1="555" x2="520" y2="555" strokeWidth="1" opacity="0.45" />
+      </svg>
+
+      {/* 5 — grain */}
+      <div className="absolute inset-0 bg-grain opacity-50" />
+
+      {/* 6 — fades into adjacent sections */}
+      <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-editorial-cream to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-editorial-cream to-transparent" />
     </div>
   );
 }
