@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `8fb9e93` (will
+**Last verified:** 2026-05-19 · most recent material commit: `eaba86d` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,18 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Render quality fixes from first end-to-end test:
+  (a) /api/render now reads the source photo's dimensions with sharp
+  and computes Flux-valid output dims that preserve aspect — fixes the
+  stretched/squashed output when a portrait phone shot was forced into
+  landscape_4_3; (b) Claude vision validator no longer sees the
+  Florence-2 hint ("Florence-2 thinks this is X, what is it really?"),
+  which was anchoring its judgement and letting mislabels through.
+  Now classifies fresh from the crop and gets called out specifically
+  on the chair-vs-bedside-table edge case. The third issue from the
+  test — staged SKU rendering as a generic version of itself instead
+  of the actual product — is task #73 (reference-image inpainting),
+  still pending.
 - `2026-05-19` — Second-round scraper triage. Koala + Woodcut both
   needed Playwright after Node `fetch` couldn't get past their WAFs
   (Koala dropped TCP entirely, Woodcut returned a 403 HTML page in

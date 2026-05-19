@@ -11,6 +11,7 @@
 // fal's queue, finalises the render (download + storage + picking list) once
 // fal reports completed, and updates the renders row.
 
+import sharp from 'sharp';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
@@ -23,6 +24,35 @@ import {
 } from '@/lib/styles';
 import { submitDepthRender } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
+
+// Compute Flux-compatible output dimensions that preserve the source
+// photo's aspect ratio. Without this, /api/render never passes dims to
+// submitDepthRender and the fal endpoint falls back to landscape_4_3 —
+// so a portrait phone shot comes back squashed into a landscape canvas.
+//
+// Flux dev wants dimensions divisible by 32 and (for quality) the long
+// edge near 1024. We compute the longest edge as 1024 and round each
+// axis to the nearest multiple of 32 within that bound.
+async function computeFluxDimensions(buf: Buffer): Promise<{ width: number; height: number }> {
+  const meta = await sharp(buf).metadata();
+  const srcW = meta.width ?? 1024;
+  const srcH = meta.height ?? 768;
+  const ratio = srcW / srcH;
+  const long = 1024;
+  let w: number;
+  let h: number;
+  if (ratio >= 1) {
+    w = long;
+    h = Math.round(long / ratio);
+  } else {
+    h = long;
+    w = Math.round(long * ratio);
+  }
+  // Snap to multiples of 32. Flux refuses anything else.
+  w = Math.max(512, Math.round(w / 32) * 32);
+  h = Math.max(512, Math.round(h / 32) * 32);
+  return { width: w, height: h };
+}
 
 export const runtime = 'nodejs';
 // Submit is a fast call — generous budget but typical run is <8s now.
@@ -145,9 +175,23 @@ export async function POST(request: NextRequest) {
       room.analysis as RoomFacts | null,
       heroProducts.length > 0 ? heroProducts : null,
     );
+    // Read the source photo's dimensions so Flux outputs at the same
+    // aspect — portrait stays portrait, landscape stays landscape.
+    let dims: { width: number; height: number } | undefined;
+    try {
+      const dl = await admin.storage.from('rooms').download(room.photo_url);
+      if (dl.data) {
+        const buf = Buffer.from(await dl.data.arrayBuffer());
+        dims = await computeFluxDimensions(buf);
+      }
+    } catch (err) {
+      console.warn('[render] could not read photo dimensions, using default', err);
+    }
     const submission = await submitDepthRender({
       prompt: groundedPrompt,
       controlImageUrl: signed.data.signedUrl,
+      width: dims?.width,
+      height: dims?.height,
     });
     await admin
       .from('renders')

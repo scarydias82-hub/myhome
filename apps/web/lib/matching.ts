@@ -380,7 +380,7 @@ type Verdict =
   | { kind: 'keep'; label: string }
   | { kind: 'drop'; reason: string };
 
-async function classifyCropWithClaude(cropBuf: Buffer, hint: string): Promise<Verdict> {
+async function classifyCropWithClaude(cropBuf: Buffer, _hint: string): Promise<Verdict> {
   try {
     const client = getAnthropic();
     const cropBase64 = cropBuf.toString('base64');
@@ -393,12 +393,16 @@ ${allowed}, architecture, other
 
 Use "architecture" if the region is a doorway, an opening into another room, a wall section, a window, a ceiling, or any structural element — NOT a piece of furniture or decor. A reflection visible through an open doorway is NOT a mirror; reply "architecture".
 Use "other" for anything that isn't furniture, decor, or architecture (a person, an animal, etc.).
-Otherwise pick the closest match from the list.`,
+Otherwise pick the closest match from the list — but pick it from what YOU see in the image, not from any prior label. Be especially careful with chair-vs-bedside-table and sofa-vs-bed — short pieces with cushions tend to read as armchairs even when they're actually bedside tables or stools.`,
       messages: [
         {
+          // Deliberately do NOT pass the Florence-2 hint here. The
+          // previous prompt anchored Claude to whatever Florence-2 had
+          // guessed, which made the validator a rubber stamp on
+          // labels like "armchair" that were actually bedside tables.
           role: 'user',
           content: [
-            { type: 'text', text: `Florence-2 thinks this is "${hint}". What is it really?` },
+            { type: 'text', text: 'What is this cropped region of an interior photo?' },
             {
               type: 'image',
               source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
@@ -418,9 +422,9 @@ Otherwise pick the closest match from the list.`,
     if (raw === 'other') return { kind: 'drop', reason: 'other' };
     if (VALID_LABELS.has(raw)) return { kind: 'keep', label: raw };
     // Couldn't parse — trust Florence-2's original guess.
-    return { kind: 'keep', label: hint };
+    return { kind: 'keep', label: _hint };
   } catch (err) {
     console.error('validator call failed, keeping original label', err);
-    return { kind: 'keep', label: hint };
+    return { kind: 'keep', label: _hint };
   }
 }
