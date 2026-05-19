@@ -27,7 +27,6 @@ interface RenderRow {
   project_id: string | null;
   picking_list: PickingListItem[] | null;
   cost_estimate_aud: number | null;
-  active_revision_id: string | null;
 }
 
 interface RevisionRow {
@@ -60,13 +59,30 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/renders/${id}`);
 
+  // Primary render query — only legacy columns so the page still loads
+  // against a pre-migration schema. The active_revision_id pointer is
+  // fetched in a separate query below and tolerated as missing.
   const renderRes = await supabase
     .from('renders')
-    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud, active_revision_id')
+    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
   if (!render) notFound();
+
+  // Optional active_revision_id — only present after the
+  // 20260520 migration. If the column doesn't exist (.error fires) we
+  // fall back to the latest revision (or render.output_url) below.
+  let activeRevisionId: string | null = null;
+  const activePtrRes = await supabase
+    .from('renders')
+    .select('active_revision_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (!activePtrRes.error && activePtrRes.data) {
+    activeRevisionId =
+      (activePtrRes.data as { active_revision_id: string | null }).active_revision_id ?? null;
+  }
 
   const roomRes = await supabase
     .from('rooms')
@@ -84,20 +100,25 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
 
   // Fetch every revision so the strip can show full history and we know
   // which image to render as the "after". Once the 20260520 migration has
-  // run, every succeeded render has at least an 'original' revision; older
-  // rows without one fall back to render.output_url below.
+  // run, every succeeded render has at least an 'original' revision. If
+  // the migration hasn't been applied yet the table doesn't exist —
+  // .error fires, we treat as empty list, and the page falls back to
+  // render.output_url. That's why this page still loads cleanly without
+  // the migration.
   const revisionsRes = await supabase
     .from('render_revisions')
     .select('id, kind, image_bucket, image_path, label, sort_order, created_at')
     .eq('render_id', render.id)
     .order('sort_order', { ascending: true });
-  const revisions = (revisionsRes.data as RevisionRow[] | null) ?? [];
+  const revisions: RevisionRow[] = revisionsRes.error
+    ? []
+    : ((revisionsRes.data as RevisionRow[] | null) ?? []);
 
   // Pick the active revision. If active_revision_id is set, use it;
   // otherwise the latest by sort_order; otherwise null (fall back to
-  // render.output_url for ancient rows).
+  // render.output_url for pre-migration rows).
   const activeRevision =
-    (render.active_revision_id ? revisions.find((r) => r.id === render.active_revision_id) : null) ??
+    (activeRevisionId ? revisions.find((r) => r.id === activeRevisionId) : null) ??
     revisions[revisions.length - 1] ??
     null;
 
@@ -128,7 +149,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
       };
     }),
   );
-  const activeRevisionId = activeRevision?.id ?? null;
+  const activeRevisionIdForStrip = activeRevision?.id ?? null;
 
   const isDone = render.status === 'succeeded' && afterSigned?.data?.signedUrl;
   const isFailed = render.status === 'failed' || render.status === 'cancelled';
@@ -198,7 +219,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             <RevisionStrip
               renderId={render.id}
               revisions={signedRevisions}
-              activeRevisionId={activeRevisionId}
+              activeRevisionId={activeRevisionIdForStrip}
             />
           </>
         ) : isFailed ? (
