@@ -1,0 +1,7 @@
+# Local fixture photos (you drop your own room photos here)
+fixtures/*
+!fixtures/.gitkeep
+
+# Per-run outputs (rendered images, scorecards)
+results/*
+!results/.gitkeep
