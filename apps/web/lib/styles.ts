@@ -119,10 +119,22 @@ export interface HeroProductDescriptor {
   retailer: string;
 }
 
+// Render aggressiveness mode.
+//   - 'subtle' = legacy behaviour. Flooring is preserved exactly, walls
+//     hold their existing tone, the model only swaps upholstery + furniture.
+//     Strength 0.70 in fal.ts. Use when the room geometry/lighting is too
+//     unusual to risk transformation.
+//   - 'bold'   = current default. Walls take palette colour, flooring swaps
+//     to a palette-appropriate material, windows get curtains/sheers,
+//     statement lighting is invited in. Strength 0.82. This is what drives
+//     emotional attachment — the user sees their room as a *new* room.
+export type PromptMode = 'subtle' | 'bold';
+
 export function buildPrompt(
   style: HardcodedStyle,
   facts?: RoomFacts | null,
   heroProducts?: HeroProductDescriptor[] | null,
+  mode: PromptMode = 'bold',
 ): string {
   // The architecture-preservation tokens at the end matter as much as the
   // style descriptor. Flux respects positive-language directives much better
@@ -130,21 +142,37 @@ export function buildPrompt(
   // for what we want rather than listing what to avoid.
   const base = [
     style.descriptor,
-    facts?.room_type ? `${factsRoomType(facts.room_type)}, restyled` : null,
+    facts?.room_type ? `${factsRoomType(facts.room_type)}, fully restyled` : null,
     'photorealistic interior photography',
     'natural daylight, soft shadows',
     '35mm lens, architectural digest editorial',
     'tack-sharp detail, accurate scale',
   ].filter(Boolean) as string[];
 
+  // Explicit palette directive — name the actual hex codes so Flux applies
+  // them across walls, fabric, decor instead of approximating from the style
+  // descriptor alone. This is what makes the "Sandstone 2026" palette
+  // actually show up *as* sandstone in the final render.
+  if (style.palette && style.palette.length >= 3) {
+    const palette = style.palette.slice(0, 5).join(', ');
+    base.push(
+      `palette ${palette} — apply across walls, soft furnishings, decor, accent surfaces`,
+    );
+  }
+
   if (facts) {
-    // Architecture-preserving directives derived from the verified analysis.
+    // Geometry-preservation only. We never lock floor *material* or wall
+    // *colour* — those need to transform with the chosen palette. We do lock
+    // the room's bones so the user still recognises their space.
     const preserve: string[] = [];
     if (facts.architectural_features && facts.architectural_features.length > 0) {
-      preserve.push(`keep existing ${facts.architectural_features.slice(0, 4).join(', ')}`);
+      preserve.push(
+        `keep existing ${facts.architectural_features.slice(0, 4).join(', ')} positions`,
+      );
     }
-    if (facts.flooring) {
-      preserve.push(`retain ${facts.flooring} flooring exactly`);
+    if (mode === 'subtle' && facts.flooring) {
+      // Subtle mode is the only place we still hard-pin flooring.
+      preserve.push(`retain ${facts.flooring} flooring`);
     }
     if (facts.light?.direction) {
       preserve.push(`maintain ${facts.light.direction}-facing light direction`);
@@ -166,12 +194,36 @@ export function buildPrompt(
     if (featured) base.push(`featuring ${featured}`);
   }
 
-  base.push('preserve existing walls, windows, doors, ceiling layout exactly');
+  // Room-bones lock. Same across both modes — geometry never moves.
+  base.push(
+    'preserve room geometry exactly: same wall positions, same window openings, same door openings, same ceiling height',
+  );
   base.push('same camera angle and room proportions as reference photo');
-  // Explicitly direct Flux to swap furniture rather than just retint it.
-  // Without this, canny's strict line lock keeps patterned upholstery
-  // recognisable even when the rest of the room restyles.
-  base.push('replace existing upholstery, patterns, and furniture with new pieces in the requested aesthetic');
+
+  if (mode === 'bold') {
+    // Aggressive surface transformation. Each line below is a separate
+    // directive that pushes Flux to actually USE the chosen palette across
+    // every visible surface, not just retint upholstery.
+    base.push(
+      'apply palette tone to wall surfaces — soft tonal wash in lighter palette colours, optional accent wall in a deeper palette tone',
+    );
+    base.push(
+      'reflooring permitted to suit the aesthetic — wide oak boards, honed travertine, wool rug overlay, or herringbone parquet as appropriate',
+    );
+    base.push(
+      'drape windows with linen sheers or palette-toned floor-length curtains, never bare',
+    );
+    base.push(
+      'introduce statement lighting positioned for the room\'s natural light — pendant, floor lamp, or sculptural table lamp',
+    );
+    base.push(
+      'wall art at eye-level, sculptural decor on surfaces, fresh plants and ceramic vessels',
+    );
+  }
+
+  base.push(
+    'replace existing upholstery, patterns, and furniture with new pieces in the requested aesthetic',
+  );
   base.push('no patterned chintz, no floral upholstery unless requested');
   return base.join(', ');
 }

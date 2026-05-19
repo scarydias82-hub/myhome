@@ -24,6 +24,10 @@ export interface DepthRenderInput {
   controlImageUrl: string;
   width?: number;
   height?: number;
+  // Optional denoise strength override. Defaults to 0.82 (bold mode — walls
+  // and floor allowed to transform). Set to 0.70 for subtle mode (legacy
+  // architecture-preserving behaviour). See lib/styles.ts → PromptMode.
+  strength?: number;
 }
 
 export interface DepthRenderOutput {
@@ -50,11 +54,14 @@ function renderInput(input: DepthRenderInput) {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
-    // 0.70 gives Flux enough room to fully replace upholstery and surface
-    // textures while canny still locks walls/windows/doors in place. Below
-    // 0.6 the model preserves patterns too aggressively; above 0.8 walls
-    // start drifting.
-    strength: 0.70,
+    // 0.82 is the bold default — Flux is allowed to repaint walls, swap
+    // flooring, drape windows, add statement lighting. Canny lock at 0.85
+    // still pins the geometry (wall positions, window openings, door
+    // openings) so the room is recognisable. 0.70 (the legacy subtle
+    // default) preserves more surface texture; pass it via input.strength
+    // when running the comparison mode. Above 0.88 the model starts
+    // hallucinating extra windows.
+    strength: input.strength ?? 0.82,
     control_lora_strength: 0.85,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
@@ -63,7 +70,10 @@ function renderInput(input: DepthRenderInput) {
     // drop below ~15 and the marginal improvement above 20 isn't worth the
     // extra ~8s of inference time for interior renders.
     num_inference_steps: 20,
-    guidance_scale: 3.5,
+    // 4.0 (was 3.5) — push Flux to obey the palette + surface directives a
+    // touch harder. Above 5 it starts oversaturating and the editorial feel
+    // collapses.
+    guidance_scale: 4.0,
     num_images: 1,
     enable_safety_checker: true,
   };

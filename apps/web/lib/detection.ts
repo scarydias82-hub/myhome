@@ -18,7 +18,14 @@ export interface Bbox {
 // way to drive multi-class detection, but Florence-2 also returns a default
 // COCO-style detection when called with no prompt. We use the default and
 // then filter for furniture-relevant labels.
+// Furniture + decor + soft furnishings + lighting + window treatments.
+// Stage 1 expansion (May 2026): added curtains / sheers / chandelier /
+// sculpture / wall art / planter so the bolder render mode surfaces every
+// shoppable surface, not just furniture. Some of these don't have catalog
+// SKUs yet — they're filtered out downstream in matching.ts, but the
+// demand signal is logged so we know which scrapers to prioritise.
 const FURNITURE_LABELS = new Set([
+  // Seating
   'sofa',
   'couch',
   'chair',
@@ -26,29 +33,45 @@ const FURNITURE_LABELS = new Set([
   'bench',
   'stool',
   'ottoman',
+  'dining chair',
+  // Sleep
   'bed',
+  'bedside table',
+  // Tables / surfaces
   'table',
   'coffee table',
   'dining table',
   'side table',
+  'console',
+  'sideboard',
+  // Storage
+  'shelf',
+  'cabinet',
+  // Soft floor / wall
   'rug',
+  'wall art',
+  'art',
+  'picture',
+  'painting',
+  // Lighting
   'lamp',
   'floor lamp',
   'table lamp',
   'pendant light',
+  'chandelier',
+  // Window treatments — new in Stage 1
+  'curtain',
+  'curtains',
+  'sheers',
+  'drape',
+  'drapes',
+  // Decor
   'mirror',
-  'art',
-  'picture',
-  'painting',
   'plant',
   'potted plant',
+  'planter',
   'vase',
-  'shelf',
-  'cabinet',
-  'console',
-  'sideboard',
-  'bedside table',
-  'dining chair',
+  'sculpture',
   'throw cushion',
   'throw blanket',
   'cushion',
@@ -56,7 +79,11 @@ const FURNITURE_LABELS = new Set([
 ]);
 
 // Map raw detection labels to a normalised category we can filter products by.
+// Stage 1 expansion: added Curtains (new category — empty catalog until
+// the Spotlight/Adairs scrapers land), Decor sub-routing for sculpture +
+// planter, chandelier into Lighting, wall art into Art.
 const LABEL_TO_CATEGORY: Record<string, string> = {
+  // Seating
   sofa: 'Sofas',
   couch: 'Sofas',
   chair: 'Chairs',
@@ -64,29 +91,45 @@ const LABEL_TO_CATEGORY: Record<string, string> = {
   bench: 'Chairs',
   stool: 'Chairs',
   ottoman: 'Ottomans',
+  'dining chair': 'Chairs',
+  // Sleep
   bed: 'Beds',
+  'bedside table': 'Side Tables',
+  // Tables / surfaces
   table: 'Tables',
   'coffee table': 'Coffee Tables',
   'dining table': 'Dining',
   'side table': 'Side Tables',
+  console: 'Consoles',
+  sideboard: 'Sideboards',
+  // Storage
+  shelf: 'Storage & Desks',
+  cabinet: 'Storage & Desks',
+  // Soft floor / wall
   rug: 'Rugs',
+  'wall art': 'Art',
+  art: 'Art',
+  picture: 'Art',
+  painting: 'Art',
+  // Lighting
   lamp: 'Lighting',
   'floor lamp': 'Lighting',
   'table lamp': 'Lighting',
   'pendant light': 'Lighting',
+  chandelier: 'Lighting',
+  // Window treatments — empty catalog until the textile scrapers land
+  curtain: 'Curtains',
+  curtains: 'Curtains',
+  sheers: 'Curtains',
+  drape: 'Curtains',
+  drapes: 'Curtains',
+  // Decor
   mirror: 'Mirrors',
-  art: 'Art',
-  picture: 'Art',
-  painting: 'Art',
-  plant: 'Furniture',
-  'potted plant': 'Furniture',
-  vase: 'Furniture',
-  shelf: 'Storage & Desks',
-  cabinet: 'Storage & Desks',
-  console: 'Consoles',
-  sideboard: 'Sideboards',
-  'bedside table': 'Side Tables',
-  'dining chair': 'Chairs',
+  plant: 'Decor',
+  'potted plant': 'Decor',
+  planter: 'Decor',
+  vase: 'Decor',
+  sculpture: 'Decor',
   'throw cushion': 'Decor',
   'throw blanket': 'Decor',
   cushion: 'Decor',
@@ -104,10 +147,19 @@ export function categoryForLabel(label: string): string {
 // More boxes → a denser picking list, which is the brand promise: every
 // visible piece should be shoppable.
 const PHRASE_LIST =
+  // Seating + surfaces
   'a sofa, an armchair, a coffee table, a side table, a console, a sideboard, ' +
-  'a rug, a floor lamp, a table lamp, a pendant light, ' +
-  'art, a picture, a mirror, ' +
-  'a potted plant, a vase, a throw cushion, a throw blanket, ' +
+  // Soft floor
+  'a rug, ' +
+  // Lighting (including chandelier, which Florence-2 default missed)
+  'a floor lamp, a table lamp, a pendant light, a chandelier, ' +
+  // Wall + decor
+  'wall art, a picture, a mirror, a sculpture, ' +
+  // Soft decor
+  'a potted plant, a planter, a vase, a throw cushion, a throw blanket, ' +
+  // Window treatments — bold mode introduces curtains where there are none
+  'curtains, sheers, drapes, ' +
+  // Bedroom + dining
   'a bed, a bedside table, a dining table, a dining chair.';
 
 export async function detectObjects(imageUrl: string): Promise<Bbox[]> {

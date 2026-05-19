@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `3b612c3` (will
+**Last verified:** 2026-05-19 · most recent material commit: `fef1b0c` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,15 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Render aggressiveness: Stage 1 shipped (task #83). Flux
+  strength 0.70 → 0.82, guidance 3.5 → 4.0, canny lock unchanged at 0.85.
+  `buildPrompt` rewritten to drive palette-applied walls, palette-
+  appropriate flooring, curtains/sheers on every window, statement
+  lighting, wall art at eye-level. Detection expanded to curtains /
+  sheers / drapes / chandelier / sculpture / planter / wall art. Picking
+  list density 8 → 15 items. Items with zero catalog matches are
+  dropped (demand-signal logged) until the relevant scraper lands.
+  Stages 2–5 memoed as tasks #78–#82.
 - `2026-05-19` — Fixed §7.3 manual-provisioning SQL recipe. The
   previous draft referenced `auth.admin_create_user` which is a JS
   admin SDK method, not a SQL function. Replaced with the proper
@@ -585,6 +594,40 @@ task IDs; reference them when briefing Claude Code.
 ### 6.6 AR / discovery
 - **#56 — Real AR-card compat scores.** Today's score is a placeholder.
 - **#57 — Persist "Add to project" from AR card.**
+
+### 6.6.5 Render aggressiveness (emotional-attachment programme)
+
+Strategy: drive the user to emotional commitment to *their* room by
+making the render more aggressive — wall paint, flooring swap, curtains,
+statement lighting all on by default — and by surfacing more shoppable
+items per render. The lift then funnels into warm leads to retailers.
+Stage 1 is live; the rest is sequenced.
+
+- **#83 — Stage 1: aggressive prompt + detection density. SHIPPED.**
+  `buildPrompt` now applies the chosen palette across walls, flooring,
+  curtains; Flux strength up to 0.82 (canny still locks geometry at
+  0.85); detection picks up curtains, chandelier, sculpture, planter,
+  wall art; picking list 8 → 15 items; zero-match items skip with
+  demand-signal logging.
+- **#78 — Stage 2: comparison render mode (subtle vs bold).** Render
+  both modes on submit, let the user pick. Captures emotion preference
+  as data. Only build this if Stage 1 turns out too aggressive for
+  some cohorts; otherwise skip.
+- **#79 — Stage 3a: Beacon Lighting scraper.** Highest-impact next
+  scrape. Lighting is the second-most-detected item after furniture
+  and we currently have only a handful of Lighting SKUs across the
+  three live retailers.
+- **#80 — Stage 3b: Spotlight + Adairs curtains/textiles.** Curtains
+  is a brand-new category as of Stage 1 — empty catalog today.
+- **#81 — Stage 3c: The Rug Establishment + Choices Flooring.** Rugs
+  + hard flooring. Sandstone-2026 palette especially calls for oak +
+  herringbone + travertine.
+- **#82 — Stage 4: "Visualise this whole room" + emotional UX.**
+  After the picking list lands, auto-stage the top match for every
+  detected item into one composite Flux Pro Fill call. This is the
+  emotional commitment moment.
+- (Stage 5 = warm-lead retailer plumbing — covered by existing
+  pending tasks #52 + #53.)
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live

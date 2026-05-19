@@ -47,14 +47,17 @@ export interface MatchResult {
 }
 
 const MATCHES_PER_ITEM = 5;
-const CANDIDATES_PER_ITEM = 10; // how many products to send to Claude per match
+const CANDIDATES_PER_ITEM = 12; // was 10 — more variety per category in bold mode
 // Lowered from 0.005 → 0.002 (0.2% of image) so we catch decor like lamps,
 // cushions, vases. They're small in pixels but matter visually.
 const MIN_BOX_AREA_RATIO = 0.002;
-// Raised from 5 → 8. brand promise per the dashboard brief: every visible
-// piece should be shoppable. Claude vision matching runs all 8 in parallel
-// so the latency cost is bounded.
-const MAX_ITEMS = 8;
+// Stage 1: raised from 8 → 15 to drive product density. Aggressive mode
+// surfaces curtains, lamps, art, sculptures, cushions in addition to the
+// hero furniture. Items with zero matching SKUs in the catalogue are
+// dropped (demand-signal logged) rather than padding the picking list
+// with empty cards. Each item runs ~3-5s of Claude vision in parallel,
+// so a 15-item render finalises in ~12-18s.
+const MAX_ITEMS = 15;
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 
 interface ProductRow {
@@ -144,6 +147,18 @@ async function buildPickingItem({
 
   const candidates = await fetchCandidates({ admin, category });
   const matches = await rankWithClaude(cropBuf, candidates);
+
+  // Items where the catalogue has no SKUs in the detected category are
+  // dropped here. We still log the miss as a demand signal so we know
+  // which scrapers to prioritise (curtains → Spotlight/Adairs, lighting →
+  // Beacon, etc.). Without this filter, the picking list shows empty
+  // cards that visually deflate the "every piece is shoppable" promise.
+  if (matches.length === 0) {
+    console.log(
+      `[matching] no catalog matches for ${box.label} (${category}) — demand signal`,
+    );
+    return null;
+  }
 
   return {
     itemLabel: box.label,
@@ -286,6 +301,11 @@ function clamp(n: number, min: number, max: number): number {
 // We send each crop to Claude Haiku and ask it to label or reject. Drops
 // architectural false-positives and relabels what Florence-2 got wrong.
 
+// Stage 1: extended with chandelier, sculpture, curtain, sheers, drape,
+// planter, wall art. These now make it through the validator and into the
+// picking list. Some have empty catalog support today (curtains, sheers,
+// drapes — fixed when Stage 3 scrapers land); the matching.ts filter
+// drops those with zero matches, so the validator can be liberal.
 const VALID_LABELS = new Set([
   'sofa',
   'armchair',
@@ -305,12 +325,21 @@ const VALID_LABELS = new Set([
   'floor lamp',
   'table lamp',
   'pendant light',
+  'chandelier',
   'mirror',
   'art',
+  'wall art',
+  'sculpture',
   'plant',
+  'planter',
   'vase',
   'cushion',
   'throw',
+  'curtain',
+  'curtains',
+  'sheers',
+  'drape',
+  'drapes',
 ]);
 
 async function validateBoxesWithClaude(
