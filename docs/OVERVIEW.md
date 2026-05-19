@@ -25,6 +25,43 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Carpet Court scraper shipped (task #90 — closes the
+  flooring + curtain catalogue gap and supersedes the cancelled Carpet
+  Call task #86). Carpet Court runs on Magento 2 with a 5s
+  Crawl-delay; sitemap is mostly blog content so we walk a curated set
+  of category PLPs instead (room-based for carpet, type-based for
+  curtains). Each `.product-item` card on the PLP carries title +
+  image + URL — no per-product page visit needed. Per-room walks
+  (bedroom / living-room / hallway / kids / stairs) capture which
+  rooms a carpet is suitable for; that survives into the products row
+  as `dimensions.rooms = ['bedroom','hallway','stairs']` so the
+  picking-list query can filter via `dimensions->'rooms' ? 'bedroom'`.
+  Curtains carry no room lock (universally suitable). First run: 18
+  unique carpets across all rooms + 12 sheers + 5 blockouts = 35
+  products, 0 errors. Pricing stays null because carpets are sold
+  per m² and curtains are made-to-measure — the UI will surface a
+  "Get a quote" CTA in that case (task TBD).
+- `2026-05-20` — **Memo (no code yet)**: Consumer-brief → Claude vision
+  → render pipeline. Tasks #91/#92/#93 capture the work. Today the
+  consumer picks a palette from a list of 10 swatches — high friction,
+  high paralysis, and the palette they pick is often the wrong one for
+  what they actually want. The proposed flow: replace the palette
+  swatch step with a multi-select keyword brief (Mood / Lifestyle /
+  Aesthetic / Function / Constraints categories) plus an optional
+  free-text field, then have Claude Sonnet vision read (a) the keyword
+  brief, (b) the room photo, (c) our 10 palette definitions, and pick
+  the best-fit palette plus per-consumer variation hints ("Warm
+  Grounded Earth, but lean to the lighter Wheat tones because user
+  said 'bright and airy'"). Variation hints flow into buildPrompt as
+  additional palette directives so the same palette can render
+  differently for different consumers. Claude becomes the designer
+  matching consumer brief to industry themes; the consumer doesn't
+  need to know what "Warm Grounded Earth" means. Eval scorecard gains
+  a "brief adherence" criterion. Unlocks B2B Design Studio use case
+  (designer fills a client brief, system synthesises render direction)
+  AND lowers the consumer onboarding bar (chips, not jargon). Sized
+  at ~2 weeks once we're through the current scraper batch + eval
+  iteration.
 - `2026-05-20` — Adairs scraper shipped (first delivery of task #80
   split — bedding via quilt/doona/duvet covers). Adairs runs on
   Episerver/Optimizely (not Shopify — `/products.json` 404s, and the
