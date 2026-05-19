@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global viewport lock — prevents stray flex/grid children from forcing a
+   horizontal scrollbar on narrow viewports. Mobile especially. Pair with
+   min-w-0 on flex children that contain long inline content. */
+@layer base {
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  /* Many of our hero images use object-cover and absolute fill — never let
+     them spill past their containing element on a phone. */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
 /* Saltbush design tokens. See docs/DESIGN-BRIEF.md §2. */
 @layer base {
   :root {
