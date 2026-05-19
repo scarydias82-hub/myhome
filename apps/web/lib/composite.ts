@@ -68,11 +68,19 @@ export interface PixelBbox {
 // to high resolution before sending to birefnet — without this, Shopify
 // URLs like `_600x.jpg` come through at thumbnail resolution and the
 // cutout looks blurry when scaled to fit the room-photo bbox.
+//
+// We FETCH THE IMAGE OURSELVES rather than handing the URL to fal's
+// downloader. Several retailer CDNs (Freedom most notably — observed
+// in the wild returning `file_download_error` to fal) block fal.ai's
+// IP range or require a real browser User-Agent header. Our server
+// fetches with a Chrome UA + accept headers and passes the bytes to
+// birefnet as a base64 data URL, sidestepping the issue entirely.
 export async function cutoutProduct(imageUrl: string): Promise<Buffer> {
   const fal = getFal();
   const upgradedUrl = upgradeImageUrl(imageUrl);
+  const dataUrl = await fetchProductImageAsDataUrl(upgradedUrl);
   const result = await fal.subscribe(REMBG_ENDPOINT, {
-    input: { image_url: upgradedUrl },
+    input: { image_url: dataUrl },
     logs: false,
   });
   const data = result.data as { image?: { url?: string } };
@@ -81,6 +89,30 @@ export async function cutoutProduct(imageUrl: string): Promise<Buffer> {
   const res = await fetch(cutoutUrl);
   if (!res.ok) throw new Error(`fetch cutout failed: HTTP ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+// Fetch a product image with browser-like headers and encode it as a
+// base64 data URL for fal's image_url field. Browser headers matter —
+// Freedom's CDN returns 403 to non-browser User-Agents, which is what
+// fal sends by default.
+async function fetchProductImageAsDataUrl(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'accept-language': 'en-AU,en;q=0.9',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Could not fetch product image (HTTP ${res.status}). URL: ${url.slice(0, 200)}`,
+    );
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const contentType =
+    (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0]?.trim() ?? 'image/jpeg';
+  return `data:${contentType};base64,${buf.toString('base64')}`;
 }
 
 // Upgrade common product-image CDN URLs to the highest available
