@@ -18,19 +18,34 @@ import { writeJson, retailerOutputDir } from '../utils/storage.js';
 const ORIGIN = 'https://www.dulux.com.au';
 const RETAILER = 'Dulux';
 const RETAILER_SLUG = 'dulux';
-const TARGET_MAX = 200;
+const TARGET_MAX = 1500;
+const SITEMAP_URL = `${ORIGIN}/sitemap.xml`;
 
-const HUE_INDICES = [
-  '/colour/whites-and-neutrals/popular',
-  '/colour/greys/popular',
-  '/colour/blues/popular',
-  '/colour/greens/popular',
-  '/colour/yellows/popular',
-  '/colour/reds/popular',
-  '/colour/oranges/popular',
-  '/colour/purples/popular',
-  '/colour/browns/popular',
-];
+// Walk every colour detail page in the public sitemap. The previous
+// version walked 9 `/colour/<hue>/popular` index pages and capped at
+// 200 colours — which was ~7% of the Dulux range. The sitemap exposes
+// 1,400+ individual colour pages publicly (no Specifier login needed,
+// unlike the colour-atlas tool the brief originally pointed us at).
+//
+// We whitelist the hue categories that actually contain paint colours.
+// Excluded categories: design-effects + textures (finishes, not solid
+// colours), colour-trends + seasonal-trends (editorial pages with no
+// hex), colorbond + metalshield (industrial coatings — not what the
+// wall-paint picker should surface), schemes-styles + about-colour
+// (meta pages with no colour data).
+const ALLOWED_HUES = new Set([
+  'whites-and-neutrals',
+  'greys',
+  'blues',
+  'greens',
+  'yellows',
+  'reds',
+  'oranges',
+  'purples',
+  'browns',
+  'traditionals',
+  'red-heart-blue-shore',
+]);
 
 async function fetchText(url) {
   const res = await fetch(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html' } });
@@ -78,48 +93,6 @@ function findColourObject(node) {
     if (r) return r;
   }
   return null;
-}
-
-function collectColourUrlsFromIndex(html, hueIndex) {
-  // The index page also embeds __NEXT_DATA__ with the full list of
-  // colours in that hue. Pull URLs from there if available; fall back
-  // to href-scan otherwise.
-  const data = extractNextData(html);
-  const urls = new Set();
-  walkForLinks(data, urls, hueIndex);
-  if (urls.size > 0) return [...urls];
-
-  // Fallback: href regex.
-  const hue = hueIndex.split('/')[2];
-  const re = new RegExp(`href="(/colour/${hue}/[a-z0-9-]+/?)"`, 'gi');
-  let m;
-  while ((m = re.exec(html))) {
-    const p = m[1].replace(/\/$/, '');
-    if (p === hueIndex.replace(/\/popular$/, '')) continue;
-    urls.add(`${ORIGIN}${p}`);
-  }
-  return [...urls];
-}
-
-function walkForLinks(node, out, hueIndex) {
-  if (!node) return;
-  if (Array.isArray(node)) {
-    for (const item of node) walkForLinks(item, out, hueIndex);
-    return;
-  }
-  if (typeof node !== 'object') return;
-  // Look for colour-detail slugs or full URLs embedded in props.
-  for (const [key, value] of Object.entries(node)) {
-    if (typeof value === 'string') {
-      if (value.startsWith('/colour/')) {
-        out.add(`${ORIGIN}${value.replace(/\/$/, '')}`);
-      } else if (value.startsWith(`${ORIGIN}/colour/`)) {
-        out.add(value.replace(/\/$/, ''));
-      }
-    } else if (typeof value === 'object') {
-      walkForLinks(value, out, hueIndex);
-    }
-  }
 }
 
 function pickHex(c) {
@@ -191,94 +164,119 @@ function slugFromUrl(url) {
   return url.replace(/\/$/, '').split('/').pop().slice(0, 80);
 }
 
+// Pull every colour detail URL from the sitemap whose path matches
+// /colour/<allowed-hue>/<slug>/. Filters out hue indexes (depth 2),
+// /popular subset pages, articles, and disallowed hue families.
+async function collectColourUrlsFromSitemap() {
+  const xml = await fetchText(SITEMAP_URL);
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  const urls = new Set();
+  const perHue = {};
+  for (const u of locs) {
+    const path = u.replace(/^https?:\/\/[^/]+/, '').replace(/\/+$/, '');
+    const parts = path.split('/').filter(Boolean);
+    // /colour/<hue>/<slug> shape only — depth 3, second segment in
+    // the allowed-hues whitelist.
+    if (parts.length !== 3) continue;
+    if (parts[0] !== 'colour') continue;
+    if (parts[2] === 'popular') continue; // the curated subset page
+    if (!ALLOWED_HUES.has(parts[1])) continue;
+    urls.add(`${ORIGIN}${path}`);
+    perHue[parts[1]] = (perHue[parts[1]] || 0) + 1;
+  }
+  return { urls: [...urls], perHue };
+}
+
 export async function scrapeDulux() {
   console.log(`[${RETAILER}] starting`);
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
 
-  const allColourUrls = new Set();
-  for (const hueIndex of HUE_INDICES) {
-    const indexUrl = `${ORIGIN}${hueIndex}`;
-    if (!(await isAllowed(indexUrl))) {
-      console.warn(`[${RETAILER}] robots disallows ${indexUrl}, skipping`);
-      continue;
-    }
-    try {
-      console.log(`[${RETAILER}] fetching ${hueIndex}`);
-      const html = await fetchText(indexUrl);
-      const urls = collectColourUrlsFromIndex(html, hueIndex);
-      console.log(`[${RETAILER}]   ${urls.length} colours`);
-      for (const u of urls) allColourUrls.add(u);
-      await delay();
-    } catch (err) {
-      errors.push({ url: indexUrl, error: String(err?.message ?? err) });
-    }
+  if (!(await isAllowed(SITEMAP_URL))) {
+    console.warn(`[${RETAILER}] robots disallows sitemap, skipping`);
+    return { retailer: RETAILER, products: [], errors };
   }
 
-  console.log(`[${RETAILER}] ${allColourUrls.size} unique colour urls`);
-  const targets = [...allColourUrls].slice(0, TARGET_MAX);
+  let allColourUrls = [];
+  try {
+    const result = await collectColourUrlsFromSitemap();
+    allColourUrls = result.urls;
+    console.log(`[${RETAILER}] sitemap → ${allColourUrls.length} colour URLs across ${Object.keys(result.perHue).length} hues`);
+    for (const [hue, n] of Object.entries(result.perHue).sort((a, b) => b[1] - a[1])) {
+      console.log(`[${RETAILER}]   ${hue.padEnd(28)} ${n}`);
+    }
+  } catch (err) {
+    errors.push({ url: SITEMAP_URL, error: String(err?.message ?? err) });
+    console.error(`[${RETAILER}] sitemap fetch failed:`, err.message);
+    return { retailer: RETAILER, products: [], errors };
+  }
 
-  const products = [];
-  for (let i = 0; i < targets.length; i++) {
-    const url = targets[i];
+  const targets = allColourUrls.slice(0, TARGET_MAX);
+
+  // Per-colour fetch is just one HTML download + JSON parse — no
+  // images, no auth, no JS. Running serially at the default 2.5s
+  // delay would take ~75 minutes for 1,400 colours. Process in
+  // parallel batches of 8 with a brief inter-batch settle so we
+  // don't hammer the origin.
+  const CONCURRENCY = 8;
+  const BATCH_GAP_MS = 250;
+
+  async function fetchOne(url) {
     try {
-      if (!(await isAllowed(url))) continue;
+      if (!(await isAllowed(url))) return null;
       const html = await fetchText(url);
       const data = extractNextData(html);
       if (!data) {
         errors.push({ url, error: 'no __NEXT_DATA__ on page' });
-        continue;
+        return null;
       }
       const colour = findColourObject(data);
       if (!colour) {
         errors.push({ url, error: 'no colour object in __NEXT_DATA__' });
-        continue;
+        return null;
       }
-
       const name = pickName(colour);
       const hex = pickHex(colour);
       if (!name || !hex) {
         errors.push({ url, error: `incomplete colour: name=${name} hex=${hex}` });
-        continue;
+        return null;
       }
       const atlasCode = pickAtlasCode(colour);
       const chipCode = pickChipCode(colour);
       const lrv = pickLrv(colour);
       const imageUrl = pickImageUrl(colour);
-
       const slug = slugFromUrl(url);
-      let hero = null;
-      if (imageUrl) {
-        try {
-          const dl = await downloadImage({ url: imageUrl, retailerDir: outDir, slug, index: 0 });
-          hero = dl.localPath;
-        } catch (err) {
-          errors.push({ url: imageUrl, error: String(err?.message ?? err), productUrl: url });
-        }
-      }
-
-      products.push({
+      // Skip image download — Dulux paint products use the hex
+      // directly via dimensions.hex (palette-match fast path + UI
+      // renders a coloured swatch). Saves ~1400 image fetches.
+      return {
         id: slug,
         retailer: RETAILER,
         name: atlasCode ? `${name} (${atlasCode})` : name,
         category: 'Paint',
         price: null,
         currency: 'AUD',
-        // Stash colour metadata in the dimensions slot until a real
-        // metadata jsonb column lands on products.
         dimensions: { hex, atlasCode, chipCode, lrv },
-        images: { hero, downloaded: hero != null, source: imageUrl, all: hero ? [hero] : [] },
+        images: { hero: null, downloaded: false, source: imageUrl ?? null, all: [] },
         product_url: url,
         description: atlasCode
           ? `Dulux ${name} — Atlas ${atlasCode}${chipCode ? `, Chip ${chipCode}` : ''}${lrv != null ? `, LRV ${lrv}` : ''}`
           : `Dulux ${name}`,
         scraped_at: new Date().toISOString(),
-      });
-      if ((i + 1) % 25 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);
-      await delay();
+      };
     } catch (err) {
       errors.push({ url, error: String(err?.message ?? err) });
+      return null;
     }
+  }
+
+  const products = [];
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    const batch = targets.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(fetchOne));
+    for (const r of results) if (r) products.push(r);
+    if (i % 200 === 0 && i > 0) console.log(`[${RETAILER}] ${i}/${targets.length} fetched (${products.length} kept)`);
+    await delay(BATCH_GAP_MS);
   }
 
   await writeJson(path.join(outDir, 'products.json'), products);
