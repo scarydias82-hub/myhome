@@ -25,6 +25,16 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Re-inlined the picking-list build into the status
+  route. The fire-and-forget `void fetch()` trigger I'd shipped to
+  decouple slow picking-list work from fast finalise was unreliable —
+  Vercel could kill the function before the outbound HTTP request
+  initiated, so `/build-picking-list` sometimes never ran. Symptom:
+  renders landed fine but the picking list panel showed "no items
+  detected yet" indefinitely. With the density already tuned down
+  (12 items / 8 candidates) the inline pipeline fits comfortably
+  inside the 60s function budget. /build-picking-list stays around as
+  a manual rebuild endpoint but isn't auto-triggered anymore.
 - `2026-05-19` — Lighting + decorative-wall gaps surfaced from a real
   bedroom render. Three fixes:
   (a) Detection vocab expanded to wall sconce / wall light / ceiling
