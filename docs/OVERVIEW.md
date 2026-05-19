@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-19 · most recent material commit: `955cdc7` (will
+**Last verified:** 2026-05-19 · most recent material commit: `d35d7e1` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,10 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-19` — Fixed landing testimonials melting into the cream
+  background on mobile. Cards now ride a cognac left-bar with stronger
+  border + shadow-card lift, so they survive without the desktop grid
+  structure giving them anchor.
 - `2026-05-19` — Memoed terms & conditions acceptance flow as roadmap
   §6.7 (task #76) — covers /legal/terms + /legal/privacy pages, an
   acceptance audit log, and the implicit-vs-explicit recommendation.

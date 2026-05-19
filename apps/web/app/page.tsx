@@ -306,10 +306,20 @@ export default function LandingPage() {
         </p>
         <ul className="mt-12 grid gap-6 md:grid-cols-3">
           {TESTIMONIALS.map((t) => (
+            // Cards need real lift on mobile — without the 3-col grid
+            // structure of desktop, bg-surface (#FDFAF6) on bg-cream
+            // (#FAF7F2) is within 3 RGB points of the page and the cards
+            // visually drop out. shadow-card + borderStrong gives them
+            // independent presence at any width. A cognac left-bar
+            // anchors them editorially without depending on contrast.
             <li
               key={t.tier}
-              className="flex flex-col rounded-2xl border border-editorial-border bg-editorial-surface p-7"
+              className="relative flex flex-col overflow-hidden rounded-2xl border border-editorial-borderStrong bg-editorial-surface p-7 shadow-card"
             >
+              <span
+                aria-hidden="true"
+                className="absolute inset-y-0 left-0 w-[3px] bg-editorial-cognac"
+              />
               <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-cognac">
                 {t.tier}
               </p>
