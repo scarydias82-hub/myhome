@@ -7,7 +7,7 @@ import { PaletteStrip } from '@/components/saltbush/palette-strip';
 import { Pill } from '@/components/saltbush/pill';
 import { Button } from '@/components/ui/button';
 import { ShoppableRender } from '@/components/renders/shoppable-render';
-import { DesignerRead } from '@/components/renders/designer-read';
+import { DesignerRead, type DesignerAdvice } from '@/components/renders/designer-read';
 import { RenderPoll } from '@/components/renders/render-poll';
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
@@ -27,6 +27,7 @@ interface RenderRow {
   project_id: string | null;
   picking_list: PickingListItem[] | null;
   cost_estimate_aud: number | null;
+  designer_read: DesignerAdvice | null;
 }
 
 interface RevisionRow {
@@ -60,8 +61,9 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   if (!user) redirect(`/login?next=/renders/${id}`);
 
   // Primary render query — only legacy columns so the page still loads
-  // against a pre-migration schema. The active_revision_id pointer is
-  // fetched in a separate query below and tolerated as missing.
+  // against a pre-migration schema. The active_revision_id pointer and
+  // designer_read are fetched in separate queries below and tolerated
+  // as missing (no migration applied yet).
   const renderRes = await supabase
     .from('renders')
     .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud')
@@ -69,6 +71,21 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
     .single();
   const render = renderRes.data as RenderRow | null;
   if (!render) notFound();
+
+  // Optional designer_read — present after the
+  // 20260520100000_renders_designer_read.sql migration. We fetch it
+  // separately so the page loads cleanly against the pre-migration
+  // schema; missing column just leaves designer_read null and the
+  // DesignerRead component shows its "reading the room" placeholder.
+  const designerReadRes = await supabase
+    .from('renders')
+    .select('designer_read')
+    .eq('id', id)
+    .maybeSingle();
+  if (!designerReadRes.error && designerReadRes.data) {
+    render.designer_read =
+      (designerReadRes.data as { designer_read: DesignerAdvice | null }).designer_read ?? null;
+  }
 
   // Optional active_revision_id — only present after the
   // 20260520 migration. If the column doesn't exist (.error fires) we
@@ -274,11 +291,15 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
           </section>
         ) : null}
 
-        {isDone ? (
-          <section className="mt-12">
-            <DesignerRead renderId={render.id} />
-          </section>
-        ) : null}
+        {/* Designer read sits BELOW the render area on every state —
+            visible during the wait (placeholder) and after completion
+            (full critique). The critique itself doesn't depend on the
+            rendered output, so it's available the moment Claude
+            finishes reading the room photo + palette, typically 15-25s
+            into the render wait. */}
+        <section className="mt-12">
+          <DesignerRead advice={render.designer_read} />
+        </section>
       </main>
     </>
   );

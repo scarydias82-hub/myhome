@@ -1,13 +1,14 @@
-'use client';
+// Designer-read display. The critique is generated server-side when
+// the user submits a render (via /api/render → background after() →
+// renders.designer_read column), so this component is now pure
+// presentation — it accepts the cached advice as a prop and renders.
+//
+// During the render wait the advice may not yet be populated; we
+// show a placeholder until the next page refresh picks it up.
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
 import { Pill } from '@/components/saltbush/pill';
-import { PaletteStrip } from '@/components/saltbush/palette-strip';
-import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
-import { cn } from '@/lib/utils';
 
 interface DesignerRecommendation {
   product: string;
@@ -18,7 +19,7 @@ interface DesignerRecommendation {
   scaleCheck: string;
 }
 
-interface DesignerAdvice {
+export interface DesignerAdvice {
   designerRead: string;
   recommendations: DesignerRecommendation[];
   compositionNote: string;
@@ -27,121 +28,65 @@ interface DesignerAdvice {
 }
 
 interface DesignerReadProps {
-  renderId: string;
+  advice: DesignerAdvice | null;
 }
 
-export function DesignerRead({ renderId }: DesignerReadProps) {
-  const palettes = listPalettes();
-  const [selectedId, setSelectedId] = useState<string>(palettes[0]?.id ?? '');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [advice, setAdvice] = useState<DesignerAdvice | null>(null);
-
-  async function requestAdvice() {
-    setLoading(true);
-    setError(null);
-    setAdvice(null);
-    try {
-      const res = await fetch('/api/advise', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ renderId, paletteId: selectedId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(json.error ?? 'Designer is offline right now. Try again.');
-        return;
-      }
-      setAdvice(json.advice as DesignerAdvice);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+export function DesignerRead({ advice }: DesignerReadProps) {
   return (
     <section className="rounded-xl border border-ink/[0.06] bg-cream">
-      <div className="border-b border-ink/[0.06] p-6">
+      <header className="border-b border-ink/[0.06] p-6">
         <Eyebrow>Designer read</Eyebrow>
         <DisplayHeading level={3} className="mt-2">
-          Get a senior designer's <em>read</em> on this room.
+          A senior designer's <em>read</em> on this room.
         </DisplayHeading>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-          Pick a 2026 palette below. Claude Sonnet analyses your room photo, picks 3–5 specific
-          products from the AU catalogue, and tells you exactly why each one works — including
-          placement, scale check, and what existing pieces to watch.
+          Claude Sonnet reads your room photo and the palette you picked,
+          then writes a designer's-eye critique with specific product
+          recommendations, placement notes, and what to watch in your
+          existing space.
         </p>
-      </div>
+      </header>
 
-      <div className="p-6">
-        <Eyebrow>Step 01 · Pick a palette</Eyebrow>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {palettes.map((p) => (
-            <PaletteCard
-              key={p.id}
-              palette={p}
-              selected={selectedId === p.id}
-              onSelect={() => setSelectedId(p.id)}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-4">
-          <Button variant="cta" size="lg" onClick={requestAdvice} disabled={loading || !selectedId}>
-            {loading ? 'Designer is thinking… (~20s)' : advice ? 'Re-run with this palette' : 'Get designer read'}
-          </Button>
-          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            Powered by Claude Sonnet 4.6 · vision + reasoning
-          </p>
-        </div>
-
-        {error ? <p className="mt-4 text-[14px] text-destructive">{error}</p> : null}
-      </div>
-
-      {advice ? <AdviceBlock advice={advice} /> : null}
+      {advice ? <AdviceBlock advice={advice} /> : <ReadingPlaceholder />}
     </section>
   );
 }
 
-function PaletteCard({
-  palette,
-  selected,
-  onSelect,
-}: {
-  palette: Palette;
-  selected: boolean;
-  onSelect: () => void;
-}) {
+// Shown during the render wait + briefly after if the designer call is
+// still in flight. The page polls render status and will pick up the
+// populated advice on the next refresh — usually within 15–25 seconds
+// of submission.
+function ReadingPlaceholder() {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        'group flex flex-col gap-3 rounded-xl border p-4 text-left transition',
-        selected
-          ? 'border-clay/60 bg-cream shadow-soft'
-          : 'border-ink/[0.06] bg-paper-warm bg-grain hover:border-ink/20 hover:bg-cream',
-      )}
-    >
-      <PaletteStrip colors={paletteSwatch(palette)} className="h-7" />
-      <div>
-        <p className="font-display text-h4 text-ink">{palette.name}</p>
-        <p className="mt-1 text-[13px] text-ink-soft">{palette.vibe}</p>
+    <div className="p-6 md:p-8">
+      <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-6">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="inline-flex h-2 w-2 animate-pulse rounded-full bg-clay"
+          />
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            Reading the room
+          </p>
+        </div>
+        <p className="mt-3 max-w-md font-display text-[20px] leading-snug text-ink">
+          Claude is looking at your room photo, considering the palette,
+          and drafting recommendations.
+        </p>
+        <p className="mt-2 max-w-md text-[14px] text-ink-soft">
+          Usually 15 to 25 seconds. The render is building in parallel —
+          both should land soon.
+        </p>
       </div>
-      <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-        {palette.tags.slice(0, 2).join(' · ')}
-      </p>
-    </button>
+    </div>
   );
 }
 
 function AdviceBlock({ advice }: { advice: DesignerAdvice }) {
   return (
-    <div className="space-y-8 border-t border-ink/[0.06] p-6 md:p-8">
+    <div className="space-y-8 p-6 md:p-8">
       <div>
-        <Eyebrow>Designer read</Eyebrow>
+        <Eyebrow>The read</Eyebrow>
         <p className="mt-3 max-w-3xl font-display text-[20px] leading-snug text-ink">
           {advice.designerRead}
         </p>

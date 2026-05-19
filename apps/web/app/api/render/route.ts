@@ -12,7 +12,7 @@
 // fal reports completed, and updates the renders row.
 
 import sharp from 'sharp';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest, after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -24,6 +24,8 @@ import {
 } from '@/lib/styles';
 import { submitDepthRender } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
+import { getDesignerAdvice } from '@/lib/designer';
+import type { RoomAnalysis } from '@/lib/vision';
 
 // Compute Flux-compatible output dimensions that preserve the source
 // photo's aspect ratio. Without this, /api/render never passes dims to
@@ -168,6 +170,28 @@ export async function POST(request: NextRequest) {
       .in('id', ids);
     if (data) heroProducts = data as HeroProductDescriptor[];
   }
+
+  // Kick off the designer LLM in the background. It doesn't depend on
+  // the fal output — works from room analysis + selected palette +
+  // catalogue candidates — so it can run during the render wait,
+  // giving the user something to engage with for the 25-60s Flux pass.
+  // Persists to renders.designer_read; the page reads from there.
+  after(async () => {
+    try {
+      const advice = await getDesignerAdvice({
+        admin,
+        roomAnalysis: room.analysis as RoomAnalysis | null,
+        palette,
+      });
+      await admin
+        .from('renders')
+        .update({ designer_read: advice })
+        .eq('id', render.id);
+      console.log(`[render] designer pre-read saved for ${render.id}`);
+    } catch (err) {
+      console.error('[render] designer pre-read failed', err);
+    }
+  });
 
   try {
     const groundedPrompt = buildPrompt(
