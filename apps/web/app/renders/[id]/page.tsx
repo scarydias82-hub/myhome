@@ -269,7 +269,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             row sits BELOW the designer read, since by then the designer
             voice has framed what the palette means for this room. */}
         <section className="mt-10">
-          <DesignerRead advice={render.designer_read} />
+          <DesignerRead advice={render.designer_read} renderId={render.id} />
         </section>
 
         {profile ? (

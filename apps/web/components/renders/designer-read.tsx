@@ -1,11 +1,21 @@
-// Designer-read display. The critique is generated server-side when
-// the user submits a render (via /api/render → background after() →
-// renders.designer_read column), so this component is now pure
-// presentation — it accepts the cached advice as a prop and renders.
-//
-// During the render wait the advice may not yet be populated; we
-// show a placeholder until the next page refresh picks it up.
+'use client';
 
+// Designer-read display + self-healing fetch.
+//
+// The render flow tries to populate renders.designer_read in three places,
+// in order of preference:
+//   1. /api/render after() block (optimistic — fires when user submits)
+//   2. /api/advise direct call (client fallback below)
+//   3. The 20260520100000 migration backfills don't apply here — this
+//      is per-render
+//
+// When the server page hands us a populated advice prop, render it.
+// When it doesn't, fire off /api/advise on mount so the user isn't
+// stuck staring at a "reading the room" placeholder forever.
+// /api/advise is idempotent (checks designer_read first) so concurrent
+// renders don't double-spend.
+
+import { useEffect, useState } from 'react';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
 import { Pill } from '@/components/saltbush/pill';
@@ -29,9 +39,56 @@ export interface DesignerAdvice {
 
 interface DesignerReadProps {
   advice: DesignerAdvice | null;
+  renderId: string;
 }
 
-export function DesignerRead({ advice }: DesignerReadProps) {
+export function DesignerRead({ advice: initialAdvice, renderId }: DesignerReadProps) {
+  const [advice, setAdvice] = useState<DesignerAdvice | null>(initialAdvice);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Server already has it — nothing to do.
+    if (initialAdvice) {
+      setAdvice(initialAdvice);
+      return;
+    }
+    // Already fetching or already errored — don't refire.
+    if (loading || error) return;
+
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/advise', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ renderId }),
+    })
+      .then(async (res) => {
+        const json = (await res.json().catch(() => ({}))) as {
+          advice?: DesignerAdvice;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || !json.advice) {
+          setError(json.error ?? `Designer call failed (HTTP ${res.status})`);
+          return;
+        }
+        setAdvice(json.advice);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Designer call failed');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // initialAdvice intentionally excluded — we only ever read it on first mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderId]);
+
   return (
     <section className="rounded-xl border border-ink/[0.06] bg-cream">
       <header className="border-b border-ink/[0.06] p-6">
@@ -47,15 +104,19 @@ export function DesignerRead({ advice }: DesignerReadProps) {
         </p>
       </header>
 
-      {advice ? <AdviceBlock advice={advice} /> : <ReadingPlaceholder />}
+      {advice ? (
+        <AdviceBlock advice={advice} />
+      ) : error ? (
+        <ReadingError message={error} />
+      ) : (
+        <ReadingPlaceholder />
+      )}
     </section>
   );
 }
 
-// Shown during the render wait + briefly after if the designer call is
-// still in flight. The page polls render status and will pick up the
-// populated advice on the next refresh — usually within 15–25 seconds
-// of submission.
+// Loading state — also shown on the very first page load before /api/advise
+// has had time to respond. Pulsing dot signals work-in-progress.
 function ReadingPlaceholder() {
   return (
     <div className="p-6 md:p-8">
@@ -76,6 +137,28 @@ function ReadingPlaceholder() {
         <p className="mt-2 max-w-md text-[14px] text-ink-soft">
           Usually 15 to 25 seconds. The render is building in parallel —
           both should land soon.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Error state — shown when /api/advise fails. Surfaces the underlying
+// message so we can debug without digging into Vercel logs.
+function ReadingError({ message }: { message: string }) {
+  return (
+    <div className="p-6 md:p-8">
+      <div className="rounded-xl border-l-2 border-clay bg-paper-warm p-6">
+        <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
+          Designer offline
+        </p>
+        <p className="mt-2 max-w-md font-display text-[18px] leading-snug text-ink">
+          The designer call didn't come back.
+        </p>
+        <p className="mt-2 max-w-md text-[13px] text-ink-soft">{message}</p>
+        <p className="mt-3 max-w-md text-[12px] text-ink-faint">
+          The render is unaffected. Refresh the page to try again, or move
+          on — your shoppable picking list is below.
         </p>
       </div>
     </div>
