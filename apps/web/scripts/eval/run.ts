@@ -24,7 +24,16 @@ import { evaluateRender, type Scorecard } from './evaluator';
 import { analyseRoom } from '../../lib/vision';
 import { getDesignerAdvice } from '../../lib/designer';
 import { buildPickingList } from '../../lib/matching';
-import { submitDepthRender, checkRenderStatus, fetchRenderResult, uploadImageBuffer, describeFalError } from '../../lib/fal';
+import {
+  submitDepthRender,
+  checkRenderStatus,
+  fetchRenderResult,
+  uploadImageBuffer,
+  describeFalError,
+  submitKontextRender,
+  checkKontextStatus,
+  fetchKontextResult,
+} from '../../lib/fal';
 import { generatePaletteSwatch } from '../../lib/paletteSwatch';
 import { autoFeatureForPalette } from '../../lib/featuring';
 import { trimBlackBorders } from '../../lib/imagePrep';
@@ -226,17 +235,35 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
       console.warn('  swatch upload failed, text-only:', (err as Error).message);
     }
   }
-  // 4b. Submit-and-poll with IP-Adapter, retrying text-only if fal's
-  //     inference (not just submit) fails. Round 7 found fal ACCEPTING
-  //     the InstantX IP-Adapter request but FAILING during inference —
-  //     pollFal returned bare "failed" with no diagnostic. Now we surface
-  //     fal's logs on failure and retry without IP-Adapter so the eval
-  //     always produces a render to score.
-  const result = await renderWithIpAdapterFallback({
-    prompt,
-    controlImageUrl: originalSignedUrl,
-    paletteSwatchUrl,
-  });
+  // 4b. Submit-and-poll. Provider chosen by FLUX_PROVIDER env var:
+  //     - 'flux-general' (default) — fal-ai/flux-general with canny
+  //       easycontrol + optional IP-Adapter (round-12 XLabs v1 config)
+  //     - 'kontext-multi' — fal-ai/flux-pro/kontext/multi with the
+  //       room photo + palette swatch passed as image_urls. No canny,
+  //       no IP-Adapter — multi-image reasoning instead. The A/B
+  //       alternative to test against flux-general.
+  const provider = (process.env.FLUX_PROVIDER ?? 'flux-general').toLowerCase();
+  let result: { imageUrl: string };
+  if (provider === 'kontext-multi' || provider === 'kontext') {
+    if (!paletteSwatchUrl) throw new Error('kontext-multi requires a palette — fixture has none');
+    console.log(`  provider: kontext-multi (fal-ai/flux-pro/kontext/multi)`);
+    const kontextPrompt = buildKontextPrompt({
+      basePrompt: prompt,
+      paletteName: palette?.name ?? style.name,
+    });
+    result = await runKontext({
+      prompt: kontextPrompt,
+      controlImageUrl: originalSignedUrl,
+      paletteSwatchUrl,
+    });
+  } else {
+    console.log(`  provider: flux-general (canny + IP-Adapter)`);
+    result = await renderWithIpAdapterFallback({
+      prompt,
+      controlImageUrl: originalSignedUrl,
+      paletteSwatchUrl,
+    });
+  }
 
   // 6. Save rendered image locally.
   const renderedBytes = new Uint8Array(await (await fetch(result.imageUrl)).arrayBuffer());
@@ -304,6 +331,56 @@ async function pollFal(requestId: string): Promise<{ imageUrl: string }> {
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error('fal poll timed out after 3 min');
+}
+
+// Build a Kontext-friendly prompt. Kontext is a natural-language
+// compositional editor — it understands "image 1 / image 2" role
+// references. We name the images explicitly + lean on the model's
+// own architectural-preservation instincts (no canny edges to lock
+// geometry, so the prompt is doing all the geometry work).
+function buildKontextPrompt({
+  basePrompt,
+  paletteName,
+}: {
+  basePrompt: string;
+  paletteName: string;
+}): string {
+  return [
+    `Restyle the bedroom shown in image 1 using the ${paletteName} palette shown as colour stripes in image 2.`,
+    `Image 1 is the source room — preserve its architecture exactly: window position, window opening size, ceiling height, door location, camera angle, and overall room geometry.`,
+    `Image 2 is the palette reference — apply its colour stripes (wall tone on top, then sofa, floor, accent, trim) to the matching surfaces of the room.`,
+    `Walls should take on the top stripe colour. Bedding / soft furnishings the second-row tone. Furniture and accents the deeper tones.`,
+    `Do NOT change the window's existence, position or shape. Do NOT invent new doors, balconies, or outdoor scenes. Do NOT change the camera angle.`,
+    `The render should look like the same room redecorated, not a new room.`,
+    ``,
+    `Designer guidance (style reference for the broader aesthetic):`,
+    basePrompt.slice(0, 800),
+  ].join(' ');
+}
+
+async function pollKontext(requestId: string): Promise<{ imageUrl: string }> {
+  const startedAt = Date.now();
+  let lastLogs: string[] = [];
+  while (Date.now() - startedAt < 180000) {
+    const status = await checkKontextStatus(requestId);
+    if (status.logs && status.logs.length) lastLogs = status.logs;
+    if (status.status === 'completed') return fetchKontextResult(requestId);
+    if (status.status === 'failed') {
+      const tail = lastLogs.slice(-20).join('\n  | ');
+      throw new Error(`kontext reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error('kontext poll timed out after 3 min');
+}
+
+async function runKontext(input: {
+  prompt: string;
+  controlImageUrl: string;
+  paletteSwatchUrl: string;
+}): Promise<{ imageUrl: string }> {
+  const { requestId } = await submitKontextRender(input);
+  return pollKontext(requestId);
 }
 
 // Submit + poll, retrying text-only if the IP-Adapter version fails

@@ -341,3 +341,96 @@ export async function fetchRenderResult(requestId: string): Promise<DepthRenderO
   if (!url) throw new Error('fal.ai returned no image');
   return { imageUrl: url, seed: data.seed ?? 0 };
 }
+
+// --- Alternative provider: fal-ai/flux-pro/kontext/multi ---------------
+//
+// Kontext takes multiple images directly as natural inputs — no canny
+// ControlNet, no IP-Adapter plumbing, no path/encoder/weight_name
+// configuration nightmares. We pass [roomPhoto, paletteSwatch] as
+// image_urls and a natural-language prompt that names each image's
+// role. The model reasons about both images together.
+//
+// Why this is a sensible A/B vs flux-general:
+//   - Eliminates the entire IP-Adapter failure class (tensor mismatch,
+//     pipeline-load errors, encoder mismatches)
+//   - Multi-reference compositional editing is what Kontext was
+//     designed for — our use case is literally that
+//   - Same fal SDK, same polling, same Supabase URL flow
+//   - $0.04/img, 6-12s — parity or better than flux-general
+//
+// Trade-off: geometry preservation is CONTEXTUAL (model understands
+// "preserve architecture" from the prompt) rather than CANNY-LOCKED
+// (mathematical edge preservation). May drift on pixel-rigid details
+// but might also free up surface colour to actually transform.
+const KONTEXT_ENDPOINT = 'fal-ai/flux-pro/kontext/multi';
+
+export interface KontextRenderInput {
+  prompt: string;
+  // Image 1 — the room to restyle (structure-source).
+  controlImageUrl: string;
+  // Image 2 — the palette swatch (style-source). Required for Kontext
+  // — there's no point using this endpoint without a reference.
+  paletteSwatchUrl: string;
+  // Optional aspect_ratio override (e.g. '4:3', '16:9'). When omitted
+  // Kontext picks based on the input images.
+  aspectRatio?: string;
+}
+
+function kontextRenderInput(input: KontextRenderInput) {
+  return {
+    prompt: input.prompt,
+    image_urls: [input.controlImageUrl, input.paletteSwatchUrl],
+    guidance_scale: 3.5, // Kontext default; matches fal docs
+    num_images: 1,
+    output_format: 'jpeg' as const,
+    safety_tolerance: '2' as const,
+    ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
+  };
+}
+
+export async function submitKontextRender(input: KontextRenderInput): Promise<SubmitRenderResult> {
+  const client = getFal();
+  console.log(
+    `[fal-kontext] submitting: prompt=${input.prompt.slice(0, 80)}... ` +
+      `image_urls=[${input.controlImageUrl.slice(0, 50)}..., ${input.paletteSwatchUrl.slice(0, 50)}...]`,
+  );
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const submission = await client.queue.submit(KONTEXT_ENDPOINT, {
+      input: kontextRenderInput(input) as any,
+    });
+    return { requestId: submission.request_id };
+  } catch (err) {
+    console.error(`[fal-kontext] submit failed → ${describeFalError(err)}`);
+    throw err;
+  }
+}
+
+export async function checkKontextStatus(requestId: string): Promise<RenderStatusInfo> {
+  const client = getFal();
+  try {
+    const res = await client.queue.status(KONTEXT_ENDPOINT, { requestId, logs: true });
+    const raw = (res as { status?: string }).status ?? 'IN_QUEUE';
+    const lower = String(raw).toLowerCase();
+    const logEntries = (res as { logs?: Array<{ message?: string }> }).logs ?? [];
+    const logs = logEntries
+      .map((e) => (typeof e?.message === 'string' ? e.message : ''))
+      .filter(Boolean);
+    if (lower === 'completed') return { status: 'completed', logs };
+    if (lower === 'in_progress') return { status: 'in_progress', logs };
+    if (lower === 'in_queue') return { status: 'in_queue', logs };
+    return { status: 'failed', logs };
+  } catch (err) {
+    console.error('fal-kontext queue.status failed', err);
+    return { status: 'failed' };
+  }
+}
+
+export async function fetchKontextResult(requestId: string): Promise<DepthRenderOutput> {
+  const client = getFal();
+  const res = await client.queue.result(KONTEXT_ENDPOINT, { requestId });
+  const data = res.data as { images?: Array<{ url: string }>; seed?: number };
+  const url = data.images?.[0]?.url;
+  if (!url) throw new Error('fal-kontext returned no image');
+  return { imageUrl: url, seed: data.seed ?? 0 };
+}
