@@ -9,10 +9,10 @@ import { Button } from '@/components/ui/button';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ProjectPhases } from '@/components/projects/project-phases';
 import { CompleteProjectButton } from '@/components/projects/complete-project-button';
 import { ShortlistRow } from '@/components/projects/shortlist-row';
-import { BriefPicker, type BriefPaletteLookup, type BriefStyleLookup } from '@/components/projects/brief-picker';
+import { ProjectWizard } from '@/components/projects/project-wizard';
+import { type BriefPaletteLookup, type BriefStyleLookup } from '@/components/projects/brief-picker';
 import { listPalettes, paletteSwatch } from '@/lib/palettes';
 import { STYLES } from '@/lib/styles';
 import type { BriefSynthesis } from '@/lib/brief/synthesiser';
@@ -272,32 +272,51 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
 
-        {/* Analysis phase — the curation walkthrough */}
+        {/* 4-step wizard — replaces the previous ProjectPhases +
+            BriefPicker layout (#123). Steps:
+              1 · Brief         2 · Photo
+              3 · Designer review (synthesis + carousels, #126)
+              4 · Renders
+            Only rendered for in-progress projects. The review +
+            complete states keep the existing gallery layout below. */}
         {project.status === 'in_progress' ? (
-          <ProjectPhases
+          <ProjectWizard
             projectId={project.id}
-            briefDone={briefDone}
-            siteDone={siteDone}
-            inspirationDone={inspirationDone}
-            designDone={false}
-            proposalDone={proposalDone}
+            initialBriefTags={initialBriefTags}
+            initialBriefResponse={initialBriefResponse}
+            palettes={briefPalettes}
+            styles={briefStyles}
+            rooms={await Promise.all(
+              rooms.map(async (r) => {
+                const signed = await supabase.storage
+                  .from('rooms')
+                  .createSignedUrl(r.photo_url, 60 * 60);
+                return {
+                  id: r.id,
+                  signedPhotoUrl: signed.data?.signedUrl ?? null,
+                  hasAnalysis: r.analysis !== null && r.analysis !== undefined,
+                  createdAt: r.created_at,
+                };
+              }),
+            )}
+            renders={await Promise.all(
+              renders.map(async (r) => {
+                let outputUrl: string | null = null;
+                if (r.output_url) {
+                  const signed = await supabase.storage
+                    .from('renders')
+                    .createSignedUrl(r.output_url, 60 * 60);
+                  outputUrl = signed.data?.signedUrl ?? null;
+                }
+                return {
+                  id: r.id,
+                  status: r.status,
+                  outputUrl,
+                  createdAt: r.created_at,
+                };
+              }),
+            )}
           />
-        ) : null}
-
-        {/* Project brief — tag picker + Claude designer response card.
-            Only shown during in-progress. Once a brief response exists
-            the card renders by default; "Edit your brief" opens the
-            picker. */}
-        {project.status === 'in_progress' ? (
-          <section className="mt-12">
-            <BriefPicker
-              projectId={project.id}
-              initialTags={initialBriefTags}
-              initialResponse={initialBriefResponse}
-              palettes={briefPalettes}
-              styles={briefStyles}
-            />
-          </section>
         ) : null}
 
         {/* Review phase — gallery of shortlisted artefacts */}
