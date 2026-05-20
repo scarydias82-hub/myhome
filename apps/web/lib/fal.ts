@@ -129,10 +129,18 @@ export async function uploadImageBuffer(
 //                palette adherence 2→7, surfaces 2→7. BUT geometry
 //                cratered 7→3 (canny 0.65 too loose) and hallucinations
 //                2 (sliding door / timber floor / new bedhead).
-//   Round 9 (current) — tighten canny to 0.80 + drop strength to 0.78
-//                to claw geometry/hallucinations back while keeping
-//                IP-Adapter's palette win. Target: ≥5.5 with all six
-//                criteria above 4.
+//   Round 9 @ canny 0.80, strength 0.78                   → 4.5/10
+//                Two-knob change was greedy — geometry recovered
+//                (3→6) and hallucinations recovered (2→5) but
+//                surface transformation crashed (7→3) and palette
+//                adherence dropped (7→4). Walls went back to white.
+//                Strength 0.78 was too tight for the palette to
+//                land on walls.
+//   Round 10 (current) — keep canny 0.80 (geometry lever), REVERT
+//                strength to 0.82 (palette/surface lever). One-knob
+//                change isolates the strength effect. Target: hold
+//                R9's geometry/hallucinations while recovering R8's
+//                palette/surface — ~5.5-6.0 with all criteria ≥4.
 function renderInput(input: DepthRenderInput) {
   // flux-general's typed input is strict; the @fal-ai/client schema
   // expects a specific shape. We construct the full object including
@@ -158,7 +166,7 @@ function renderInput(input: DepthRenderInput) {
   return {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
-    strength: input.strength ?? 0.78,
+    strength: input.strength ?? 0.82,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),
