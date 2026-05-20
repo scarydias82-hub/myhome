@@ -24,7 +24,7 @@ import { evaluateRender, type Scorecard } from './evaluator';
 import { analyseRoom } from '../../lib/vision';
 import { getDesignerAdvice } from '../../lib/designer';
 import { buildPickingList } from '../../lib/matching';
-import { submitDepthRender, checkRenderStatus, fetchRenderResult, uploadImageBuffer } from '../../lib/fal';
+import { submitDepthRender, checkRenderStatus, fetchRenderResult, uploadImageBuffer, describeFalError } from '../../lib/fal';
 import { generatePaletteSwatch } from '../../lib/paletteSwatch';
 import { autoFeatureForPalette } from '../../lib/featuring';
 import { trimBlackBorders } from '../../lib/imagePrep';
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
         );
       }
     } catch (err) {
-      console.error(`  ✗ ${fixture.id} failed:`, err instanceof Error ? err.message : err);
+      console.error(`  ✗ ${fixture.id} failed → ${describeFalError(err)}`);
     }
   }
 
@@ -332,8 +332,7 @@ async function renderWithIpAdapterFallback(input: {
   try {
     return await tryOnce(input.paletteSwatchUrl);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`  IP-Adapter render failed — retrying text-only.\n  reason: ${msg.slice(0, 600)}`);
+    console.warn(`  IP-Adapter render failed — retrying text-only.\n  reason: ${describeFalError(err)}`);
     return tryOnce(null);
   }
 }

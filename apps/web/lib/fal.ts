@@ -45,6 +45,39 @@ export function getFal() {
   return fal;
 }
 
+// fal-ai/client throws errors whose meaningful detail lives in
+// non-standard fields (`.status`, `.body`, `.url`) rather than
+// `.message` — which is often empty. Round-7 eval saw the catch
+// blocks log "reason: " with nothing after, because we were only
+// reading `.message`. This extractor pulls every useful field so
+// we can finally see fal's actual rejection reason.
+export function describeFalError(err: unknown): string {
+  if (err == null) return '(no error)';
+  if (typeof err === 'string') return err;
+  const e = err as Record<string, unknown>;
+  const parts: string[] = [];
+  if (e.message) parts.push(`message="${String(e.message).slice(0, 300)}"`);
+  if (e.status != null) parts.push(`status=${e.status}`);
+  if (e.statusText) parts.push(`statusText="${String(e.statusText).slice(0, 80)}"`);
+  if (e.body) {
+    try {
+      parts.push(`body=${JSON.stringify(e.body).slice(0, 1200)}`);
+    } catch {
+      parts.push(`body=${String(e.body).slice(0, 1200)}`);
+    }
+  }
+  if (e.url) parts.push(`url=${String(e.url).slice(0, 200)}`);
+  if (parts.length === 0) {
+    // Last resort: full JSON dump if .message + .body + everything is empty.
+    try {
+      return JSON.stringify(err, Object.getOwnPropertyNames(err)).slice(0, 800);
+    } catch {
+      return String(err);
+    }
+  }
+  return parts.join(' · ');
+}
+
 export interface DepthRenderInput {
   prompt: string;
   // The original room photo. Used both as the img2img init image AND as the
@@ -205,10 +238,7 @@ export async function submitDepthRender(input: DepthRenderInput): Promise<Submit
     const submission = await submit(payload);
     return { requestId: submission.request_id };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const body = (err as { body?: unknown }).body;
-    const bodyStr = body ? JSON.stringify(body).slice(0, 800) : '';
-    console.error(`[fal] submit failed: ${msg}${bodyStr ? ` body=${bodyStr}` : ''}`);
+    console.error(`[fal] submit failed → ${describeFalError(err)}`);
     if (ipa) {
       console.warn('[fal] retrying without IP-Adapter (text-only fallback)');
       const textOnlyPayload = renderInput({ ...input, paletteSwatchUrl: null });
@@ -216,8 +246,7 @@ export async function submitDepthRender(input: DepthRenderInput): Promise<Submit
         const submission = await submit(textOnlyPayload);
         return { requestId: submission.request_id };
       } catch (err2) {
-        const msg2 = err2 instanceof Error ? err2.message : String(err2);
-        console.error(`[fal] text-only fallback ALSO failed: ${msg2}`);
+        console.error(`[fal] text-only fallback ALSO failed → ${describeFalError(err2)}`);
         throw err2;
       }
     }
