@@ -181,10 +181,6 @@ export interface SubmitRenderResult {
 export async function submitDepthRender(input: DepthRenderInput): Promise<SubmitRenderResult> {
   const client = getFal();
   const payload = renderInput(input);
-  // Diagnostic log — round 6 IP-Adapter went silent (no visible effect
-  // in render). Logging the IP-Adapter slot of the actual payload so we
-  // can confirm in Vercel logs that the swatch URL + path landed.
-  // Strip down to the relevant fields so the log line stays readable.
   const ipa = (payload as { ip_adapters?: Array<Record<string, unknown>> }).ip_adapters?.[0];
   if (ipa) {
     console.log(
@@ -195,13 +191,38 @@ export async function submitDepthRender(input: DepthRenderInput): Promise<Submit
   } else {
     console.log('[fal] ip_adapters: not provided');
   }
-  // Cast the input through `any` — fal-ai/client's generated types
-  // produce a discriminated-union of every endpoint's input schema and
-  // can't narrow to flux-general from the runtime string ENDPOINT.
-  // The fal-side validates the actual shape so this is safe.
+
+  // Try the full payload (with IP-Adapter if configured). If fal
+  // rejects it — round 7 eval found that the InstantX IP-Adapter
+  // config consistently 4xx'd, killing the eval entirely with no
+  // render — fall back to a text-only payload so we at least get a
+  // baseline render out. The error is logged loudly so we can debug
+  // the IP-Adapter rejection separately without it blocking everything.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const submission = await client.queue.submit(ENDPOINT, { input: payload as any });
-  return { requestId: submission.request_id };
+  const submit = (p: unknown) => client.queue.submit(ENDPOINT, { input: p as any });
+
+  try {
+    const submission = await submit(payload);
+    return { requestId: submission.request_id };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const body = (err as { body?: unknown }).body;
+    const bodyStr = body ? JSON.stringify(body).slice(0, 800) : '';
+    console.error(`[fal] submit failed: ${msg}${bodyStr ? ` body=${bodyStr}` : ''}`);
+    if (ipa) {
+      console.warn('[fal] retrying without IP-Adapter (text-only fallback)');
+      const textOnlyPayload = renderInput({ ...input, paletteSwatchUrl: null });
+      try {
+        const submission = await submit(textOnlyPayload);
+        return { requestId: submission.request_id };
+      } catch (err2) {
+        const msg2 = err2 instanceof Error ? err2.message : String(err2);
+        console.error(`[fal] text-only fallback ALSO failed: ${msg2}`);
+        throw err2;
+      }
+    }
+    throw err;
+  }
 }
 
 export type RenderStatus = 'in_queue' | 'in_progress' | 'completed' | 'failed';
