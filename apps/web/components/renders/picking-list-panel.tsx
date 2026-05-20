@@ -8,6 +8,7 @@ import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { Pill } from '@/components/saltbush/pill';
 import { StagingModal } from '@/components/renders/staging-modal';
 import { MultiStagingModal } from '@/components/renders/multi-staging-modal';
+import { AddToProjectButton } from '@/components/projects/add-to-project-button';
 
 export interface PickingMatch {
   productId: string;
@@ -491,14 +492,17 @@ function MatchCard({
           {selectedForMulti ? '✓' : '+'}
         </label>
       </div>
-      <a
-        href={target}
-        target="_blank"
-        rel="noopener noreferrer sponsored"
-        className="mt-2 font-mono text-meta uppercase tracking-eyebrow text-ink-faint underline-offset-2 hover:text-clay hover:underline"
-      >
-        View on {match.retailer} ↗
-      </a>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <AddToProjectButton productId={match.productId} variant="compact" />
+        <a
+          href={target}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint underline-offset-2 hover:text-clay hover:underline"
+        >
+          View on {match.retailer} ↗
+        </a>
+      </div>
     </div>
   );
 }

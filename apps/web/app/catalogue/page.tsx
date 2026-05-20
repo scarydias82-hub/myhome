@@ -7,6 +7,7 @@ import { DisplayHeading } from '@/components/saltbush/display-heading';
 import { Pill } from '@/components/saltbush/pill';
 import { Button } from '@/components/ui/button';
 import { SortSelect } from '@/components/catalogue/sort-select';
+import { AddToProjectButton } from '@/components/projects/add-to-project-button';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 
@@ -189,40 +190,49 @@ export default async function CataloguePage({
           <ul className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {products.map((p) => (
               <li key={p.id}>
-                <a
-                  href={p.product_url}
-                  target="_blank"
-                  rel="noopener noreferrer sponsored"
-                  className="group block h-full overflow-hidden rounded-xl border border-ink/[0.06] bg-cream transition hover:shadow-soft"
-                >
-                  <div className="relative aspect-square w-full bg-paper-warm bg-grain">
-                    <Image
-                      src={p.image_url}
-                      alt={p.name}
-                      fill
-                      sizes="(max-width: 768px) 50vw, 25vw"
-                      className="object-cover transition group-hover:scale-[1.02]"
-                      unoptimized
-                    />
+                {/* Card wraps the image + details in a single retailer
+                    link, with the AddToProjectButton (#130) sitting
+                    OUTSIDE the anchor so clicking it doesn't fire the
+                    retailer navigation. */}
+                <div className="group flex h-full flex-col overflow-hidden rounded-xl border border-ink/[0.06] bg-cream transition hover:shadow-soft">
+                  <a
+                    href={p.product_url}
+                    target="_blank"
+                    rel="noopener noreferrer sponsored"
+                    className="block"
+                  >
+                    <div className="relative aspect-square w-full bg-paper-warm bg-grain">
+                      <Image
+                        src={p.image_url}
+                        alt={p.name}
+                        fill
+                        sizes="(max-width: 768px) 50vw, 25vw"
+                        className="object-cover transition group-hover:scale-[1.02]"
+                        unoptimized
+                      />
+                    </div>
+                    <div className="space-y-2 p-4">
+                      <Pill tone="cream" size="sm">{p.category}</Pill>
+                      <p className="line-clamp-2 font-display text-[15px] leading-tight text-ink">
+                        {p.name}
+                      </p>
+                      <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                        {p.retailer}
+                      </p>
+                      <p className="font-display text-h4 text-ink">
+                        {p.price_aud != null
+                          ? `$${Math.round(p.price_aud).toLocaleString('en-AU')}`
+                          : 'POA'}
+                      </p>
+                      <p className="font-mono text-meta uppercase tracking-eyebrow text-clay group-hover:underline">
+                        View at {p.retailer} ↗
+                      </p>
+                    </div>
+                  </a>
+                  <div className="mt-auto border-t border-ink/[0.06] p-3">
+                    <AddToProjectButton productId={p.id} />
                   </div>
-                  <div className="space-y-2 p-4">
-                    <Pill tone="cream" size="sm">{p.category}</Pill>
-                    <p className="line-clamp-2 font-display text-[15px] leading-tight text-ink">
-                      {p.name}
-                    </p>
-                    <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                      {p.retailer}
-                    </p>
-                    <p className="font-display text-h4 text-ink">
-                      {p.price_aud != null
-                        ? `$${Math.round(p.price_aud).toLocaleString('en-AU')}`
-                        : 'POA'}
-                    </p>
-                    <p className="font-mono text-meta uppercase tracking-eyebrow text-clay group-hover:underline">
-                      View at {p.retailer} ↗
-                    </p>
-                  </div>
-                </a>
+                </div>
               </li>
             ))}
           </ul>

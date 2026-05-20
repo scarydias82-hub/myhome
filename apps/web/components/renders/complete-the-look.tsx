@@ -12,9 +12,9 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
+import { AddToProjectButton } from '@/components/projects/add-to-project-button';
 import type { PickingMatch } from '@/components/renders/picking-list-panel';
 
 interface CompleteTheLookProps {
@@ -187,7 +187,7 @@ function CompactMatchCard({
           </p>
         </div>
       </div>
-      <div className="flex items-center justify-between gap-2 border-t border-ink/[0.06] pt-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-ink/[0.06] pt-2">
         <button
           type="button"
           onClick={onToggleSaved}
@@ -202,11 +202,12 @@ function CompactMatchCard({
         >
           <HeartIcon filled={saved} />
         </button>
+        <AddToProjectButton productId={match.productId} variant="compact" />
         <a
           href={target}
           target="_blank"
           rel="noopener noreferrer sponsored"
-          className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint underline-offset-2 hover:text-clay hover:underline"
+          className="ml-auto font-mono text-meta uppercase tracking-eyebrow text-ink-faint underline-offset-2 hover:text-clay hover:underline"
         >
           View on {match.retailer} ↗
         </a>
