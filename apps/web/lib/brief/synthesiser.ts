@@ -59,13 +59,18 @@ function getAnthropic(): Anthropic {
 // Compact palette card — enough for Claude to reason about fit without
 // blowing the prompt out. Excludes the full colour hex array (we lean
 // on the named role colours + vibe + tags as the semantic surface).
+// Persona metadata is critical: timelessness + persona_fit are how
+// Claude matches palette to person, not just to trend.
 function paletteCard(p: Palette): string {
   return [
     `### ${p.name} (id: ${p.id})`,
     `Vibe: ${p.vibe}`,
+    `Timelessness: ${p.timelessness}/10`,
+    `Persona fit: ${p.persona_fit.join(', ')}`,
     `Recommended rooms: ${p.recommended_rooms.join(', ')}`,
     `Style affinity: ${p.style_tags.join(', ')}`,
     `Pairs with: ${p.pairs_with_materials.join(', ')}`,
+    `Source: ${p.trend_source}`,
     `App note: ${p.app_note}`,
   ].join('\n');
 }
@@ -107,15 +112,15 @@ Before mapping tags to palettes, infer where the client sits along these four pe
   - Heritage signals: look:hamptons, look:art-deco, avoid:trendy, materials:brass-bronze, materials:marble, constraints:premium-quality
   - Contemporary signals: look:contemporary-au, look:japandi, look:minimalist, materials:matte-black-metal, materials:travertine
 
-When the client reads as SAFE + TIMELESS + QUIET (the most common consumer pattern in Australia), AVOID:
-- Transformative Teal (WGSN trend pick, will date fast)
-- Pistachio & Chocolate (seasonal 2026 colour-drop)
-- Tomato Red & Umber (statement-only)
-Recommend instead from: Warm Grounded Earth, Honest Essentials, Misty Blue Neutral — the most timeless picks in the current set.
+## HOW TO USE THE PALETTE METADATA
 
-When the client reads as ADVENTUROUS + OF-THE-MOMENT + VIBRANT, the trend palettes are right — Transformative Teal, Tomato Red & Umber, Mossy Green & Ochre are legitimate choices.
+Each palette below carries explicit structural signal:
+- **Timelessness** (1-10): 1 = trend-of-the-year, 10 = heirloom timeless. For clients reading TIMELESS on the trend-appetite axis, prefer palettes scoring 7+. For OF-THE-MOMENT clients, scores of 3-6 are fine — they want what's hot now.
+- **Persona fit**: each palette is tagged with one value per axis. MATCH on every axis when possible. A client reading "safe + timeless + quiet + heritage" should land on a palette whose persona_fit contains all four. Hamptons Heritage (10/10 timelessness, all four matching axes) is the textbook answer.
 
-When the client reads as HERITAGE-preferring, the current 10 palettes ALL skew contemporary. Pick the closest fit (Silhouette & Pale for moody heritage feel, Warm Grounded Earth for warm-traditional) and acknowledge the gap in your reasoning — "your brief reads more heritage than our current 2026-forecast palette set fully covers; this is the closest fit, but a future palette expansion will give you better-aligned options."
+When NO palette fits all four inferred axes perfectly, choose the palette that matches the MOST axes and acknowledge the gaps in your reasoning. Don't force a square peg.
+
+The palette set now covers BOTH trend-forward 2026 picks (timelessness 3-7) AND timeless persona/era frameworks (timelessness 8-10 — Federation, Hamptons Heritage, Mid-Century Walnut, Coastal Whitewash, English Country, Modernist Restraint). Use the heritage/timeless options for heritage personas — they were added specifically so we don't have to apologise for the 2026-only gap any more.
 
 You MUST surface the persona read in your reasoning field — name the persona axes you inferred and explain how they steered your recommendation.
 

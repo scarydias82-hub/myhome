@@ -1,14 +1,22 @@
 {
-  "version": "1.0.0",
-  "generated": "2026-05-18",
-  "description": "Curated AU-specific design knowledge for the myhome designer LLM. Each entry is a self-contained chunk suitable for RAG retrieval.",
+  "version": "1.1.0",
+  "generated": "2026-05-20",
+  "description": "Curated AU-specific design knowledge for the myMaison designer LLM. 25 trend-forward 2026 chunks + 15 persona/era/timeless framework chunks. Each entry is a self-contained chunk suitable for RAG retrieval via match_design_knowledge.",
   "entries": [
     {
       "source": "Dulux Australia 2026 Colour Forecast",
       "source_url": "https://www.dulux.com.au/colour-forecast/2026",
       "title": "Quiet Optimism — the 2026 palette",
       "chunk_text": "Dulux Australia's 2026 'Quiet Optimism' forecast leads with warm neutral grounds — soft wheat, lime-washed plaster, oat linen — punctuated by terracotta, deep eucalypt green, and dark espresso. The palette reads as a response to the visual fatigue of the all-white interior decade. Recommended use: pair Quiet Optimism wall tones (Wheat, Honey Stone) with mid-tone timber and matte black hardware. Avoid pairing with cool greys; they cancel the warmth that defines the forecast.",
-      "tags": ["dulux", "trend-forecast", "2026", "neutral", "palette", "warm", "au"],
+      "tags": [
+        "dulux",
+        "trend-forecast",
+        "2026",
+        "neutral",
+        "palette",
+        "warm",
+        "au"
+      ],
       "published_at": "2025-11-01"
     },
     {
@@ -16,7 +24,15 @@
       "source_url": "https://www.pantone.com/articles/color-of-the-year",
       "title": "Transformative Teal — Pantone's 2026 colour direction",
       "chunk_text": "Pantone's 2026 colour-of-the-year leans into Transformative Teal — a complex blue-green described as 'a colour that asks you to step in, not glance at'. The brief encourages designers to use Teal as a feature wall, joinery accent, or upholstery moment rather than a dominant tone. In residential interiors it pairs naturally with warm brass, cream linen, and natural stone — and should be deliberately broken with a soft neutral to prevent visual fatigue.",
-      "tags": ["pantone", "trend-forecast", "2026", "teal", "feature", "bold", "wgsn"],
+      "tags": [
+        "pantone",
+        "trend-forecast",
+        "2026",
+        "teal",
+        "feature",
+        "bold",
+        "wgsn"
+      ],
       "published_at": "2025-12-01"
     },
     {
@@ -24,7 +40,14 @@
       "source_url": "https://www.sherwin-williams.com/colour",
       "title": "Honest Essentials — whole-home neutral framework",
       "chunk_text": "Sherwin-Williams' 2026 'Honest Essentials' collection introduces 12 colours intended as whole-home anchors rather than feature picks. The thinking: most homes are over-coloured; a single neutral run from wall to trim to ceiling lets the architecture and furniture speak. The palette favours warm undertones (greige, taupe, parchment) over cool. Use as a base layer; layer character through textiles, art, and timber, not paint.",
-      "tags": ["sherwin-williams", "trend-forecast", "2026", "neutral", "whole-home", "minimalist"],
+      "tags": [
+        "sherwin-williams",
+        "trend-forecast",
+        "2026",
+        "neutral",
+        "whole-home",
+        "minimalist"
+      ],
       "published_at": "2025-10-15"
     },
     {
@@ -32,155 +55,489 @@
       "source_url": "https://www.benjaminmoore.com/colour-trends",
       "title": "Silhouette — a moody mid-brown for considered interiors",
       "chunk_text": "Benjamin Moore's 2026 Silhouette is a soft, layered mid-brown intended as a feature paint, not a primary wall colour. It works best on cabinetry, library shelving, and architectural mouldings where it reads as sculptural rather than oppressive. Pairs with cream walls (not white), aged brass, velvet upholstery, and travertine. Avoid combining with grey-toned timbers — Silhouette wants warm wood undertones (oak, walnut) to complete it.",
-      "tags": ["benjamin-moore", "trend-forecast", "2026", "brown", "moody", "premium", "hamptons"],
+      "tags": [
+        "benjamin-moore",
+        "trend-forecast",
+        "2026",
+        "brown",
+        "moody",
+        "premium",
+        "hamptons"
+      ],
       "published_at": "2025-09-01"
     },
     {
       "source": "AIDA — Australian Interior Design Awards",
       "title": "2025 Residential Decoration winners — recurring moves",
       "chunk_text": "Three styling moves recurred across the 2025 AIDA Residential Decoration shortlist: (1) plaster or lime-wash walls in warm whites instead of paint, (2) integrated joinery in mid-tone timbers (Tasmanian oak, blackbutt) rather than upper-cabinetry contrast, and (3) sculptural lighting at low heights — pendant lights dropped to 1.5m above dining tables, table lamps used as primary ambient sources. Architects deliberately avoided ceiling-recessed downlights in living spaces.",
-      "tags": ["aida", "au", "trend", "residential", "lighting", "joinery", "premium"],
+      "tags": [
+        "aida",
+        "au",
+        "trend",
+        "residential",
+        "lighting",
+        "joinery",
+        "premium"
+      ],
       "published_at": "2025-08-01"
     },
     {
       "source": "Houzz Australia",
       "title": "2026 kitchen trend report — Australian residential",
       "chunk_text": "Houzz AU's 2026 kitchen survey shows a strong move away from all-white kitchens toward two-tone or feature-island treatments: timber-veneer base cabinets with a stone-clad island, or sage / olive lower cabinets paired with white upper cabinetry. Black tapware is declining; brushed brass and aged bronze are increasing. Most-renovated kitchen surface this year: splashbacks, where homeowners are choosing natural stone slabs or large-format tile over the previously dominant subway tile.",
-      "tags": ["houzz", "au", "kitchen", "trend", "2026", "stone", "brass"],
+      "tags": [
+        "houzz",
+        "au",
+        "kitchen",
+        "trend",
+        "2026",
+        "stone",
+        "brass"
+      ],
       "published_at": "2026-01-15"
     },
     {
       "source": "myhome design principles",
       "title": "Scale and proportion — the rules a designer applies",
       "chunk_text": "Scale rules a senior designer never breaks: a sofa should be 2/3 the width of the wall it faces; a coffee table should be 1/2 to 2/3 the length of the sofa; rugs must be large enough that all front legs of the seating group sit on them — a rug only under the coffee table is the single most common mistake; dining tables need 900mm clearance on every side for chair pull-out; in rooms under 3.5m ceilings, no item should exceed 2.1m or the room reads lower, not taller.",
-      "tags": ["principles", "scale", "proportion", "evergreen"],
+      "tags": [
+        "principles",
+        "scale",
+        "proportion",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "myhome design principles",
       "title": "The 60-30-10 colour rule",
       "chunk_text": "The 60-30-10 rule: 60% dominant (walls, large upholstery, flooring), 30% secondary (curtains, secondary seating, rugs), 10% accent (cushions, art, ceramics, hardware). When a room breaks the rule it usually reads as cluttered or under-styled. Diagnose first by naming which colour is doing what role, then name the gap. Don't rebalance by adding more colour — rebalance by reducing or moving.",
-      "tags": ["principles", "colour", "60-30-10", "evergreen"],
+      "tags": [
+        "principles",
+        "colour",
+        "60-30-10",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "myhome design principles",
       "title": "Texture layering — three minimum",
       "chunk_text": "A room needs three texture types minimum to feel complete: hard (timber, stone, metal), soft (fabric, cushions, rugs), organic (plants, ceramics, natural fibres). The most common 'why does this feel sterile' diagnosis: only hard and soft, no organic. Adding one large potted plant or a ceramic vessel cluster usually resolves it. Matching every timber finish exactly is a beginner mistake — pair walnut with paler oak rather than walnut with walnut.",
-      "tags": ["principles", "texture", "layering", "evergreen"],
+      "tags": [
+        "principles",
+        "texture",
+        "layering",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "myhome AU regional notes",
       "title": "Australian climate zones and their interior implications",
       "chunk_text": "AU residential design splits across three broad climate considerations. Subtropical Queensland and Northern NSW: maximise cross-ventilation, prefer pale floors that read cool under harsh sun, avoid heavy textiles that feel oppressive in humidity. Temperate Sydney / Melbourne / Adelaide: balance morning and afternoon light, favour mid-tone palettes that work in both. Cool Tasmania and elevated Victoria: deeper, warmer palettes; layered textiles for winter comfort; lamp-based lighting plans because overhead fluorescent reads cold.",
-      "tags": ["au", "climate", "regional", "principles", "lighting"],
+      "tags": [
+        "au",
+        "climate",
+        "regional",
+        "principles",
+        "lighting"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "myhome AU regional notes",
       "title": "Australian residential building stock and its quirks",
       "chunk_text": "Most AU residential rooms are 3.0-3.2m ceiling height (3.6m+ is heritage). Federation cottages have narrow corridors, picture rails, and dado lines that should be honoured rather than removed. 1970s brick veneer typically has low ceilings (2.4m) and small windows — these rooms benefit from light walls, low-profile furniture, and one large mirror placed opposite the main window. Contemporary 2010s+ stock tends toward open-plan with engineered timber floors; these spaces need anchoring with rugs and zoning lights.",
-      "tags": ["au", "building-stock", "regional", "principles", "ceiling-height"],
+      "tags": [
+        "au",
+        "building-stock",
+        "regional",
+        "principles",
+        "ceiling-height"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "myhome AU material conventions",
       "title": "Materials that read as natively Australian",
       "chunk_text": "The materials that feel most native to the AU interior aesthetic: white-washed and limed timber (oak, blackbutt, Tasmanian oak), pale travertine and limestone, sisal and seagrass underfoot, linen and washed cotton in upholstery, rattan and cane on chair seats and shelving fronts, eucalypt green and ochre as accent paints, ceramic and stoneware over high-gloss porcelain. Avoid heavy mahogany or oak-stained dark unless deliberately leaning Hamptons.",
-      "tags": ["au", "materials", "regional", "principles", "evergreen"],
+      "tags": [
+        "au",
+        "materials",
+        "regional",
+        "principles",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "LUXE Interiors + Design",
       "title": "Warm grounded earth — the dominant 2026 designer trend",
       "chunk_text": "LUXE Interiors + Design surveyed 200 senior interior designers for their 2026 dominant direction. The consensus: warm grounded earth — wheat, caramel, walnut, cognac, espresso — read as a cocoon. The palette is being used whole-room (wall, sofa, floor, accent, trim all within the family) rather than as accent moments. Designers cite the move as a response to a decade of cool greys and stark white. Best paired with natural oak floors, linen upholstery, rattan accents, and aged brass hardware.",
-      "tags": ["luxe", "trend-forecast", "2026", "warm", "neutral", "japandi", "organic-modern"],
+      "tags": [
+        "luxe",
+        "trend-forecast",
+        "2026",
+        "warm",
+        "neutral",
+        "japandi",
+        "organic-modern"
+      ],
       "published_at": "2025-12-01"
     },
     {
       "source": "Vogue Living Australia",
       "title": "Coastal Australian — the most-used aesthetic in AU residential",
       "chunk_text": "Vogue Living AU's 2025 reader survey ranks Coastal Australian as the most commonly executed residential aesthetic — outpacing Japandi, Hamptons, and Mid-Century Modern combined. Defining moves: white-washed oak floor, linen slipcovered seating, rattan side tables, navy or sage accents, single statement piece in driftwood or weathered timber. Common mistake: over-leaning into beachy props (oars, ropes, anchors). Cleaner contemporary read: one nautical reference per room, not three.",
-      "tags": ["vogue-living", "au", "coastal", "aesthetic", "trend", "popular"],
+      "tags": [
+        "vogue-living",
+        "au",
+        "coastal",
+        "aesthetic",
+        "trend",
+        "popular"
+      ],
       "published_at": "2025-09-01"
     },
     {
       "source": "House & Garden AU",
       "title": "Lighting design in Australian living rooms",
       "chunk_text": "House & Garden AU's 2025 lighting report: three light sources minimum per living room, no single overhead. Layer: (1) ambient — a floor lamp or two table lamps, (2) task — reading lamp by primary seating, (3) accent — picture light or shelf-integrated strip. Recessed downlights should be reserved for kitchens and hallways. Pendant lights in living rooms work only with high ceilings (3.4m+); under that they read as oppressive.",
-      "tags": ["house-and-garden", "au", "lighting", "principles", "living-room"],
+      "tags": [
+        "house-and-garden",
+        "au",
+        "lighting",
+        "principles",
+        "living-room"
+      ],
       "published_at": "2025-10-01"
     },
     {
       "source": "Inside Out Magazine",
       "title": "How to handle small Australian apartments (under 60sqm)",
       "chunk_text": "AU small-apartment styling principles: pick one statement piece per room and keep the rest visually quiet, use vertical storage (floor-to-ceiling shelving) rather than horizontal bulk, choose furniture with visible legs to keep sightlines open, prefer mid-tone walls over white (white in small spaces emphasises every clutter point), and lean toward fewer, larger pieces over many smaller ones. A 2.5m sofa reads bigger and more confident than two 1.5m armchairs in the same space.",
-      "tags": ["inside-out", "au", "small-spaces", "apartment", "principles"],
+      "tags": [
+        "inside-out",
+        "au",
+        "small-spaces",
+        "apartment",
+        "principles"
+      ],
       "published_at": "2025-11-15"
     },
     {
       "source": "myhome design principles",
       "title": "What separates 'styled' from 'staged'",
       "chunk_text": "The most reliable tell of professional vs amateur styling: stacked objects across height ranges. A coffee table with three objects at three different heights (book, vessel, sculpture) reads styled. The same surface with three objects at the same height reads staged. Same rule for shelves — vary the heights and densities; don't fill every gap. Negative space is a design element, not a failure.",
-      "tags": ["principles", "styling", "evergreen", "details"],
+      "tags": [
+        "principles",
+        "styling",
+        "evergreen",
+        "details"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "Estate Living",
       "title": "Heritage AU homes — what to preserve, what to update",
       "chunk_text": "Federation, Edwardian, and Inter-War AU homes share a styling toolkit. Preserve: picture rails (use them — hang art at consistent heights), original fireplaces (even decommissioned), dado lines (paint different above and below). Update without removing: original timber floors can be stained darker (don't bleach), original windows benefit from natural linen drops not heavy drapes. What ages a heritage room badly: chrome hardware, glass-top coffee tables, recessed LED downlights ranged in grids.",
-      "tags": ["estate-living", "au", "heritage", "federation", "edwardian", "preservation"],
+      "tags": [
+        "estate-living",
+        "au",
+        "heritage",
+        "federation",
+        "edwardian",
+        "preservation"
+      ],
       "published_at": "2025-07-01"
     },
     {
       "source": "Belle Magazine",
       "title": "Bathrooms — the 2026 AU shift away from all-white",
       "chunk_text": "Belle's 2026 bathroom forecast: all-white tiled bathrooms are giving way to tone-on-tone neutral schemes (taupe, mushroom, oat) and natural-stone feature walls. Brass tapware over chrome continues. Floor-to-ceiling tile in a single tone outperforms two-tone walls visually. Vanity tops: travertine and warm marble lead; engineered quartz is declining as a status surface. Standalone tubs remain the single biggest perceived-value upgrade in a renovation budget.",
-      "tags": ["belle", "au", "bathroom", "trend", "2026", "stone", "brass"],
+      "tags": [
+        "belle",
+        "au",
+        "bathroom",
+        "trend",
+        "2026",
+        "stone",
+        "brass"
+      ],
       "published_at": "2026-02-01"
     },
     {
       "source": "myhome design principles",
       "title": "Visual weight and the diagonal rule",
       "chunk_text": "Visual weight should balance across the diagonal of a room, not just left-right. If the heavy piece (sofa, dining table) sits bottom-left of the room from the doorway perspective, the top-right needs a vertical counterweight: a tall plant, a pendant light dropped lower, or a vertical art piece. The brain reads balance diagonally more than horizontally. A room balanced left-right but heavy in one diagonal corner still feels off.",
-      "tags": ["principles", "balance", "weight", "evergreen"],
+      "tags": [
+        "principles",
+        "balance",
+        "weight",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "Glidden 2026 Colour of the Year",
       "title": "Warm Mahogany & Clay — the dining-room palette",
       "chunk_text": "Glidden's 2026 Warm Mahogany direction is best deployed in dining rooms, studies, and feature walls — not whole-home. The combination of mahogany (deep red-brown) with clay accents and parchment walls reads as 'considered hospitality': warm without being heavy, formal without being stiff. Avoid in north-facing rooms with abundant cool light — the palette wants warm light to render properly. Pair with dark timber, leather, brass, terracotta tile.",
-      "tags": ["glidden", "trend-forecast", "2026", "warm", "dining-room", "feature", "maximalist"],
+      "tags": [
+        "glidden",
+        "trend-forecast",
+        "2026",
+        "warm",
+        "dining-room",
+        "feature",
+        "maximalist"
+      ],
       "published_at": "2025-08-15"
     },
     {
       "source": "WGSN Interiors",
       "title": "Maximalism is back — but quietly",
       "chunk_text": "WGSN's 2026 interiors report flags a return to maximalism, but explicitly the 'quiet maximalism' variant: layered textiles, mixed metals, multiple pattern types in the same room — but all anchored by a single neutral ground (wall, floor, or large upholstery). The mistake in execution: layering colour AND pattern AND texture without an anchor. A heavily-styled room needs one large quiet surface to let the eye rest.",
-      "tags": ["wgsn", "trend-forecast", "2026", "maximalism", "eclectic"],
+      "tags": [
+        "wgsn",
+        "trend-forecast",
+        "2026",
+        "maximalism",
+        "eclectic"
+      ],
       "published_at": "2025-10-15"
     },
     {
       "source": "myhome AU regional notes",
       "title": "Outdoor-indoor living — uniquely Australian",
       "chunk_text": "AU residential design uniquely considers the connection between interior living spaces and outdoor areas. Sightlines from the main living room to the deck/garden should be uninterrupted at seated eye-level (1.1m). Living-room furniture facing away from this connection consistently reads wrong. When choosing fabric for AU living rooms, prefer linen and washed cotton that can handle sun fade in the months indoor textiles get afternoon western light — synthetic blends fade badly and read tired within two years.",
-      "tags": ["au", "regional", "outdoor-indoor", "lighting", "fabric", "evergreen"],
+      "tags": [
+        "au",
+        "regional",
+        "outdoor-indoor",
+        "lighting",
+        "fabric",
+        "evergreen"
+      ],
       "published_at": "2026-01-01"
     },
     {
       "source": "Architecture & Design AU",
       "title": "Open-plan zoning without walls",
       "chunk_text": "Open-plan AU living-dining-kitchen rooms need zoning without architectural changes. The reliable tools: (1) a rug that's clearly under the seating group, edges deliberately matching seating arrangement, (2) a pendant light or ceiling moment over the dining table to anchor that zone, (3) a runner or change-of-flooring at the kitchen threshold, (4) a console or low storage piece acting as a soft sight-break between zones. Three zones in one open-plan room is the maximum before it reads cluttered.",
-      "tags": ["architecture-design", "au", "open-plan", "zoning", "principles"],
+      "tags": [
+        "architecture-design",
+        "au",
+        "open-plan",
+        "zoning",
+        "principles"
+      ],
       "published_at": "2025-12-15"
     },
     {
       "source": "Lick / Homes & Gardens 2026",
       "title": "Mossy green and ochre — the kitchen palette pairing",
       "chunk_text": "Lick's 2026 kitchen direction features mossy green lower cabinets paired with ochre accents (tile splashback, brass hardware, or oak shelving). The palette draws from earth pigments and reads as nature-led rather than retro. Works particularly well in north-facing AU kitchens with good morning light. Common mistake: pairing with cold white quartz benchtops — instead choose warm travertine, marble with cream veining, or stained timber benchtops.",
-      "tags": ["lick", "trend-forecast", "2026", "kitchen", "green", "ochre", "earthy"],
+      "tags": [
+        "lick",
+        "trend-forecast",
+        "2026",
+        "kitchen",
+        "green",
+        "ochre",
+        "earthy"
+      ],
       "published_at": "2025-11-30"
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "The play-it-safe homeowner — palette principles",
+      "chunk_text": "The play-it-safe homeowner is risk-averse, long-term-minded, and reacts against anything that reads as 'trendy'. They want a home that will look right in five years, not just this year. Palette principles: stay within a single tonal family (warm neutrals or cool neutrals — pick one, don't mix), keep saturation under 30% across walls and major upholstery, save colour for accents (cushions, art, ceramics) where it can be swapped without cost. Avoid colour-of-the-year picks; they will date. Choose palettes scoring 8+ on timelessness — Honest Essentials, Warm Grounded Earth, Hamptons Heritage, Coastal Whitewash, Modernist Restraint. Layer character through texture (linen, wool, oak, stone) not through hue.",
+      "tags": [
+        "persona",
+        "safe",
+        "timeless",
+        "neutral",
+        "principles"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "The vibrant maximalist — material and colour signatures",
+      "chunk_text": "The vibrant maximalist wants their home to look like nobody else's. Their tag pattern: bold mood, statement-making energy, layered look preference, often paired with heritage materials (brass, leather, marble) for warmth. Palette principles: pick saturated palettes deliberately (Tomato Red & Umber, Transformative Teal, Warm Mahogany & Clay) rather than apologising for them. Use one dominant colour anchor (often on walls or in upholstery) and contrast it with a secondary jewel tone. Materials carry the character — patterned wool kilims, painted tongue-and-groove, leadlight glass, velvet, brass hardware. Avoid mediating with too much neutral; the look depends on commitment. Pair with statement lighting at low heights — pendant lights dropped to 1.5m above dining tables, sconces on every feature wall.",
+      "tags": [
+        "persona",
+        "adventurous",
+        "vibrant",
+        "maximalist",
+        "principles"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "The heritage thinker — preserving character while modernising",
+      "chunk_text": "Heritage thinkers — owners of Federation, Edwardian, or Californian Bungalow homes — want to preserve original character while making the home liveable for contemporary life. The mistake to avoid: stripping the period detail (leadlight, pressed-metal ceiling, fretwork, hardwood floors) in pursuit of a modern look. The right move: preserve every original element and contemporise through soft furnishings and lighting only. Walls in warm whites (not cool greys) honour the original light. Original timbers stay; new joinery matches the existing tone rather than contrasting it. Lighting modernises subtly — replace pendant fittings with Allied Maker or Studio Henry Wilson designs that read contemporary but sit happily in a period frame. Heritage isn't a style — it's a constraint that lifts everything else.",
+      "tags": [
+        "persona",
+        "heritage",
+        "preservation",
+        "au-specific",
+        "principles"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison AU era references",
+      "title": "Federation interiors (1890-1915) — palette and detail",
+      "chunk_text": "Federation residential homes in Australia (1890-1915) were built around dark stained hardwood (jarrah, blackbutt, Tasmanian oak), high pressed-metal ceilings, leadlight windows in stylised flora, and ornate timber fretwork at doorways. Original palettes leaned warm: cream-washed walls, brick-red feature elements (often a chimneypiece or accent wall), dark Persian rugs over polished timber floors. Period-correct updates: preserve all original timber; avoid grey-washing or whitewashing it. Walls in warm whites (Dulux Antique White USA, Whisper White) — never cool greys, which fight the warm timber. Soft furnishings in deep greens (forest, sage), brick terracotta, and aged brass. Avoid period-incorrect additions: shaker panelling (Hamptons), exposed brick walls (industrial), or all-white kitchens — they fight the original architecture.",
+      "tags": [
+        "au",
+        "heritage",
+        "federation",
+        "era",
+        "palette"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison AU era references",
+      "title": "Edwardian residential (1901-1910) — formal warmth",
+      "chunk_text": "Edwardian homes in Australia inherited Federation timber detail but introduced more formality — wider verandahs, sash windows, picture rails dividing wall into upper and lower planes, restrained colour palettes compared to the brick-and-stained-timber Federation that preceded them. Original interiors used soft cream above the picture rail, deeper terracotta or sage below. Joinery in dark mahogany or oak. Period-correct moves: paint above the rail in a warm white, below in a deeper warm tone (clay, terracotta, deep cream). Restore original sash windows rather than replacing them with aluminium. Lighting: sconces at picture-rail height, table lamps for ambient warmth. Avoid: stripping the picture rail (it's the whole point of an Edwardian wall), dropped ceilings, or feature pendant lighting hanging too low.",
+      "tags": [
+        "au",
+        "heritage",
+        "edwardian",
+        "era",
+        "palette"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison AU era references",
+      "title": "Post-war Australian Modernism — Boyd, Seidler, Murcutt",
+      "chunk_text": "Australian modernism (1945-1975) was defined by Robin Boyd, Harry Seidler, Glenn Murcutt and the architects who absorbed Bauhaus principles and adapted them to AU climate and materials. Hallmarks: open-plan living, walls of glass that opened the interior to landscape, exposed structure (steel, brick), built-in storage, timber linings (Tasmanian oak, blackbutt), and a restricted palette of warm whites + natural timber + saturated accents (mustard wool, smoke teal, brick terracotta). Mid-Century Walnut palette in this app maps directly to this era. Interiors are NOT minimalist — they're considered, with built-in nooks, period furniture (Eames-era), graphic textiles, sculptural lighting. Period-correct moves for a 1950s-1970s home: respect the open plan; don't add walls. Restore or replace timber linings rather than plastering over them. Lighting follows the architecture — recessed coffer lighting, sculptural pendants over dining.",
+      "tags": [
+        "au",
+        "heritage",
+        "mid-century",
+        "modernism",
+        "era"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison AU era references",
+      "title": "1970s-80s vernacular — what is coming back",
+      "chunk_text": "1970s-80s Australian residential interiors — terracotta floor tiles, timber-clad feature walls, mission brown trims, mustard and ochre fabrics, cane and rattan furniture — were dismissed as dated in the 2000s but are firmly back. The reason: warm earthy palettes pair naturally with the natural light AU homes get, and the materials (cork, rattan, terracotta) have lower embodied energy than the polished-concrete-and-steel aesthetic that replaced them. When updating a 1970s-80s home, keep the terracotta floor (re-grout, re-seal), keep the timber feature wall (oil instead of paint), and let the soft furnishings carry the warm-earthy story. The Boho and Coastal style profiles in this app draw heavily from this era. Avoid: painting over original timber, adding shaker panelling, or imposing Hamptons — they fight the era's vernacular.",
+      "tags": [
+        "au",
+        "1970s",
+        "1980s",
+        "era",
+        "returning-trend"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison AU era references",
+      "title": "Mid-century Australian masters — design lineage to draw on",
+      "chunk_text": "When a client picks Mid-Century Modern, ground recommendations in the AU lineage rather than the American canon. Featherston (timber-framed lounge chairs, 1950s-60s), Fred Lowen (TH Brown chairs), Schulim Krimper (joinery and tables), Grant and Mary Featherston's Talking Chairs — these are the AU originals. Materials they used: solid Tasmanian oak, blackbutt, mountain ash, sapele. Upholstery: wool flatweave in mustard, smoke teal, brick. Mid-Century Walnut palette in this app uses these reference tones. Pair the palette with one signature MCM piece (a Featherston-inspired armchair, a Krimper-style coffee table) and let the rest of the room be quieter — graphic textiles, paper lampshades, sculptural ceramics — so the period anchor reads as deliberate, not theme-park.",
+      "tags": [
+        "au",
+        "mid-century",
+        "designers",
+        "reference",
+        "lineage"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "Five principles of Modernist residential design",
+      "chunk_text": "Modernist principles, codified by Le Corbusier and reinterpreted by Mies, Aalto, and the post-war Australians, remain the durable framework for contemporary residential design: (1) Open plan — interior walls should serve only a structural or acoustic purpose, never a habitual one. (2) Honest materials — concrete reads as concrete, oak reads as oak, no faux finishes. (3) Light as a primary material — windows, skylights, and reflective surfaces designed to direct and modulate natural light through the day. (4) Built-in storage — furniture and joinery integrated rather than free-standing where possible, so the room reads as architecture not as a furniture catalogue. (5) Restraint — one statement element per room, the rest in service. Modernist Restraint palette in this app encodes these principles directly. The framework is 70 years old and still right.",
+      "tags": [
+        "principles",
+        "modernism",
+        "timeless",
+        "framework"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "Layering for character without clutter",
+      "chunk_text": "A well-styled home reads as layered without reading as cluttered. The rule: every surface that holds objects should follow rule-of-three (three items, varying heights, varying weights) — not five, not seven, never one. Every soft furnishing layer should be a different texture (linen + wool + bouclé + leather, never linen + linen + linen). Every visible material should be repeated at least twice in the room (one oak side table is decorative; oak side table + oak picture frame + oak cutting board on the counter is intentional). Avoid the cluttered look by removing 20% of objects after styling — the eye reads emptier rooms as more intentional. This applies across every persona and era; it's not style-bound. The vibrant maximalist follows it too — their 'maximalism' is layered, not random.",
+      "tags": [
+        "principles",
+        "styling",
+        "timeless",
+        "framework"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "AU climate and palette — warm light vs cool light",
+      "chunk_text": "Australian residential light is warmer than Scandinavian or British residential light — golden hour starts earlier, midday is harsher, the colour temperature of natural daylight sits warmer (around 5500K vs 6500K in Northern Europe). This means cool grey palettes that work in London or Copenhagen read flat and slightly clinical in Sydney or Brisbane. The fix: select warmer undertones across walls (warm whites with cream or biscuit undertone, never blue-grey), warmer timber (oak, blackbutt, Tasmanian oak — avoid grey-stained European oak), warmer brass (aged, not polished chrome). This applies to every palette in this app — even Misty Blue Neutral was chosen with a warm grey undertone for AU light. The reverse: north-facing rooms in Tasmania, Victoria highlands, and inland NSW get COOLER light — those rooms can carry slightly cooler palettes (Misty Blue Neutral, Honest Essentials) without reading clinical.",
+      "tags": [
+        "au",
+        "climate",
+        "light",
+        "palette",
+        "principles"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "The case for neutrals — across every era and persona",
+      "chunk_text": "Neutral palettes (Honest Essentials, Warm Grounded Earth, Hamptons Heritage, Coastal Whitewash) carry an unfair stigma as 'safe' or 'boring' — in reality they are the framework most senior designers actually build with, even for vibrant maximalist clients. The neutral does the heavy lifting on walls, floors, and large upholstery so the personality can sit in art, ceramics, textiles, and lighting — the things easiest to swap. A home with a neutral spine survives a colour-of-the-year trend cycle without remodelling. The vibrant client adds a statement sofa or feature wall; the play-it-safe client leans further into texture. Both work. Avoid the false binary of 'neutral OR colourful' — the durable AU home is 'neutral spine, layered character'.",
+      "tags": [
+        "principles",
+        "neutral",
+        "timeless",
+        "framework"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "Hamptons in Australia — adapting the canon to AU light",
+      "chunk_text": "The Hamptons style was codified in the US Northeast where light is cooler and homes face long winters. Imported directly to AU, the canonical Hamptons palette (Benjamin Moore Decorator's White walls, navy accents, polished chrome) reads cold and slightly clinical under the warmer AU sun. The AU adaptation: warmer cream walls (a notch warmer than US Hamptons), aged brass instead of polished chrome, herringbone oak floors in a warmer stain, navy reserved for upholstery and art accents rather than walls. Hamptons Heritage palette in this app encodes these adjustments. Pair with linen slipcovers (always white, never cream — the slipcover reads cleaner), shaker panelling on island bench and bathroom vanity, and one piece of stained-walnut joinery for warmth. Avoid: full-on US Hamptons (cold), beachside Hamptons (too coastal — that's its own palette).",
+      "tags": [
+        "au",
+        "hamptons",
+        "heritage",
+        "adaptation",
+        "style"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "When to commit to a feature wall",
+      "chunk_text": "Feature walls fail when they read as a missed opportunity to do the whole room — a single accent wall in dark green, surrounded by cool greige, looks like the painter ran out of paint. They succeed when they're an architectural commitment: a wall behind the bed in panelled board-and-batten painted in a deep tone, or a chimney breast in a bold ochre that picks up the timber floor below. Three rules: (1) Pick walls with architectural character (chimney breast, bedhead wall, dining nook), not a random wall. (2) Use the SAME colour on the trim and skirting as the rest of the room — the wall becomes the accent, the trim recedes. (3) Repeat the accent colour in at least one other element (a cushion, a vase, a rug border) so the room reads as designed, not as one painted wall.",
+      "tags": [
+        "principles",
+        "feature-wall",
+        "colour",
+        "framework"
+      ],
+      "published_at": null
+    },
+    {
+      "source": "myMaison design principles",
+      "title": "Mid-century walnut — why it never dates",
+      "chunk_text": "The Mid-Century Modern palette (warm walnut + mustard wool + smoke teal + bone) was first established in the late 1940s and remains the most-imitated residential palette 75 years on. The reason: it pairs warm earth tones (walnut, mustard) with one cool grounding accent (teal) — that exact pairing reads as 'considered' to almost every persona and era. A 2025 home built with this palette feels equally at home as a 1955 home built with it. Mid-Century Walnut palette in this app encodes the original tones, with two adaptations: slightly warmer wood (closer to AU blackbutt than the 1950s American walnut), and slightly more saturated teal (the 1950s smoke teal was cooler). When clients ask for 'something a bit retro but still modern' this is the answer. Pair with Featherston-style chairs, tapered-leg sideboards, paper or rice-paper lampshades.",
+      "tags": [
+        "mid-century",
+        "walnut",
+        "palette",
+        "timeless"
+      ],
+      "published_at": null
     }
   ]
 }

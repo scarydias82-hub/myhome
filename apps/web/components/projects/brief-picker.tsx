@@ -28,6 +28,8 @@ export interface BriefPaletteLookup {
   name: string;
   vibe: string;
   swatch: string[]; // 5 hex codes in role order
+  timelessness?: number; // 1-10
+  persona_fit?: string[];
 }
 
 export interface BriefStyleLookup {
@@ -307,6 +309,34 @@ function BriefResponseCard({
                   <p className="mt-1 font-display text-[15px] italic text-ink-soft">
                     with {style.name}
                   </p>
+                ) : null}
+                {/* Persona pills — timelessness (1-10) + the matched
+                    persona axes. Cognac for the timelessness chip when
+                    >= 7 (timeless), neutral otherwise. Helps the user
+                    judge how durable the recommended look is. */}
+                {(palette.timelessness !== undefined || (palette.persona_fit && palette.persona_fit.length > 0)) ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {palette.timelessness !== undefined ? (
+                      <span
+                        className={cn(
+                          'rounded-pill px-2.5 py-1 font-mono text-[10px] uppercase tracking-eyebrow',
+                          palette.timelessness >= 7
+                            ? 'bg-olive/15 text-olive'
+                            : 'bg-ink/[0.06] text-ink-soft',
+                        )}
+                      >
+                        Timelessness {palette.timelessness}/10
+                      </span>
+                    ) : null}
+                    {palette.persona_fit?.map((axis) => (
+                      <span
+                        key={axis}
+                        className="rounded-pill bg-cream px-2.5 py-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-soft"
+                      >
+                        {axis}
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
               </div>
             </div>

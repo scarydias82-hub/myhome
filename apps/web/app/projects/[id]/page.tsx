@@ -201,6 +201,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     name: p.name,
     vibe: p.vibe,
     swatch: paletteSwatch(p),
+    timelessness: p.timelessness,
+    persona_fit: p.persona_fit,
   }));
   const briefStyles: BriefStyleLookup[] = STYLES.map((s) => ({
     slug: s.slug,

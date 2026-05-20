@@ -19,6 +19,20 @@ export interface PaletteColor {
   rgb: [number, number, number];
 }
 
+/** Persona axes the brief synthesiser uses to match palette to person.
+ *  See lib/brief/synthesiser.ts — each palette is tagged with one value
+ *  per axis (sometimes multiple — a palette that works for both safe
+ *  and adventurous personas will include both). */
+export type PersonaAxis =
+  | 'safe'
+  | 'adventurous'
+  | 'timeless'
+  | 'of-the-moment'
+  | 'quiet'
+  | 'vibrant'
+  | 'contemporary'
+  | 'heritage';
+
 export interface Palette {
   id: string;
   name: string;
@@ -31,6 +45,12 @@ export interface Palette {
   style_tags: string[];
   room_roles: Record<RoomRole, PaletteColorRef>;
   colors: PaletteColor[];
+  /** 1 = trend-of-the-year, 10 = heirloom timeless. Surfaced on
+   *  palette cards so users see how durable the choice is. */
+  timelessness: number;
+  /** Persona axes this palette fits — used by the brief synthesiser
+   *  as hard signal rather than vibe inference. */
+  persona_fit: PersonaAxis[];
 }
 
 interface PaletteFile {
