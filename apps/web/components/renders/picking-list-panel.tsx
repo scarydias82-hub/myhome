@@ -246,8 +246,14 @@ function PickingListEntry({
   multiAtCap: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? item.matches : item.matches.slice(0, 1);
-  const more = item.matches.length - 1;
+  // Full-width layout (#99): show the top THREE matches by default so
+  // the user has options visible without expanding. The collapsed
+  // single-card view made sense in the old 380px right-rail; with the
+  // panel now spanning the container width below the render, a 3-up
+  // grid uses the new real-estate productively.
+  const DEFAULT_VISIBLE = 3;
+  const visible = expanded ? item.matches : item.matches.slice(0, DEFAULT_VISIBLE);
+  const more = item.matches.length - DEFAULT_VISIBLE;
 
   return (
     <div className="p-5">
@@ -260,7 +266,7 @@ function PickingListEntry({
         </p>
         <Pill tone="cream" size="sm">{item.category}</Pill>
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visible.map((m) => (
           <MatchCard
             key={m.productId}

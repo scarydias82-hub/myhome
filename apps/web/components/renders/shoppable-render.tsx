@@ -80,47 +80,51 @@ export function ShoppableRender({
         ) : null}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <div>
-          {view === 'shop' ? (
-            <div className="relative overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
-              <div className="relative aspect-[4/3] w-full">
-                <Image
-                  src={afterUrl}
-                  alt="Restyled render"
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 65vw"
-                  unoptimized
-                  priority
+      {/* Render image centered + capped so the 4:3 aspect doesn't blow
+          past the viewport, then the picking list takes the full
+          container width below. Previous layout pinned the picking list
+          in a 380px right rail which left a lot of empty real-estate
+          under the image on wide screens. */}
+      <div className="mx-auto w-full max-w-5xl">
+        {view === 'shop' ? (
+          <div className="relative overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
+            <div className="relative aspect-[4/3] w-full">
+              <Image
+                src={afterUrl}
+                alt="Restyled render"
+                fill
+                className="object-cover"
+                sizes="(max-width: 1024px) 100vw, 1024px"
+                unoptimized
+                priority
+              />
+              {items.map((item, idx) => (
+                <Hotspot
+                  key={idx}
+                  item={item}
+                  index={idx}
+                  active={activeIndex === idx}
+                  onHover={handleHover}
+                  onClick={() => handleHotspotClick(idx)}
                 />
-                {items.map((item, idx) => (
-                  <Hotspot
-                    key={idx}
-                    item={item}
-                    index={idx}
-                    active={activeIndex === idx}
-                    onHover={handleHover}
-                    onClick={() => handleHotspotClick(idx)}
-                  />
-                ))}
-              </div>
+              ))}
             </div>
-          ) : (
-            <BeforeAfterSlider beforeUrl={beforeUrl} afterUrl={afterUrl} />
-          )}
-          <p className="mt-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            Some links earn us a commission at no extra cost to you.
-          </p>
-        </div>
-        <PickingListPanel
-          items={items}
-          activeIndex={activeIndex}
-          onHover={handleHover}
-          renderId={renderId}
-          projectId={projectId ?? null}
-        />
+          </div>
+        ) : (
+          <BeforeAfterSlider beforeUrl={beforeUrl} afterUrl={afterUrl} />
+        )}
+        <p className="mt-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+          Some links earn us a commission at no extra cost to you.
+        </p>
       </div>
+
+      <PickingListPanel
+        items={items}
+        activeIndex={activeIndex}
+        onHover={handleHover}
+        renderId={renderId}
+        projectId={projectId ?? null}
+      />
     </div>
   );
 }
