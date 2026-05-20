@@ -257,20 +257,18 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       }
       setRoomId(json.roomId);
       setAnalysis(json.analysis);
+      // #117 — auto-confirm the analysis in all cases. The fact-card
+      // review UI is hidden; the analysis still cached on
+      // rooms.analysis for downstream prompt grounding. When the
+      // analysis fails entirely we surface the error message but
+      // keep advancing the form so the user isn't blocked.
       if (!json.analysis) {
         setError(
           json.error ??
             'Vision analysis was unavailable, but you can still proceed. The restyle will be less precise.',
         );
-        setAnalysisConfirmed(true);
-      } else if (isHighConfidenceAnalysis(json.analysis)) {
-        // P0-2: skip the manual review step when Claude returned all
-        // the load-bearing facts. The summary still renders in the
-        // confirmed state with an "Edit" affordance — we just don't
-        // require a click to advance. Reserves the manual confirm for
-        // analyses where something Claude returned looks shaky.
-        setAnalysisConfirmed(true);
       }
+      setAnalysisConfirmed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error. Try again.');
     } finally {
@@ -392,14 +390,14 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       />
 
       {analysing ? <AnalysingPlaceholder /> : null}
-      {analysis && !analysing ? (
-        <Step2Review
-          analysis={analysis}
-          confirmed={analysisConfirmed}
-          onConfirm={() => setAnalysisConfirmed(true)}
-          onEdit={() => setAnalysisConfirmed(false)}
-        />
-      ) : null}
+      {/* #117 — Step 2 review hidden from the user-facing flow. The
+          analysis still runs server-side and caches on rooms.analysis
+          (we need the room facts for buildPrompt's architecture-
+          preservation directives and for the brief synthesiser's
+          room-grounded reasoning). The previous fact-card UI added
+          a step without adding decisions the user actually wanted to
+          make — auto-confirm via #101 handled most cases silently
+          already. This pulls the surface entirely. */}
 
       {analysisConfirmed ? (
         <>
