@@ -888,6 +888,18 @@ function Step3Style({
                   <PaletteStrip colors={paletteSwatch(p)} className="h-5" />
                   <p className="mt-3 font-display text-h4 text-ink">{p.name}</p>
                   <p className="mt-1 text-[13px] text-ink-soft">{p.vibe}</p>
+                  {/* Cite the trend source so the user can see this
+                      palette is grounded in real forecast work, not a
+                      Claude hallucination. Each palette in palettes.json
+                      already carries a trend_source string (WGSN / Pantone
+                      / Sherwin-Williams / Benjamin Moore / Dulux AU /
+                      LUXE Interiors / etc) — we just surface it on the
+                      card. */}
+                  {p.trend_source ? (
+                    <p className="mt-3 line-clamp-2 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                      Source · {p.trend_source}
+                    </p>
+                  ) : null}
                 </div>
               </button>
             );
