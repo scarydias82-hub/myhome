@@ -15,11 +15,21 @@ import { getServerEnv } from '@/lib/env';
 const ENDPOINT = 'fal-ai/flux-general/image-to-image';
 const LEGACY_ENDPOINT = 'fal-ai/flux-control-lora-canny/image-to-image';
 
-// IP-Adapter weights on HuggingFace. XLabs' Flux IP-Adapter is the most
-// widely-used + battle-tested adapter for Flux dev. The image encoder
-// is the standard CLIP ViT-L/14 that XLabs trained against.
-const IP_ADAPTER_PATH = 'XLabs-AI/flux-ip-adapter';
-const IP_ADAPTER_ENCODER = 'openai/clip-vit-large-patch14';
+// IP-Adapter weights on HuggingFace. Round-6 eval used XLabs-AI/
+// flux-ip-adapter with the openai/clip-vit-large-patch14 encoder —
+// palette adherence stayed at 3/10 and the render's walls stayed
+// white + bed went sage-green, suggesting the IP-Adapter never
+// actually engaged (fal probably accepts the field but silently
+// can't find the underspecified XLabs weights without a `weight_name`).
+//
+// Round 7 switches to InstantX/FLUX.1-dev-IP-Adapter — it's better
+// documented: weights live at `ip-adapter.bin` in the repo root,
+// trained against google/siglip-so400m-patch14-384 (SigLIP, not
+// CLIP). InstantX's docs name every artefact explicitly so fal has
+// nothing to guess.
+const IP_ADAPTER_PATH = 'InstantX/FLUX.1-dev-IP-Adapter';
+const IP_ADAPTER_WEIGHT_NAME = 'ip-adapter.bin';
+const IP_ADAPTER_ENCODER = 'google/siglip-so400m-patch14-384';
 
 let configured = false;
 
@@ -92,11 +102,15 @@ function renderInput(input: DepthRenderInput) {
         {
           image_url: input.paletteSwatchUrl,
           path: IP_ADAPTER_PATH,
+          weight_name: IP_ADAPTER_WEIGHT_NAME,
           image_encoder_path: IP_ADAPTER_ENCODER,
-          // 0.4 = balanced. Higher (0.6+) starts to flatten the render
-          // toward the swatch geometry. Lower (0.2) doesn't move the
-          // needle. Tune from eval feedback.
-          scale: 0.4,
+          // Round 6 used 0.4 → no visible effect (likely the adapter
+          // didn't load at all). Round 7 bumps to 0.7 — if InstantX
+          // loads properly we should see a clear pull toward palette
+          // colours. If even 0.7 has no effect, the input shape itself
+          // is being silently rejected by fal and we need a different
+          // diagnostic path (fal logs or a test call).
+          scale: 0.7,
         },
       ]
     : undefined;
@@ -166,12 +180,27 @@ export interface SubmitRenderResult {
 
 export async function submitDepthRender(input: DepthRenderInput): Promise<SubmitRenderResult> {
   const client = getFal();
+  const payload = renderInput(input);
+  // Diagnostic log — round 6 IP-Adapter went silent (no visible effect
+  // in render). Logging the IP-Adapter slot of the actual payload so we
+  // can confirm in Vercel logs that the swatch URL + path landed.
+  // Strip down to the relevant fields so the log line stays readable.
+  const ipa = (payload as { ip_adapters?: Array<Record<string, unknown>> }).ip_adapters?.[0];
+  if (ipa) {
+    console.log(
+      `[fal] ip_adapters[0]: path=${String(ipa.path)} weight_name=${String(ipa.weight_name)} ` +
+        `encoder=${String(ipa.image_encoder_path)} scale=${String(ipa.scale)} ` +
+        `image_url=${String(ipa.image_url).slice(0, 60)}...`,
+    );
+  } else {
+    console.log('[fal] ip_adapters: not provided');
+  }
   // Cast the input through `any` — fal-ai/client's generated types
   // produce a discriminated-union of every endpoint's input schema and
   // can't narrow to flux-general from the runtime string ENDPOINT.
   // The fal-side validates the actual shape so this is safe.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const submission = await client.queue.submit(ENDPOINT, { input: renderInput(input) as any });
+  const submission = await client.queue.submit(ENDPOINT, { input: payload as any });
   return { requestId: submission.request_id };
 }
 
