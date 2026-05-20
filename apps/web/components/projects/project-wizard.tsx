@@ -37,6 +37,10 @@ import {
   type BriefPaletteLookup,
   type BriefStyleLookup,
 } from '@/components/projects/brief-picker';
+import {
+  WizardCarouselChooser,
+  type CarouselSelection,
+} from '@/components/projects/wizard-carousel-chooser';
 import type { BriefSynthesis } from '@/lib/brief/synthesiser';
 
 interface WizardRoom {
@@ -62,6 +66,14 @@ interface ProjectWizardProps {
   styles: BriefStyleLookup[];
   rooms: WizardRoom[];
   renders: WizardRender[];
+  /** Server-side lookup: `${paletteId}__${roomType}` → trend card
+   *  image URL. Empty object is fine — carousels gracefully fall back
+   *  to the swatch variant. */
+  trendCardImages: Record<string, string | null>;
+  /** Room type from the latest room's analysis (e.g. 'bedroom',
+   *  'living_room'). Used to pick the right trend card image. Null if
+   *  no room has been analysed yet. */
+  roomType: string | null;
 }
 
 type StepIndex = 1 | 2 | 3 | 4;
@@ -81,6 +93,8 @@ export function ProjectWizard({
   styles,
   rooms,
   renders,
+  trendCardImages,
+  roomType,
 }: ProjectWizardProps) {
   // Step completion derived from data — single source of truth.
   const briefDone = initialBriefTags.length > 0;
@@ -138,6 +152,8 @@ export function ProjectWizard({
           briefDone={briefDone}
           photoDone={photoDone}
           onContinue={() => setCurrentStep(4)}
+          trendCardImages={trendCardImages}
+          roomType={roomType}
         />
       ) : null}
 
@@ -350,6 +366,8 @@ function Step3Review({
   briefDone,
   photoDone,
   onContinue,
+  trendCardImages,
+  roomType,
 }: {
   projectId: string;
   briefResponse: BriefSynthesis | null;
@@ -358,12 +376,17 @@ function Step3Review({
   briefDone: boolean;
   photoDone: boolean;
   onContinue: () => void;
+  trendCardImages: Record<string, string | null>;
+  roomType: string | null;
 }) {
   const router = useRouter();
   const ready = briefDone && photoDone;
   const [response, setResponse] = useState<BriefSynthesis | null>(initialResponse);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Selection state for the three-carousel chooser. Initialised from
+  // Claude's recommendation when the response arrives.
+  const [selection, setSelection] = useState<CarouselSelection | null>(null);
 
   // #124 — single unified analyse trigger. Fires both analyseRoom and
   // synthesiseBrief on the server (with the room facts feeding into
@@ -447,16 +470,19 @@ function Step3Review({
           </div>
         </div>
       ) : (
-        // Existing brief response card. #126 will replace this with the
-        // three-carousel chooser (palette / 2026 trends / tried-and-tested)
-        // plus the greying logic and mutex between the trend carousels.
+        // #126 — three-carousel chooser. Replaces the previous brief
+        // response placeholder card. The chooser internally renders
+        // the recommendation narrative + 3 carousels.
         <>
-          <BriefReviewPlaceholder
-            response={response}
+          <WizardCarouselChooser
+            briefResponse={response}
             palettes={palettes}
             styles={styles}
+            trendCardImages={trendCardImages}
+            roomType={roomType}
+            onSelectionChange={setSelection}
           />
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button
               type="button"
               variant="ghost"
@@ -474,7 +500,19 @@ function Step3Review({
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <Link href={`/rooms/new?projectId=${projectId}`}>
+        {/* Generate render carries the user's chooser selection through
+            as URL params. /rooms/new pre-fills palette + style state
+            from these (P0-3 wiring already in place). #127 will gate
+            this button with the avoid-confirmation modal. */}
+        <Link
+          href={
+            response
+              ? `/rooms/new?projectId=${projectId}` +
+                `&paletteId=${(selection?.paletteId ?? response.recommendation.palette_id)}` +
+                `&style=${response.recommendation.style_slug}`
+              : `/rooms/new?projectId=${projectId}`
+          }
+        >
           <Button variant="cta" size="lg" disabled={!ready || !response}>
             ✦ Generate render
           </Button>

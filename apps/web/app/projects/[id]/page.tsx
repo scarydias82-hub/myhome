@@ -210,6 +210,30 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     tagline: s.tagline,
   }));
 
+  // Trend-card images for the three-carousel chooser (#126). Keyed by
+  // `${paletteId}__${roomType}` so each carousel card can render the
+  // palette applied to the actual room type when a card exists.
+  // Falls back to living_room cards if no exact match. Returns a
+  // server-rendered public URL — the trends bucket is public.
+  const supabasePublicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const trendCardsRes = await supabase
+    .from('trend_cards')
+    .select('palette_id, room_type, image_storage_key');
+  const trendCardImages: Record<string, string | null> = {};
+  for (const tc of trendCardsRes.data ?? []) {
+    const t = tc as { palette_id: string; room_type: string; image_storage_key: string };
+    trendCardImages[`${t.palette_id}__${t.room_type}`] =
+      `${supabasePublicUrl}/storage/v1/object/public/trends/${t.image_storage_key}`;
+  }
+
+  // Room type from the latest room's analysis (server-side read of
+  // rooms.analysis.room_type). Used so the carousels prefer cards for
+  // the actual room type the user uploaded.
+  const latestRoomAnalysis = rooms[0]?.analysis as
+    | { room_type?: string | null }
+    | null;
+  const projectRoomType = latestRoomAnalysis?.room_type ?? null;
+
   const siteDone = rooms.length > 0 && rooms.some((r) => r.analysis);
   const inspirationDone = Boolean(project.pinterest_style_profile_id);
   const proposalDone = renders.some((r) => r.status === 'succeeded');
@@ -316,6 +340,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 };
               }),
             )}
+            trendCardImages={trendCardImages}
+            roomType={projectRoomType}
           />
         ) : null}
 
