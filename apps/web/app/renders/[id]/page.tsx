@@ -13,6 +13,7 @@ import { RebuildPickingListButton } from '@/components/renders/rebuild-picking-l
 import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
 import { RevisionStrip, type RevisionStripItem } from '@/components/renders/revision-strip';
+import { RenderActionBand } from '@/components/renders/render-action-band';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -270,6 +271,15 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               renderId={render.id}
               revisions={signedRevisions}
               activeRevisionId={activeRevisionIdForStrip}
+            />
+            {/* End-of-render action band (#107) — three follow-up moves
+                so the user has a clear next step after the wow moment:
+                try another palette · share the link · save to project.
+                Closes the loop instead of leaving them at the bottom
+                of a long scroll with nothing to do. */}
+            <RenderActionBand
+              renderId={render.id}
+              projectId={render.project_id}
             />
           </>
         ) : isFailed ? (
