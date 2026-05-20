@@ -79,11 +79,13 @@ export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
         palettes={palettes}
       />
 
-      {/* ② 2026 trend carousel — what's hot this year, sourced from WGSN,
-          Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU et al. */}
+      {/* ② 2026 Design Trends carousel — what's hot this year, sourced
+          from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU
+          et al. Dedup-by-palette upstream means each trend-forward
+          palette (timelessness < 7) gets exactly one card here. */}
       <TrendsCarousel
         anchor="trends-2026"
-        title="2026 trends"
+        title="2026 Design Trends"
         intro="Curated from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU, and the year's dominant designer voices."
         cards={trendForward}
         emptyCopy="Trend cards are still generating — check back in a few minutes."

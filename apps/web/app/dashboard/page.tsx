@@ -106,7 +106,13 @@ export default async function DashboardPage() {
         .select(
           'id, palette_id, palette_name, room_type, headline, description, image_storage_key, source_signal',
         )
-        .limit(6),
+        // Fetch the full set so the dashboard can show one card per
+        // palette (16 palettes × 6 room types = 96 rows max). Previous
+        // .limit(6) starved both carousels — 3 trend-forward + 3
+        // timeless visible. Dedup-by-palette below picks the best
+        // room-variant per palette so we get one card per palette
+        // across the carousels.
+        .limit(200),
       supabase
         .from('products')
         .select(
@@ -150,9 +156,41 @@ export default async function DashboardPage() {
     };
   });
 
-  // Trend cards
+  // Trend cards — dedupe by palette_id so every palette gets exactly
+  // one card on the dashboard (16 palettes × 6 rooms = up to 96 rows
+  // from the table; we want one card per palette across the carousels).
+  // Preference order for the room variant we pick per palette:
+  //   1. Match the user's most recently analysed room
+  //   2. Fall back to 'living_room' which has the widest coverage
+  //   3. First card in the result set for that palette
   const supabaseUrl = publicEnv.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const trendCards: DashboardTrendCard[] = trends.map((t) => {
+  const preferredRoom = rooms[0]?.analysis &&
+    typeof rooms[0].analysis === 'object' &&
+    'room_type' in (rooms[0].analysis as Record<string, unknown>)
+      ? ((rooms[0].analysis as { room_type?: string | null }).room_type ?? null)
+      : null;
+
+  const trendsByPalette = new Map<string, TrendRow>();
+  for (const t of trends) {
+    const existing = trendsByPalette.get(t.palette_id);
+    if (!existing) {
+      trendsByPalette.set(t.palette_id, t);
+      continue;
+    }
+    // Prefer the user's room over the existing pick; prefer
+    // living_room over arbitrary fallbacks.
+    if (preferredRoom && t.room_type === preferredRoom && existing.room_type !== preferredRoom) {
+      trendsByPalette.set(t.palette_id, t);
+    } else if (
+      existing.room_type !== preferredRoom &&
+      t.room_type === 'living_room' &&
+      existing.room_type !== 'living_room'
+    ) {
+      trendsByPalette.set(t.palette_id, t);
+    }
+  }
+
+  const trendCards: DashboardTrendCard[] = Array.from(trendsByPalette.values()).map((t) => {
     const palette = palettesById.get(t.palette_id);
     return {
       id: t.id,
@@ -166,9 +204,8 @@ export default async function DashboardPage() {
       imageUrl: `${supabaseUrl}/storage/v1/object/public/trends/${t.image_storage_key}`,
       paletteId: t.palette_id,
       // Persona metadata threaded so TrendsSection can bucket cards
-      // into the 2026 vs Timeless carousels. Falls back to 5 (neutral)
-      // when the palette lookup misses, so unknown palettes land in
-      // the 2026 carousel by default.
+      // into the 2026 vs Tried & Tested carousels. Falls back to 5
+      // (neutral) when the palette lookup misses.
       timelessness: palette?.timelessness ?? 5,
     };
   });
