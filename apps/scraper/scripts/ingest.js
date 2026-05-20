@@ -24,6 +24,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const OUTPUT_DIR = path.resolve('output');
 
+// Optional CLI filter: --retailer=adairs,globewest
+// Lets us re-ingest just one or two retailers without paying the
+// classifyProduct (Claude vision) cost for every other retailer dir.
+const retailerArg = process.argv.find((a) => a.startsWith('--retailer='));
+const RETAILER_FILTER = retailerArg
+  ? new Set(retailerArg.slice('--retailer='.length).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean))
+  : null;
+if (RETAILER_FILTER) {
+  console.log(`[ingest] filtering to retailers: ${[...RETAILER_FILTER].join(', ')}`);
+}
+
 function toRow(raw) {
   return {
     retailer: raw.retailer,
@@ -52,6 +63,7 @@ async function* walkRetailerDirs() {
     process.exit(1);
   }
   for (const name of entries) {
+    if (RETAILER_FILTER && !RETAILER_FILTER.has(name.toLowerCase())) continue;
     const dir = path.join(OUTPUT_DIR, name);
     const st = await stat(dir).catch(() => null);
     if (!st?.isDirectory()) continue;

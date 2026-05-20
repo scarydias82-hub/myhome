@@ -31,11 +31,23 @@ import { writeJson, retailerOutputDir } from '../utils/storage.js';
 const ORIGIN = 'https://www.adairs.com.au';
 const RETAILER = 'Adairs';
 const RETAILER_SLUG = 'adairs';
-const CATEGORY = '/bedroom/quilt-covers-coverlets/';
-const MAX_PAGES = 12;       // 313 products across 11 pages of ~29 each
-const TARGET_MAX = 120;     // first cohort cap
+// Multi-category walk. Each entry: PLP path + the catalog `category`
+// label rows land under at ingest time (must match the categoryForLabel
+// outputs in lib/detection.ts so the picking-list query finds them).
+//   - /bedroom/quilt-covers-coverlets/  → "Quilt Covers" (313 products)
+//   - /homewares/cushions/              → "Cushions"     (316 products)
+//   - /homewares/throws/                → "Throws"       (~150 products)
+// Cushions and throws fill the "no catalog matches for cushion / throw"
+// demand-signal slots from R12 eval — Florence-2 detects them on
+// virtually every bedroom render but our catalog had zero.
+const CATEGORY_PLPS = [
+  { path: '/bedroom/quilt-covers-coverlets/', category: 'Quilt Covers', cap: 120 },
+  { path: '/homewares/cushions/', category: 'Cushions', cap: 120 },
+  { path: '/homewares/throws/', category: 'Throws', cap: 80 },
+];
+const MAX_PAGES_PER_PLP = 12;
 const EXCLUDE_PATTERNS =
-  /(sheet[-\s]?set|fitted[-\s]?sheet|flat[-\s]?sheet|valance|mattress[-\s]?protector|pillow[-\s]?case[-\s]?only|throw[-\s]?blanket|bath|towel|robe|cushion|candle)/i;
+  /(sheet[-\s]?set|fitted[-\s]?sheet|flat[-\s]?sheet|valance|mattress[-\s]?protector|pillow[-\s]?case[-\s]?only|bath|towel|robe|candle)/i;
 
 function slugFromHref(href) {
   // Adairs product URLs look like
@@ -112,7 +124,9 @@ export async function scrapeAdairs() {
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
 
-  const firstUrl = `${ORIGIN}${CATEGORY}`;
+  // robots.txt gate uses the first PLP as a representative — every
+  // PLP we walk is under adairs.com.au so a single check covers them.
+  const firstUrl = `${ORIGIN}${CATEGORY_PLPS[0].path}`;
   if (!(await isAllowed(firstUrl))) {
     console.warn(`[${RETAILER}] robots.txt disallows ${firstUrl}, skipping`);
     return { retailer: RETAILER, products: [], errors };
@@ -135,44 +149,65 @@ export async function scrapeAdairs() {
     });
     const page = await ctx.newPage();
 
-    // Walk PLPs.  Dedup by data-uniqueid in case page boundaries
-    // overlap; deduplicate href too in case Adairs lists the same
-    // product under multiple sub-categories.
+    // Walk each (PLP, category) tuple in CATEGORY_PLPS. Dedup by
+    // data-uniqueid in case page boundaries overlap, and by href in
+    // case Adairs lists the same product under multiple sub-categories.
+    // Each card carries its source category so the per-product row
+    // gets tagged correctly at scrape time.
     const seenUniqueIds = new Set();
     const seenHrefs = new Set();
     const cards = [];
-    for (let p = 1; p <= MAX_PAGES && cards.length < TARGET_MAX * 2; p++) {
-      const url = `${ORIGIN}${CATEGORY}?page=${p}`;
-      console.log(`[${RETAILER}] PLP page ${p}: ${url}`);
-      try {
-        const pageCards = await extractCardsFromPage(page, url);
-        if (pageCards.length === 0) {
-          console.log(`[${RETAILER}] page ${p} returned 0 cards — stopping`);
-          break;
-        }
-        for (const c of pageCards) {
-          if (!c.uniqueid || !c.href) continue;
-          if (seenUniqueIds.has(c.uniqueid) || seenHrefs.has(c.href)) continue;
-          if (c.title && EXCLUDE_PATTERNS.test(c.title)) continue;
-          if (c.href && EXCLUDE_PATTERNS.test(c.href)) continue;
-          seenUniqueIds.add(c.uniqueid);
-          seenHrefs.add(c.href);
-          cards.push(c);
-        }
-        await delay();
-      } catch (err) {
-        errors.push({ url, error: String(err?.message ?? err) });
+    for (const plp of CATEGORY_PLPS) {
+      const plpUrl = `${ORIGIN}${plp.path}`;
+      if (!(await isAllowed(plpUrl))) {
+        console.warn(`[${RETAILER}] robots disallows ${plpUrl}, skipping`);
+        continue;
       }
+      console.log(`[${RETAILER}] === ${plp.category} (${plp.path}) ===`);
+      let plpCards = 0;
+      for (let p = 1; p <= MAX_PAGES_PER_PLP && plpCards < plp.cap * 2; p++) {
+        const url = `${ORIGIN}${plp.path}?page=${p}`;
+        console.log(`[${RETAILER}] PLP page ${p}: ${url}`);
+        try {
+          const pageCards = await extractCardsFromPage(page, url);
+          if (pageCards.length === 0) {
+            console.log(`[${RETAILER}] page ${p} returned 0 cards — stopping`);
+            break;
+          }
+          for (const c of pageCards) {
+            if (!c.uniqueid || !c.href) continue;
+            if (seenUniqueIds.has(c.uniqueid) || seenHrefs.has(c.href)) continue;
+            if (c.title && EXCLUDE_PATTERNS.test(c.title)) continue;
+            if (c.href && EXCLUDE_PATTERNS.test(c.href)) continue;
+            seenUniqueIds.add(c.uniqueid);
+            seenHrefs.add(c.href);
+            cards.push({ ...c, category: plp.category, sourceCap: plp.cap });
+            plpCards++;
+          }
+          await delay();
+        } catch (err) {
+          errors.push({ url, error: String(err?.message ?? err) });
+        }
+      }
+      console.log(`[${RETAILER}] ${plp.category}: ${plpCards} new`);
     }
 
-    console.log(`[${RETAILER}] ${cards.length} unique products after PLP walk`);
+    console.log(`[${RETAILER}] ${cards.length} unique products across all PLPs`);
 
     // PLP walk done. Image downloads use downloadImage (node fetch)
     // and don't need the Playwright context, so close it now.
     await ctx.close();
 
+    // Enforce per-category caps: count per category, take the first
+    // cap items of each. Without this, we'd download all 316 cushion
+    // images even though we only want 120.
+    const perCatCount = new Map();
     const products = [];
-    for (const c of cards.slice(0, TARGET_MAX)) {
+    for (const c of cards) {
+      const used = perCatCount.get(c.category) ?? 0;
+      if (used >= c.sourceCap) continue;
+      perCatCount.set(c.category, used + 1);
+
       const slug = slugFromHref(c.href);
       const productUrl = `${ORIGIN}${c.href}`;
       const heroSrc = canonicalImage(c.imgSrc);
@@ -196,7 +231,7 @@ export async function scrapeAdairs() {
         id: c.uniqueid || slug,
         retailer: RETAILER,
         name: c.title || slug,
-        category: 'Quilt Covers',
+        category: c.category,
         price,
         currency: 'AUD',
         dimensions: parseDimensions(c.title ?? ''),

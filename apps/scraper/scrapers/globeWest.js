@@ -21,9 +21,20 @@ import { writeJson, retailerOutputDir } from '../utils/storage.js';
 const ORIGIN = 'https://www.globewest.com.au';
 const RETAILER = 'GlobeWest';
 const RETAILER_SLUG = 'globewest';
-const TARGET_MAX = 100;
+const TARGET_MAX = 160;
 // /indoor surfaces actual furniture cards; /in-stock is mostly decor only.
-const LISTING_URLS = [`${ORIGIN}/indoor`, `${ORIGIN}/outdoor`, `${ORIGIN}/in-stock`];
+// Plus narrow category walks for picking-list demand gaps surfaced by
+// the R12 eval ("no catalog matches for ottoman / console / bedside
+// table"). The broad /indoor URL has these categories but underweights
+// them — walking each PLP directly ensures coverage.
+const LISTING_URLS = [
+  `${ORIGIN}/indoor`,
+  `${ORIGIN}/outdoor`,
+  `${ORIGIN}/in-stock`,
+  `${ORIGIN}/indoor/furniture/sofas/ottomans`,
+  `${ORIGIN}/indoor/furniture/side-tables`,
+  `${ORIGIN}/indoor/furniture/storage-shelving`,
+];
 
 // SKU prefix → category. GlobeWest's SKUs are like ch-ril-arm-... (chair),
 // cto-pippa-tri-x (coffee table), sof-... (sofa), bed-... (bed), etc.
@@ -182,11 +193,19 @@ export async function scrapeGlobeWest() {
       userAgent: USER_AGENT,
       viewport: { width: 1280, height: 1600 },
     });
-    // Block heavy assets we don't need for HTML scraping.
-    await ctx.route('**/*', (route) => {
+    // Block heavy assets we don't need for HTML scraping. Wrapping
+    // route.abort/continue in try/catch swallows TargetClosedError
+    // when navigation tears down with requests still in flight —
+    // happens more often now that we walk 6 listing URLs (each
+    // triggers analytics + lazyload pings that may outlive the page).
+    await ctx.route('**/*', async (route) => {
       const t = route.request().resourceType();
-      if (t === 'image' || t === 'media' || t === 'font') return route.abort();
-      return route.continue();
+      try {
+        if (t === 'image' || t === 'media' || t === 'font') await route.abort();
+        else await route.continue();
+      } catch {
+        /* page/context already closed — ignore */
+      }
     });
     const page = await ctx.newPage();
 
