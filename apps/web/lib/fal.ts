@@ -15,21 +15,27 @@ import { getServerEnv } from '@/lib/env';
 const ENDPOINT = 'fal-ai/flux-general/image-to-image';
 const LEGACY_ENDPOINT = 'fal-ai/flux-control-lora-canny/image-to-image';
 
-// IP-Adapter weights on HuggingFace. Round-6 eval used XLabs-AI/
-// flux-ip-adapter with the openai/clip-vit-large-patch14 encoder —
-// palette adherence stayed at 3/10 and the render's walls stayed
-// white + bed went sage-green, suggesting the IP-Adapter never
-// actually engaged (fal probably accepts the field but silently
-// can't find the underspecified XLabs weights without a `weight_name`).
+// IP-Adapter weights on HuggingFace. Round-7 used InstantX/FLUX.1-
+// dev-IP-Adapter which failed in production with:
+//   "Could not load pipeline due to error: The size of tensor a (32)
+//    must match the size of tensor b (1056) at non-singleton dim 1"
+// Diagnosis (per InstantX HF README): "The code has not been
+// integrated into diffusers yet" — InstantX uses 128 image tokens
+// + bespoke MLPProjModel + custom forward inserts into 38 single +
+// 19 double blocks. fal's flux-general endpoint wraps diffusers'
+// load_ip_adapter() which can't drive InstantX's custom pipeline.
+// The tensor mismatch is the diffusers loader trying to wire
+// projection layers it doesn't understand.
 //
-// Round 7 switches to InstantX/FLUX.1-dev-IP-Adapter — it's better
-// documented: weights live at `ip-adapter.bin` in the repo root,
-// trained against google/siglip-so400m-patch14-384 (SigLIP, not
-// CLIP). InstantX's docs name every artefact explicitly so fal has
-// nothing to guess.
-const IP_ADAPTER_PATH = 'InstantX/FLUX.1-dev-IP-Adapter';
-const IP_ADAPTER_WEIGHT_NAME = 'ip-adapter.bin';
-const IP_ADAPTER_ENCODER = 'google/siglip-so400m-patch14-384';
+// Round 12: switch to XLabs-AI/flux-ip-adapter — confirmed working
+// via diffusers PR #10717 (the PR that added FluxImg2ImgPipeline
+// IP-Adapter support, exactly the fal-general code path). Uses
+// .safetensors (not .bin) + CLIP-L/14 (not SigLIP). Fal explicitly
+// recognises XLabs v1 — their schema notes that use_real_cfg should
+// be on for XLabs v1.
+const IP_ADAPTER_PATH = 'XLabs-AI/flux-ip-adapter';
+const IP_ADAPTER_WEIGHT_NAME = 'ip_adapter.safetensors';
+const IP_ADAPTER_ENCODER = 'openai/clip-vit-large-patch14';
 
 let configured = false;
 
@@ -177,6 +183,10 @@ function renderInput(input: DepthRenderInput) {
     guidance_scale: 5.0,
     num_images: 1,
     enable_safety_checker: true,
+    // Required for XLabs v1 IP-Adapter per fal's flux-general schema
+    // note: "If using XLabs IP-Adapter v1, this will be turned on!"
+    // Only meaningful when ip_adapters is present; harmless otherwise.
+    use_real_cfg: Boolean(input.paletteSwatchUrl),
     // Canny structure preservation. Round-8 eval surfaced fal's
     // actual schema:
     //   - control_method_url   = the control LoRA to use ('canny' is
