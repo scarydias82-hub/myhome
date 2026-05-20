@@ -40,19 +40,46 @@ export interface DashboardTrendCard {
   timelessness: number;
 }
 
+export interface DashboardPaletteCard {
+  id: string;
+  name: string;
+  vibe: string;
+  trendSource: string;
+  swatchHexes: string[];
+  timelessness: number;
+  personaFit: string[];
+  recommendedRooms: string[];
+}
+
 interface TrendsSectionProps {
   trends: DashboardTrendCard[];
+  /** Pure palette swatches — the 16 palettes shown as colour cards
+   *  rather than rendered-in-room visuals. Mirrors the wizard's
+   *  Step 3 "① Colour palette" carousel so the dashboard has a way
+   *  to browse colour directly. */
+  palettes: DashboardPaletteCard[];
 }
 
 const TIMELESS_THRESHOLD = 7;
 
-export function TrendsSection({ trends }: TrendsSectionProps) {
+export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
   const trendForward = trends.filter((t) => (t.timelessness ?? 5) < TIMELESS_THRESHOLD);
   const timeless = trends.filter((t) => (t.timelessness ?? 5) >= TIMELESS_THRESHOLD);
 
   return (
     <section id="trends" className="py-10">
-      {/* 2026 trend carousel — what's hot this year, sourced from WGSN,
+      {/* ① Colour palette carousel — pure palette browsing, mirrors
+          the wizard Step 3 primary chooser. Lets users scan the 16
+          palette options without committing to a room-applied
+          visual. */}
+      <PaletteCarousel
+        anchor="palettes"
+        title="Colour palettes"
+        intro="The full 16-palette set behind every render. Hover a card to see the trend source; click through to use one as the basis for your next project."
+        palettes={palettes}
+      />
+
+      {/* ② 2026 trend carousel — what's hot this year, sourced from WGSN,
           Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU et al. */}
       <TrendsCarousel
         anchor="trends-2026"
@@ -62,16 +89,95 @@ export function TrendsSection({ trends }: TrendsSectionProps) {
         emptyCopy="Trend cards are still generating — check back in a few minutes."
       />
 
-      {/* Timeless carousel — heritage / classic / modernist frameworks
+      {/* ③ Timeless carousel — heritage / classic / modernist frameworks
           that aren't year-bound. Surfaces the Layer 3 expansion. */}
       <TrendsCarousel
         anchor="trends-timeless"
-        title="Timeless directions"
+        title="Tried & tested directions"
         intro="Heritage, classic and modernist frameworks — durable colour stories grounded in Federation, Hamptons, Mid-Century and modernist principles."
         cards={timeless}
         emptyCopy="Timeless trend cards are still generating."
       />
     </section>
+  );
+}
+
+// --- Colour palette carousel (pure swatch view) --------------------------
+
+function PaletteCarousel({
+  anchor,
+  title,
+  intro,
+  palettes,
+}: {
+  anchor: string;
+  title: string;
+  intro: string;
+  palettes: DashboardPaletteCard[];
+}) {
+  return (
+    <section id={anchor} className="mb-12">
+      <SectionHeader
+        title={title}
+        action={{ label: 'See all →', href: `/dashboard#${anchor}` }}
+      />
+      <p className="mt-2 max-w-3xl font-dmsans text-[13px] leading-relaxed text-editorial-taupe">
+        {intro}
+      </p>
+      {palettes.length === 0 ? (
+        <p className="mt-6 font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          Palette set not loaded.
+        </p>
+      ) : (
+        <div className="-mx-2 mt-5 overflow-x-auto pb-3 [scrollbar-width:thin]">
+          <ul className="flex snap-x snap-mandatory gap-4 px-2">
+            {palettes.map((p) => (
+              <li key={p.id} className="snap-start shrink-0 basis-[240px] md:basis-[280px]">
+                <PaletteSwatchCard palette={p} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PaletteSwatchCard({ palette: p }: { palette: DashboardPaletteCard }) {
+  // Background tint pulled from the palette so each card has a subtle
+  // hint of the colour story even before you focus on the swatches.
+  const tintCss = `linear-gradient(135deg, ${p.swatchHexes[0] ?? '#F4EFE6'}1A 0%, ${p.swatchHexes[2] ?? '#C4956A'}10 100%)`;
+  return (
+    <article
+      className="flex h-full flex-col overflow-hidden rounded-2xl border border-editorial-border transition hover:border-editorial-borderStrong"
+      style={{ background: tintCss }}
+    >
+      {/* Big swatch strip = the visual anchor. Each colour gets equal
+          space so the palette's tonal range is readable at a glance. */}
+      <div className="grid h-32 grid-cols-5">
+        {p.swatchHexes.slice(0, 5).map((hex, i) => (
+          <div key={`${hex}-${i}`} style={{ backgroundColor: hex }} />
+        ))}
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-editorial-taupe">
+          T {p.timelessness}/10 · {p.personaFit.slice(0, 2).join(' · ')}
+        </p>
+        <p className="font-serif text-[18px] leading-tight text-editorial-ink">{p.name}</p>
+        <p className="line-clamp-2 font-dmsans text-[12px] leading-relaxed text-editorial-taupe">
+          {p.vibe}
+        </p>
+        <p className="mt-auto line-clamp-1 font-dmmono text-[10px] uppercase tracking-[0.12em] text-editorial-taupe">
+          {p.trendSource}
+        </p>
+        <Link
+          href={`/projects/new?palette=${p.id}`}
+          className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-editorial-ink px-3 py-1.5 font-dmsans text-[11px] font-medium text-editorial-cream transition hover:opacity-90"
+        >
+          ✦ Start a project
+        </Link>
+      </div>
+    </article>
   );
 }
 

@@ -17,7 +17,9 @@ import {
 import {
   TrendsSection,
   type DashboardTrendCard,
+  type DashboardPaletteCard,
 } from '@/components/dashboard/sections/trends-section';
+import { paletteSwatch } from '@/lib/palettes';
 import { NexusCTA } from '@/components/dashboard/sections/nexus-cta';
 
 export const dynamic = 'force-dynamic';
@@ -221,7 +223,25 @@ export default async function DashboardPage() {
 
         <ProjectsSection projects={projectCards} />
 
-        {trendCards.length > 0 ? <TrendsSection trends={trendCards} /> : null}
+        {/* Trends section — three carousels:
+              ① Colour palettes (the pure 16-palette swatch view)
+              ② 2026 trends (palette × room visuals, trend-forward)
+              ③ Tried & tested (palette × room visuals, timeless)
+            Always renders the palette carousel; the trend-card carousels
+            only render when trend_cards rows exist. */}
+        <TrendsSection
+          trends={trendCards}
+          palettes={Array.from(palettesById.values()).map<DashboardPaletteCard>((p) => ({
+            id: p.id,
+            name: p.name,
+            vibe: p.vibe,
+            trendSource: p.trend_source,
+            swatchHexes: paletteSwatch(p),
+            timelessness: p.timelessness,
+            personaFit: p.persona_fit,
+            recommendedRooms: p.recommended_rooms,
+          }))}
+        />
 
         <ARSection products={arProducts} />
 
