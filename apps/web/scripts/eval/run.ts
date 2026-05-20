@@ -21,7 +21,7 @@ loadEnv({ path: path.join(__dirname_early, '..', '..', '.env') });
 
 import { FIXTURES, getFixture, type Fixture } from './fixtures';
 import { evaluateRender, type Scorecard } from './evaluator';
-import { analyseRoom } from '../../lib/vision';
+import { analyseRoom, type RoomAnalysis } from '../../lib/vision';
 import { getDesignerAdvice } from '../../lib/designer';
 import { buildPickingList } from '../../lib/matching';
 import {
@@ -250,7 +250,9 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
     const kontextPrompt = buildKontextPrompt({
       basePrompt: prompt,
       paletteName: palette?.name ?? style.name,
+      roomFacts: analysis,
     });
+    console.log(`  kontext prompt (${kontextPrompt.length} chars):\n${kontextPrompt.split('\n').slice(0, 12).map((l) => '    ' + l).join('\n')}\n    ...`);
     result = await runKontext({
       prompt: kontextPrompt,
       controlImageUrl: originalSignedUrl,
@@ -333,29 +335,105 @@ async function pollFal(requestId: string): Promise<{ imageUrl: string }> {
   throw new Error('fal poll timed out after 3 min');
 }
 
+// Build room-specific preserve directives from the existing vision
+// analysis. Round 13 Kontext lost geometry/hallucinations by
+// reinterpreting style-adjacent architectural features — turned the
+// large sheer-curtained window into small cottage panes + radiator,
+// swapped grey carpet for timber parquet, added crown moulding.
+// The Claude vision analysis (RoomAnalysis) already captures these
+// facts; piping them into the prompt as explicit "MUST preserve" /
+// "do NOT replace with" lines gives Kontext per-room geometry locks
+// that canny would have given us via edges.
+function roomFactsToPreserveDirectives(facts: RoomAnalysis | null | undefined): string[] {
+  if (!facts) return [];
+  const out: string[] = [];
+
+  if (facts.flooring) {
+    out.push(
+      `Floor: must remain "${facts.flooring}". Do NOT replace with timber, parquet, vinyl, polished concrete, tiles, or any other material.`,
+    );
+  }
+
+  // Window description usually lives in light.notes (e.g. "Large window
+  // with floor-to-ceiling curtains; light appears morning sun").
+  if (facts.light?.notes) {
+    out.push(
+      `Window: ${facts.light.notes}. Do NOT change the window type, panes, frame style, or size. Do NOT add radiators, sills, or transom features that aren't in image 1.`,
+    );
+  }
+
+  // Ceiling — extract from existing_colours so Kontext doesn't add
+  // crown moulding / cornice / architrave that weren't there.
+  const ceiling = facts.existing_colours?.find((c) => c.surface === 'ceiling');
+  if (ceiling) {
+    out.push(
+      `Ceiling: ${ceiling.description}. Do NOT add crown moulding, cornice, architrave, ceiling roses, or any ornamental details unless they exist in image 1.`,
+    );
+  }
+
+  if (facts.architectural_features?.length) {
+    out.push(
+      `Preserve these architectural features exactly as shown in image 1: ${facts.architectural_features.join('; ')}.`,
+    );
+  }
+
+  // Keep-list from furniture: items the designer wants preserved.
+  type FurnItem = { item: string; condition: string };
+  const keep = (facts as RoomAnalysis & { existing_furniture?: FurnItem[] }).existing_furniture
+    ?.filter((f) => f.condition === 'keep')
+    .map((f) => f.item) ?? [];
+  if (keep.length) {
+    out.push(`Must remain in the render with the same shape and position: ${keep.join('; ')}.`);
+  }
+
+  // Generic anti-hallucination — Round 13 showed Kontext loves to
+  // "complete" a scene by inventing rooms behind doorways.
+  out.push(
+    `Do NOT show any furnished rooms, beds, art, or scenes through doorways — only show what is visible in image 1 (typically an unfurnished dark hallway or wall). Do NOT invent any decorative elements, furniture, or surfaces not present in image 1.`,
+  );
+
+  return out;
+}
+
 // Build a Kontext-friendly prompt. Kontext is a natural-language
 // compositional editor — it understands "image 1 / image 2" role
-// references. We name the images explicitly + lean on the model's
-// own architectural-preservation instincts (no canny edges to lock
-// geometry, so the prompt is doing all the geometry work).
+// references. Round 14 (this version) injects per-room preserve
+// directives sourced from the Claude vision analysis so Kontext
+// can't reinterpret the source's architectural style.
 function buildKontextPrompt({
   basePrompt,
   paletteName,
+  roomFacts,
 }: {
   basePrompt: string;
   paletteName: string;
+  roomFacts?: RoomAnalysis | null;
 }): string {
-  return [
+  const preserves = roomFactsToPreserveDirectives(roomFacts);
+  const sections: string[] = [
     `Restyle the bedroom shown in image 1 using the ${paletteName} palette shown as colour stripes in image 2.`,
-    `Image 1 is the source room — preserve its architecture exactly: window position, window opening size, ceiling height, door location, camera angle, and overall room geometry.`,
-    `Image 2 is the palette reference — apply its colour stripes (wall tone on top, then sofa, floor, accent, trim) to the matching surfaces of the room.`,
-    `Walls should take on the top stripe colour. Bedding / soft furnishings the second-row tone. Furniture and accents the deeper tones.`,
-    `Do NOT change the window's existence, position or shape. Do NOT invent new doors, balconies, or outdoor scenes. Do NOT change the camera angle.`,
-    `The render should look like the same room redecorated, not a new room.`,
+    `Image 1 is the source room. Image 2 is the palette swatch reference.`,
     ``,
-    `Designer guidance (style reference for the broader aesthetic):`,
-    basePrompt.slice(0, 800),
-  ].join(' ');
+    `Apply the palette from image 2 to the room:`,
+    `- Walls take the top stripe colour`,
+    `- Soft furnishings (bedding, cushions, throws) take the lighter stripe tones`,
+    `- Larger furniture and accents take the deeper stripe tones`,
+    ``,
+  ];
+
+  if (preserves.length > 0) {
+    sections.push(`STRUCTURAL PRESERVATION — these facts describe image 1 and MUST be respected:`);
+    for (const p of preserves) sections.push(`- ${p}`);
+    sections.push('');
+  }
+
+  sections.push(
+    `The render must look like the SAME ROOM with new colours and soft furnishings. Do NOT reinterpret it as a different architectural style (e.g. cottage, period, industrial). Do NOT change the camera angle, viewpoint, or room footprint.`,
+    ``,
+    `Additional designer guidance: ${basePrompt.slice(0, 600)}`,
+  );
+
+  return sections.join('\n');
 }
 
 async function pollKontext(requestId: string): Promise<{ imageUrl: string }> {

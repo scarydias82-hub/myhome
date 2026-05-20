@@ -380,7 +380,12 @@ function kontextRenderInput(input: KontextRenderInput) {
   return {
     prompt: input.prompt,
     image_urls: [input.controlImageUrl, input.paletteSwatchUrl],
-    guidance_scale: 3.5, // Kontext default; matches fal docs
+    // Bumped from default 3.5 → 4.5 to give prompt directives more
+    // authority. We're now relying on the prompt for both palette
+    // application AND structural preservation (no canny). Without
+    // higher guidance, Kontext drifts into style-adjacent
+    // reinterpretation (cottage windows, parquet floors, etc.).
+    guidance_scale: 4.5,
     num_images: 1,
     output_format: 'jpeg' as const,
     safety_tolerance: '2' as const,
