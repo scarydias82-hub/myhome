@@ -144,23 +144,76 @@ function Hotspot({
 }) {
   const cx = (item.bbox.x + item.bbox.w / 2) * 100;
   const cy = (item.bbox.y + item.bbox.h / 2) * 100;
+  // Popover flips above the badge when the hotspot is in the lower half
+  // of the image so it doesn't drop off-frame; flips below when up high.
+  const popoverBelow = cy < 50;
+  const topMatch = item.matches[0];
   return (
-    <button
-      type="button"
+    <div
+      className="group/hotspot absolute z-10 -translate-x-1/2 -translate-y-1/2"
+      style={{ left: `${cx}%`, top: `${cy}%` }}
       onMouseEnter={() => onHover(index)}
       onMouseLeave={() => onHover(null)}
-      onClick={onClick}
-      style={{ left: `${cx}%`, top: `${cy}%` }}
-      className={cn(
-        'absolute -translate-x-1/2 -translate-y-1/2 grid h-9 w-9 place-items-center rounded-full',
-        'font-mono text-[12px] font-medium shadow-soft transition',
-        active
-          ? 'scale-110 bg-clay text-paper ring-4 ring-clay/30'
-          : 'bg-paper/90 text-ink hover:scale-105 hover:bg-clay hover:text-paper',
-      )}
-      aria-label={`${item.itemLabel} — view matches`}
     >
-      {index + 1}
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'grid h-9 w-9 place-items-center rounded-full font-mono text-[12px] font-medium shadow-soft transition',
+          active
+            ? 'scale-110 bg-clay text-paper ring-4 ring-clay/30'
+            : 'bg-paper/90 text-ink hover:scale-105 hover:bg-clay hover:text-paper',
+        )}
+        aria-label={`${item.itemLabel} — view matches`}
+      >
+        {index + 1}
+      </button>
+      {/* Hover popover — shows the category label + the top matched
+          product so the user can preview WHAT a hotspot represents
+          without scrolling to the picking list below. Pointer-events
+          none means it never blocks clicks on the badge. */}
+      {topMatch ? (
+        <div
+          className={cn(
+            'pointer-events-none absolute left-1/2 z-20 hidden w-56 -translate-x-1/2 rounded-lg border border-ink/[0.08] bg-paper p-3 shadow-soft group-hover/hotspot:block',
+            popoverBelow ? 'top-full mt-2' : 'bottom-full mb-2',
+          )}
+        >
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            {index + 1} · {item.itemLabel}
+          </p>
+          <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-clay">
+            {item.category}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-ink/[0.04]">
+              {topMatch.hex ? (
+                <div
+                  className="absolute inset-0 ring-1 ring-inset ring-ink/10"
+                  style={{ backgroundColor: topMatch.hex }}
+                />
+              ) : topMatch.imageUrl ? (
+                <Image
+                  src={topMatch.imageUrl}
+                  alt={topMatch.name}
+                  fill
+                  sizes="40px"
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : null}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-[13px] leading-tight text-ink">
+                {topMatch.name}
+              </p>
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                {topMatch.retailer}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

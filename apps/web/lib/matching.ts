@@ -168,9 +168,16 @@ export async function buildPickingList({
   // paint option at all — even though we have ~108 Dulux colours in
   // the catalogue. The first item in the strip is the highest-leverage
   // choice the user can make, so wall paint goes to the front.
+  //
+  // Hotspot placement: previously hard-coded to an upper-centre bbox.
+  // That landed the "1 · WALL PAINT" badge on the bedhead in most
+  // bedroom renders. We now infer a wall region from the detected
+  // furniture: take the largest furniture piece in frame, place the
+  // hotspot directly above its top edge in the empty wall band.
   if (paletteHexes && paletteHexes.length > 0) {
     try {
-      const wallItem = await buildWallPaintItem({ admin, paletteHexes });
+      const wallBbox = inferWallBbox(boxes, imageWidth, imageHeight);
+      const wallItem = await buildWallPaintItem({ admin, paletteHexes, wallBbox });
       if (wallItem) {
         items.unshift(wallItem);
         console.log(`[matching] prepended wall paint item with ${wallItem.matches.length} Dulux matches`);
@@ -192,12 +199,65 @@ export async function buildPickingList({
 // top 5. Distance is Euclidean RGB — perceptually rough, but good enough
 // to keep cool tones with cool tones and warm with warm.
 
+// Infer where the wall paint hotspot should land. The wall itself isn't
+// a Florence-2 detection target, so we use the detected furniture as a
+// proxy — the wall is the empty band ABOVE the room's primary furniture.
+//
+// Algorithm:
+//   1. Find the biggest furniture piece in the upper 70% of the frame
+//      (bed, sofa, armchair, dining table, sideboard, console).
+//   2. Place the hotspot horizontally centred on that piece, vertically
+//      a short gap above its top edge.
+//   3. Clamp into the top half of the image so we never end up sitting
+//      on something else.
+//   4. Fall back to a small box at 50% x · 12% y if nothing is detected.
+//
+// Returns a normalised bbox [0,1] — same coordinate space as the other
+// picking-list items so the Hotspot component can render it uniformly.
+function inferWallBbox(
+  boxes: Bbox[],
+  imageWidth: number,
+  imageHeight: number,
+): { x: number; y: number; w: number; h: number } {
+  const W = 0.10;
+  const H = 0.06;
+
+  const furnitureRe = /^(bed|sofa|armchair|chair|sideboard|console|dining table|coffee table|bench)$/i;
+  const furniture = boxes.filter(
+    (b) => furnitureRe.test(b.label) && b.y / imageHeight < 0.7,
+  );
+
+  let cx = 0.5;
+  let cy = 0.12;
+
+  if (furniture.length > 0) {
+    // Biggest piece by area — typically the bed in a bedroom render,
+    // the sofa in a living room. Anchor the wall hotspot to that
+    // dominant element so the badge lands in the natural focal wall.
+    const dominant = furniture.reduce((a, b) => (a.w * a.h >= b.w * b.h ? a : b));
+    cx = (dominant.x + dominant.w / 2) / imageWidth;
+    cy = Math.max(0.05, dominant.y / imageHeight - 0.06);
+    // Don't push past the top half — if furniture extends to the very
+    // top of the frame, clamp so the hotspot is at least visible.
+    cy = Math.min(cy, 0.40);
+  }
+
+  return {
+    x: Math.max(0, Math.min(1 - W, cx - W / 2)),
+    y: Math.max(0, Math.min(1 - H, cy - H / 2)),
+    w: W,
+    h: H,
+  };
+}
+
 async function buildWallPaintItem({
   admin,
   paletteHexes,
+  wallBbox,
 }: {
   admin: SupabaseClient;
   paletteHexes: string[];
+  wallBbox?: { x: number; y: number; w: number; h: number };
 }): Promise<PickingListItem | null> {
   const targetHex = paletteHexes[0];
   const target = targetHex ? parseHex(targetHex) : null;
@@ -294,11 +354,11 @@ async function buildWallPaintItem({
   return {
     itemLabel: 'wall paint',
     category: 'Paint',
-    // Heuristic bbox covering the dominant wall band — upper-centre of
-    // the image. Without a per-photo wall-region detector, this gets us
-    // a hotspot in roughly the right place. The actual paint colour
-    // doesn't depend on this bbox (it's a colour-distance match).
-    bbox: { x: 0.1, y: 0.15, w: 0.8, h: 0.35 },
+    // Use the inferred wall bbox (centred above the dominant furniture
+    // piece) when available; fall back to a sensible upper-centre when
+    // not. The actual paint colour doesn't depend on this bbox — it
+    // only positions the numbered hotspot on the render.
+    bbox: wallBbox ?? { x: 0.45, y: 0.09, w: 0.10, h: 0.06 },
     matches: ranked.map((r, position) => ({
       productId: r.paint.id,
       name: r.paint.name,
