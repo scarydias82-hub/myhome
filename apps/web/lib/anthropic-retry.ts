@@ -13,7 +13,10 @@ interface RetryOptions {
   /** Label for log lines, e.g. "vision" / "designer" / "matcher". */
   label: string;
   /** Backoff schedule in ms. Length = max attempts. First attempt
-   *  fires immediately (delay 0). Default: 3 attempts at 0/2s/5s. */
+   *  fires immediately (delay 0). Default: 4 attempts at 0/3s/8s/15s
+   *  (26s total wall-clock), tuned to survive longer Anthropic
+   *  capacity events while staying inside the 60s Vercel function
+   *  budget — we still need ~10–15s for the actual Claude call. */
   delaysMs?: number[];
 }
 
@@ -64,7 +67,7 @@ export async function withAnthropicRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions,
 ): Promise<T> {
-  const delays = options.delaysMs ?? [0, 2000, 5000];
+  const delays = options.delaysMs ?? [0, 3000, 8000, 15000];
   let lastErr: unknown;
   for (let i = 0; i < delays.length; i++) {
     const wait = delays[i] ?? 0;
