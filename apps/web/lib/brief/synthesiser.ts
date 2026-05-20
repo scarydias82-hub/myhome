@@ -13,6 +13,7 @@ import { listPalettes, type Palette } from '@/lib/palettes';
 import { STYLES, type HardcodedStyle, type StyleSlug } from '@/lib/styles';
 import { groupTagsByCategory, labelForSlug } from '@/lib/brief/taxonomy';
 import { withAnthropicRetry } from '@/lib/anthropic-retry';
+import type { RoomAnalysis } from '@/lib/vision';
 
 export interface BriefRecommendation {
   palette_id: string;
@@ -181,7 +182,42 @@ Reply with a single JSON object — no markdown, no commentary outside the JSON.
 - If they picked the 'lookalike' tag matching one of our styles (e.g. 'look:japandi'), that's a STRONG signal — recommend the matching style unless other tags actively conflict.`;
 }
 
-function buildUserMessage(tags: string[]): string {
+function formatRoomFacts(facts: RoomAnalysis | null): string {
+  if (!facts) {
+    return '_(no room photo analysed — recommend on brief alone)_';
+  }
+  const parts: string[] = [];
+  if (facts.room_type) parts.push(`- Room type: ${facts.room_type.replace(/_/g, ' ')}`);
+  if (facts.dimensions_approximate_m) {
+    const d = facts.dimensions_approximate_m;
+    if (d.width && d.depth) {
+      parts.push(`- Approx dimensions: ${d.width}m × ${d.depth}m`);
+    }
+  }
+  if (facts.ceiling_height_m) parts.push(`- Ceiling: ${facts.ceiling_height_m}m`);
+  if (facts.light?.direction) {
+    parts.push(
+      `- Light: ${facts.light.direction}-facing${facts.light.quality ? ` (${facts.light.quality})` : ''}`,
+    );
+  }
+  if (facts.flooring) parts.push(`- Existing flooring: ${facts.flooring}`);
+  if (facts.architectural_features?.length) {
+    parts.push(`- Architectural features: ${facts.architectural_features.join(', ')}`);
+  }
+  if (facts.existing_colours?.length) {
+    const wallColour = facts.existing_colours.find((c) => c.surface === 'wall');
+    if (wallColour) parts.push(`- Existing walls: ${wallColour.description}`);
+  }
+  if (facts.existing_furniture?.length) {
+    const keep = facts.existing_furniture.filter((f) => f.condition === 'keep').map((f) => f.item);
+    if (keep.length) parts.push(`- Pieces to keep: ${keep.join(', ')}`);
+  }
+  if (facts.strengths?.length) parts.push(`- Strengths: ${facts.strengths.slice(0, 3).join('; ')}`);
+  if (facts.challenges?.length) parts.push(`- Challenges: ${facts.challenges.slice(0, 3).join('; ')}`);
+  return parts.length > 0 ? parts.join('\n') : '_(analysis returned, but no notable facts)_';
+}
+
+function buildUserMessage(tags: string[], roomFacts: RoomAnalysis | null): string {
   const grouped = groupTagsByCategory(tags);
   const sections: string[] = ['The client picked the following tags:', ''];
 
@@ -194,9 +230,21 @@ function buildUserMessage(tags: string[]): string {
 
   if (tags.length === 0) {
     sections.push('(The client did not pick any tags. Recommend the default palette + style, and ask them in your reasoning to refine the brief.)');
+    sections.push('');
   }
 
-  sections.push('Synthesise a recommendation now. Return only the JSON.');
+  // Room facts give Claude the concrete signal to ground the
+  // recommendation in (light direction, existing flooring,
+  // architectural features). Without these the recommendation is
+  // generic; with them the reasoning becomes specific to THIS room.
+  sections.push('## THEIR ROOM');
+  sections.push('');
+  sections.push(formatRoomFacts(roomFacts));
+  sections.push('');
+
+  sections.push(
+    'Synthesise a recommendation now. Weave the room facts into your reasoning — name the light direction, existing flooring, and architectural features specifically. Return only the JSON.',
+  );
   return sections.join('\n');
 }
 
@@ -207,7 +255,20 @@ function stripCodeFence(text: string): string {
     .trim();
 }
 
-export async function synthesiseBrief(tags: string[]): Promise<BriefSynthesis> {
+/**
+ * Run the brief synthesiser.
+ *
+ * @param tags       — the brief tag slugs picked by the client
+ * @param roomFacts  — optional room analysis (from analyseRoom). When
+ *                     provided, the recommendation reasoning grounds
+ *                     in the specific room's light, flooring, and
+ *                     architecture. When null, recommendation is
+ *                     generic from the brief alone.
+ */
+export async function synthesiseBrief(
+  tags: string[],
+  roomFacts: RoomAnalysis | null = null,
+): Promise<BriefSynthesis> {
   const anthropic = getAnthropic();
   const message = await withAnthropicRetry(
     () =>
@@ -216,7 +277,7 @@ export async function synthesiseBrief(tags: string[]): Promise<BriefSynthesis> {
         max_tokens: 1500,
         temperature: 0.6,
         system: buildSystemPrompt(),
-        messages: [{ role: 'user', content: buildUserMessage(tags) }],
+        messages: [{ role: 'user', content: buildUserMessage(tags, roomFacts) }],
       }),
     { label: 'brief-synth' },
   );

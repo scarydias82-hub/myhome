@@ -44,6 +44,19 @@ interface BriefPickerProps {
   initialResponse: BriefSynthesis | null;
   palettes: BriefPaletteLookup[];
   styles: BriefStyleLookup[];
+  /** Wizard mode (#124): the brief picker becomes a tag-only persistence
+   *  form. Claude synthesis is deferred to /api/projects/[id]/analyse,
+   *  triggered from Step 3 of the project wizard so brief + photo are
+   *  analysed together. In wizard mode the response card never renders
+   *  inside the picker; the CTA reads "Save & continue" and clicking it
+   *  POSTs tags-only then fires the optional onContinue callback.
+   *
+   *  Omit the prop (or pass false) to keep the legacy behaviour where
+   *  the picker also calls the synthesiser and renders the response.
+   */
+  mode?: 'wizard' | 'standalone';
+  /** Called after a successful tag-only save in wizard mode. */
+  onContinue?: () => void;
 }
 
 export function BriefPicker({
@@ -52,6 +65,8 @@ export function BriefPicker({
   initialResponse,
   palettes,
   styles,
+  mode = 'standalone',
+  onContinue,
 }: BriefPickerProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialTags));
@@ -60,7 +75,12 @@ export function BriefPicker({
   const [error, setError] = useState<string | null>(null);
   // Editing state — if we have a saved response, the picker collapses
   // into the response card. Hitting "Edit your brief" reopens it.
-  const [editing, setEditing] = useState<boolean>(initialResponse === null);
+  // In wizard mode the response card never appears here (the wizard
+  // owns it via /api/projects/[id]/analyse), so we stay in editing mode.
+  const [editing, setEditing] = useState<boolean>(
+    mode === 'wizard' ? true : initialResponse === null,
+  );
+  const isWizardMode = mode === 'wizard';
 
   const paletteById = useMemo(
     () => new Map(palettes.map((p) => [p.id, p])),
@@ -82,12 +102,20 @@ export function BriefPicker({
 
   async function askDesigner() {
     if (selected.size === 0) {
-      setError('Pick at least one tag before asking the designer.');
+      setError(
+        isWizardMode
+          ? 'Pick at least one tag to continue.'
+          : 'Pick at least one tag before asking the designer.',
+      );
       return;
     }
     setBusy(true);
     setError(null);
     try {
+      // /api/projects/[id]/brief is now tag-only persistence (#124).
+      // The synthesiser moves to /api/projects/[id]/analyse, called
+      // from Step 3 of the wizard. So this call returns just the
+      // stored brief shape — no fresh response.
       const res = await fetch(`/api/projects/${projectId}/brief`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -95,20 +123,26 @@ export function BriefPicker({
       });
       const json = (await res.json().catch(() => ({}))) as
         | { error?: string }
-        | { tags: string[]; response: BriefSynthesis; updated_at: string };
+        | { tags: string[]; response: BriefSynthesis | null; updated_at: string };
       if (!res.ok) {
         setError(
           'error' in json && json.error
             ? json.error
-            : 'Designer call failed. Try again in a minute.',
+            : 'Could not save your brief. Try again.',
         );
         return;
       }
-      if ('response' in json) {
+      if ('response' in json && json.response) {
+        // Standalone mode — show any cached response that was already
+        // there. Wizard mode never displays a response inline.
         setResponse(json.response);
-        setEditing(false);
-        router.refresh();
+        if (!isWizardMode) setEditing(false);
       }
+      if (isWizardMode) {
+        // Hand control back to the wizard so it can advance the step.
+        onContinue?.();
+      }
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error. Try again.');
     } finally {
@@ -116,8 +150,9 @@ export function BriefPicker({
     }
   }
 
-  // RESPONSE-ONLY VIEW
-  if (response && !editing) {
+  // RESPONSE-ONLY VIEW — never rendered in wizard mode (the wizard
+  // owns the response surface via Step 3).
+  if (!isWizardMode && response && !editing) {
     return (
       <section className="rounded-2xl border border-ink/[0.06] bg-cream shadow-soft">
         <BriefResponseCard
@@ -139,9 +174,9 @@ export function BriefPicker({
           Tell us how you live.
         </p>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-          Pick the tags that resonate across each section. Claude — playing the role of a
-          senior Australian designer — will read the brief, recommend a palette and style
-          direction, and push back honestly if your tags conflict.
+          {isWizardMode
+            ? 'Pick the tags that resonate across each section. The designer reads these alongside your room photo in Step 3 to recommend a colour direction.'
+            : 'Pick the tags that resonate across each section. Claude — playing the role of a senior Australian designer — will read the brief, recommend a palette and style direction, and push back honestly if your tags conflict.'}
         </p>
 
         <div className="mt-8 space-y-8">
@@ -169,10 +204,14 @@ export function BriefPicker({
             className="rounded-pill bg-ink px-6 py-3 font-mono text-meta uppercase tracking-eyebrow text-paper transition hover:bg-ink-soft disabled:opacity-40"
           >
             {busy
-              ? 'Designer is reading…'
-              : response
-                ? `Re-ask the designer (${selected.size} ${selected.size === 1 ? 'tag' : 'tags'})`
-                : `Ask the designer (${selected.size} ${selected.size === 1 ? 'tag' : 'tags'})`}
+              ? isWizardMode
+                ? 'Saving…'
+                : 'Designer is reading…'
+              : isWizardMode
+                ? `Save brief & continue (${selected.size} ${selected.size === 1 ? 'tag' : 'tags'}) →`
+                : response
+                  ? `Re-ask the designer (${selected.size} ${selected.size === 1 ? 'tag' : 'tags'})`
+                  : `Ask the designer (${selected.size} ${selected.size === 1 ? 'tag' : 'tags'})`}
           </button>
           <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
             Claude Sonnet · ~10s

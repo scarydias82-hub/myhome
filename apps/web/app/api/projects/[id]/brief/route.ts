@@ -1,13 +1,15 @@
 // /api/projects/[id]/brief
 //
 // GET  → returns the stored brief for the project: { tags, response, updated_at }
-// POST { tags: string[] } → validates tags against the known taxonomy,
-//        runs the synthesiser, persists tags + response on projects.brief,
-//        and returns the synthesis to the caller.
+// POST { tags: string[] } → validates tags + persists them on projects.brief.
+//        Does NOT run the synthesiser (#124) — that runs from
+//        /api/projects/[id]/analyse, triggered explicitly in Step 3 of
+//        the wizard so brief + photo are analysed together as one
+//        unified Claude moment.
 //
 // projects.brief is a JSONB column (existing schema from
 // 20260518150000_projects.sql) — we shape it as:
-//   { tags: string[], response: BriefSynthesis, updated_at: string }
+//   { tags: string[], response: BriefSynthesis | null, updated_at: string }
 // so the entire brief lives in one column without a schema change.
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -15,13 +17,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { filterKnownTags } from '@/lib/brief/taxonomy';
-import { synthesiseBrief, type BriefSynthesis } from '@/lib/brief/synthesiser';
+import type { BriefSynthesis } from '@/lib/brief/synthesiser';
 
 export const runtime = 'nodejs';
-// Claude Sonnet at temperature 0.6 with our 65-tag taxonomy in the
-// system prompt typically returns in ~6-10s. 60s ceiling keeps room
-// for the retry-with-backoff path.
-export const maxDuration = 60;
+// No Claude call here any more (#124 — synthesis moves to /analyse).
+// Tag persistence is cheap, default Vercel timeout is plenty.
+export const maxDuration = 15;
 
 interface StoredBrief {
   tags: string[];
@@ -90,27 +91,19 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const tags = filterKnownTags(body.tags ?? []);
   if (tags.length === 0) {
     return NextResponse.json(
-      { error: 'Pick at least one tag before asking the designer.' },
+      { error: 'Pick at least one tag to continue.' },
       { status: 400 },
     );
   }
 
-  let response: BriefSynthesis;
-  try {
-    response = await synthesiseBrief(tags);
-  } catch (err) {
-    console.error('[brief] synthesise failed', err);
-    return NextResponse.json(
-      {
-        error: err instanceof Error ? err.message : 'Designer call failed.',
-      },
-      { status: 502 },
-    );
-  }
+  // Preserve any existing response — re-saving tags shouldn't blow
+  // away a previously-synthesised recommendation. /analyse decides
+  // when to regenerate the response.
+  const existingResponse = project.brief?.response ?? null;
 
   const stored: StoredBrief = {
     tags,
-    response,
+    response: existingResponse,
     updated_at: new Date().toISOString(),
   };
   const { error: updateErr } = await admin
@@ -119,8 +112,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     .eq('id', project.id);
   if (updateErr) {
     console.error('[brief] persist failed', updateErr);
-    // Still return the synthesis — the user gets value, we'll log to
-    // diagnose the persistence break separately.
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
   return NextResponse.json(stored);

@@ -26,6 +26,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { Pill } from '@/components/saltbush/pill';
@@ -226,14 +227,15 @@ function Step1Brief({
   onContinue: () => void;
   briefDone: boolean;
 }) {
-  // Reuse the existing BriefPicker as-is. It still calls /api/projects/
-  // [id]/brief which currently both persists tags AND runs Claude. #124
-  // will refactor that endpoint to defer the synthesiser until Step 3.
+  // BriefPicker in wizard mode (#124) — tags-only persistence, no
+  // inline Claude call. The picker's "Save brief & continue" CTA
+  // invokes onContinue when the POST succeeds, advancing the wizard
+  // to Step 2.
   return (
     <StepShell
       stepIndex={1}
       title="Tell us how you live"
-      intro="Pick tags across each section. The designer will use these to recommend a colour direction in Step 3."
+      intro="Pick tags across each section. The designer reads these alongside your room photo in Step 3."
     >
       <BriefPicker
         projectId={projectId}
@@ -241,11 +243,13 @@ function Step1Brief({
         initialResponse={initialResponse}
         palettes={palettes}
         styles={styles}
+        mode="wizard"
+        onContinue={onContinue}
       />
       {briefDone ? (
         <div className="mt-6 flex justify-end">
-          <Button variant="cta" size="lg" onClick={onContinue}>
-            Continue to Step 2 →
+          <Button variant="ghost" size="md" onClick={onContinue}>
+            Skip ahead to Step 2 →
           </Button>
         </div>
       ) : null}
@@ -340,7 +344,7 @@ function Step2Room({
 
 function Step3Review({
   projectId,
-  briefResponse,
+  briefResponse: initialResponse,
   palettes,
   styles,
   briefDone,
@@ -355,13 +359,56 @@ function Step3Review({
   photoDone: boolean;
   onContinue: () => void;
 }) {
+  const router = useRouter();
   const ready = briefDone && photoDone;
+  const [response, setResponse] = useState<BriefSynthesis | null>(initialResponse);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // #124 — single unified analyse trigger. Fires both analyseRoom and
+  // synthesiseBrief on the server (with the room facts feeding into
+  // the synthesiser). Persists to rooms.analysis + projects.brief.
+  async function runAnalysis() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/analyse`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = (await res.json().catch(() => ({}))) as
+        | { error?: string }
+        | {
+            roomId: string;
+            roomAnalysis: unknown;
+            briefResponse: BriefSynthesis;
+            updated_at: string;
+          };
+      if (!res.ok) {
+        setError(
+          'error' in json && json.error
+            ? json.error
+            : 'Designer call failed. Try again in a minute.',
+        );
+        return;
+      }
+      if ('briefResponse' in json) {
+        setResponse(json.briefResponse);
+        router.refresh();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <StepShell
       stepIndex={3}
       title="Designer review"
-      intro="Claude reads your brief and your room together, then recommends a colour direction. You'll get three carousels to lock in your choice."
+      intro="Claude reads your brief and your room together, then recommends a colour direction. The three-carousel chooser ships in #126 — for now you'll see the recommendation card."
     >
       {!ready ? (
         <div className="rounded-xl border border-clay/40 bg-clay/5 p-6">
@@ -373,34 +420,62 @@ function Step3Review({
             — the designer needs both before recommending a direction.
           </p>
         </div>
-      ) : briefResponse ? (
-        // Existing brief response card lives below for now. #126 replaces
-        // this whole block with the three-carousel chooser.
-        <BriefReviewPlaceholder
-          response={briefResponse}
-          palettes={palettes}
-          styles={styles}
-        />
-      ) : (
+      ) : !response ? (
+        // Trigger card — fires the unified analyse call.
         <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-8 text-center">
-          <p className="font-display text-h4 text-ink">
-            Ready when you are.
-          </p>
+          <p className="font-display text-h4 text-ink">Ready when you are.</p>
           <p className="mx-auto mt-2 max-w-md text-[14px] text-ink-soft">
-            Hit the analyse button below and the designer will read your room
-            and your brief together. Usually 15–25 seconds.
+            One call: Claude reads your room photo for the bones (light, flooring,
+            architecture), then synthesises a recommendation against your brief.
+            Usually 15–25 seconds.
           </p>
-          <p className="mx-auto mt-6 max-w-md rounded-lg border border-clay/30 bg-cream p-4 text-left font-mono text-meta uppercase tracking-eyebrow text-clay">
-            #124–#126 in flight · this button will trigger a single
-            unified Claude call (room analysis + brief synthesis) and
-            replace this placeholder with the three-carousel chooser.
-          </p>
+          {error ? (
+            <div className="mx-auto mt-4 max-w-md rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-[13px] text-destructive">{error}</p>
+            </div>
+          ) : null}
+          <div className="mt-6">
+            <Button
+              type="button"
+              variant="cta"
+              size="lg"
+              onClick={runAnalysis}
+              disabled={busy}
+            >
+              {busy ? 'Designer is reading your room…' : '✦ Read my room + brief together'}
+            </Button>
+          </div>
         </div>
+      ) : (
+        // Existing brief response card. #126 will replace this with the
+        // three-carousel chooser (palette / 2026 trends / tried-and-tested)
+        // plus the greying logic and mutex between the trend carousels.
+        <>
+          <BriefReviewPlaceholder
+            response={response}
+            palettes={palettes}
+            styles={styles}
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={runAnalysis}
+              disabled={busy}
+            >
+              {busy ? 'Re-reading…' : '↺ Re-run the designer'}
+            </Button>
+            <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+              Refines the read if you've swapped your photo or edited the brief.
+            </p>
+          </div>
+        </>
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
         <Link href={`/rooms/new?projectId=${projectId}`}>
-          <Button variant="cta" size="lg" disabled={!ready}>
+          <Button variant="cta" size="lg" disabled={!ready || !response}>
             ✦ Generate render
           </Button>
         </Link>
