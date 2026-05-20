@@ -214,14 +214,17 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
       console.warn('  swatch upload failed, text-only:', (err as Error).message);
     }
   }
-  const { requestId } = await submitDepthRender({
+  // 4b. Submit-and-poll with IP-Adapter, retrying text-only if fal's
+  //     inference (not just submit) fails. Round 7 found fal ACCEPTING
+  //     the InstantX IP-Adapter request but FAILING during inference —
+  //     pollFal returned bare "failed" with no diagnostic. Now we surface
+  //     fal's logs on failure and retry without IP-Adapter so the eval
+  //     always produces a render to score.
+  const result = await renderWithIpAdapterFallback({
     prompt,
     controlImageUrl: originalSignedUrl,
     paletteSwatchUrl,
   });
-
-  // 5. Poll until fal completes.
-  const result = await pollFal(requestId);
 
   // 6. Save rendered image locally.
   const renderedBytes = new Uint8Array(await (await fetch(result.imageUrl)).arrayBuffer());
@@ -274,15 +277,53 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
 }
 
 // Poll fal queue until completion. ~2s interval, give up at 3 minutes.
+// On 'failed' status, surfaces fal's inference logs so we can see why.
 async function pollFal(requestId: string): Promise<{ imageUrl: string }> {
   const startedAt = Date.now();
+  let lastLogs: string[] = [];
   while (Date.now() - startedAt < 180000) {
     const status = await checkRenderStatus(requestId);
+    if (status.logs && status.logs.length) lastLogs = status.logs;
     if (status.status === 'completed') return fetchRenderResult(requestId);
-    if (status.status === 'failed') throw new Error('fal reported failed');
+    if (status.status === 'failed') {
+      const tail = lastLogs.slice(-20).join('\n  | ');
+      throw new Error(`fal reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
+    }
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error('fal poll timed out after 3 min');
+}
+
+// Submit + poll, retrying text-only if the IP-Adapter version fails
+// during inference. Both the submit-side (`submitDepthRender` itself)
+// and the inference-side (pollFal throwing on 'failed' status) are
+// handled — the latter is what's been silently killing the eval since
+// round 7 because fal accepted the InstantX shape at submit but
+// couldn't load the weights server-side.
+async function renderWithIpAdapterFallback(input: {
+  prompt: string;
+  controlImageUrl: string;
+  paletteSwatchUrl: string | null;
+}): Promise<{ imageUrl: string }> {
+  const tryOnce = async (paletteSwatchUrl: string | null) => {
+    const { requestId } = await submitDepthRender({
+      prompt: input.prompt,
+      controlImageUrl: input.controlImageUrl,
+      paletteSwatchUrl,
+    });
+    return pollFal(requestId);
+  };
+
+  if (!input.paletteSwatchUrl) {
+    return tryOnce(null);
+  }
+  try {
+    return await tryOnce(input.paletteSwatchUrl);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`  IP-Adapter render failed — retrying text-only.\n  reason: ${msg.slice(0, 600)}`);
+    return tryOnce(null);
+  }
 }
 
 // --- summary writer ---------------------------------------------------

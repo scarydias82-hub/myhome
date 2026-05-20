@@ -235,13 +235,23 @@ export interface RenderStatusInfo {
 export async function checkRenderStatus(requestId: string): Promise<RenderStatusInfo> {
   const client = getFal();
   try {
-    const res = await client.queue.status(ENDPOINT, { requestId, logs: false });
+    // logs: true — when fal reports `failed`, the only way to see why
+    // (couldn't load IP-Adapter weights, encoder mismatch, OOM, etc.)
+    // is via the queue logs. Round 7 eval found that pollFal was
+    // getting back a bare "failed" string with no diagnostic — fixed
+    // here by requesting logs and surfacing them in the failure case.
+    const res = await client.queue.status(ENDPOINT, { requestId, logs: true });
     const raw = (res as { status?: string }).status ?? 'IN_QUEUE';
     const lower = String(raw).toLowerCase();
-    if (lower === 'completed') return { status: 'completed' };
-    if (lower === 'in_progress') return { status: 'in_progress' };
-    if (lower === 'in_queue') return { status: 'in_queue' };
-    return { status: 'failed' };
+    // Extract logs if present — shape is { logs: [{ message, level, ... }] }.
+    const logEntries = (res as { logs?: Array<{ message?: string }> }).logs ?? [];
+    const logs = logEntries
+      .map((e) => (typeof e?.message === 'string' ? e.message : ''))
+      .filter(Boolean);
+    if (lower === 'completed') return { status: 'completed', logs };
+    if (lower === 'in_progress') return { status: 'in_progress', logs };
+    if (lower === 'in_queue') return { status: 'in_queue', logs };
+    return { status: 'failed', logs };
   } catch (err) {
     // 4xx from fal usually means the job no longer exists (cleared after TTL).
     // Treat as failed so the caller can recover.
