@@ -260,13 +260,22 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       console.warn('[render] could not read photo dimensions, using default', err);
     }
-    // Generate + upload a palette swatch image to feed Flux via
-    // IP-Adapter. This is the round-5 pivot: text-only prompts
-    // plateaued at palette adherence 2-4 across 5 eval rounds. The
-    // visual swatch is a 512x512 PNG with the 5 role colours as
-    // stripes — Flux conditions on it directly, no language ambiguity.
+    // IP-Adapter palette swatch is OPT-IN via FLUX_ENABLE_IP_ADAPTER
+    // env var. Default: OFF in production. Reason: round 11 production
+    // render returned fal status 422 with body
+    //   "Could not load pipeline due to error: The size of tensor a
+    //    (32) must match the size of tensor b (1056)"
+    // — the InstantX/FLUX.1-dev-IP-Adapter + SigLIP encoder combo
+    // we're sending fails to compose at fal's runtime even though
+    // InstantX's HF docs say they should. The eval may have only
+    // succeeded because the fal worker had a cached pipeline from an
+    // earlier request and didn't re-load. Until we have a known-good
+    // IP-Adapter/encoder combo on fal, production stays text-only
+    // (round-5 baseline, ~4.5/10 — shippable). The eval can still
+    // experiment by setting FLUX_ENABLE_IP_ADAPTER=1 in its env.
     let paletteSwatchUrl: string | null = null;
-    if (palette) {
+    const ipAdapterEnabled = process.env.FLUX_ENABLE_IP_ADAPTER === '1';
+    if (palette && ipAdapterEnabled) {
       try {
         const swatchBuf = await generatePaletteSwatch(palette);
         paletteSwatchUrl = await uploadImageBuffer(
@@ -274,10 +283,8 @@ export async function POST(request: NextRequest) {
           `palette-${palette.id}.png`,
           'image/png',
         );
-        console.log(`[render] palette swatch uploaded for ${palette.id}: ${paletteSwatchUrl}`);
+        console.log(`[render] IP-Adapter ON — palette swatch uploaded for ${palette.id}`);
       } catch (err) {
-        // Non-fatal — if swatch upload fails we still render via the
-        // text-only path. Better a slightly worse render than no render.
         console.warn('[render] palette swatch upload failed, falling back to text-only', err);
       }
     }
