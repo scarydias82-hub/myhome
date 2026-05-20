@@ -21,6 +21,8 @@ import { scrapeCarpetCourt } from './carpetCourt.js';
 import { scrapeChoicesFlooring } from './choicesFlooring.js';
 import { scrapeTheRugEst } from './theRugEst.js';
 import { scrapeSignorino } from './signorino.js';
+import { scrapeAbiInteriors } from './abiInteriors.js';
+import { scrapeTileCloud } from './tileCloud.js';
 
 const SCRAPERS = [
   { name: 'Poliform', run: scrapePoliform },
@@ -36,6 +38,8 @@ const SCRAPERS = [
   { name: 'Choices Flooring', run: scrapeChoicesFlooring },
   { name: 'The Rug Est', run: scrapeTheRugEst },
   { name: 'Signorino', run: scrapeSignorino },
+  { name: 'ABI Interiors', run: scrapeAbiInteriors },
+  { name: 'Tile Cloud', run: scrapeTileCloud },
 ];
 
 const started = Date.now();
