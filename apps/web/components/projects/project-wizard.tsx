@@ -520,7 +520,7 @@ function Step3Review({
             if (!response) return;
             const chosenPaletteId = selection?.paletteId ?? response.recommendation.palette_id;
             const chosenStyle = response.recommendation.style_slug;
-            const matched = response.avoid.find(
+            const matched = (response.avoid ?? []).find(
               (a) => a.palette_id === chosenPaletteId || a.style_slug === chosenStyle,
             );
             if (matched) {

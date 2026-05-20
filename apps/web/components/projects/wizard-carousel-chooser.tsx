@@ -100,8 +100,18 @@ export function WizardCarouselChooser({
   // Avoid-set used for the confirmation modal in #127. We surface it
   // here too as a small "Designer flagged this" pill on greyed cards
   // that Claude explicitly warned against.
+  //
+  // Defensive — older briefs persisted before the synthesiser always
+  // returned an `avoid` array could store undefined here. Coalesce to
+  // an empty array so the chooser still renders without throwing on
+  // briefResponse.avoid.map(...).
   const avoidPaletteIds = useMemo(
-    () => new Set(briefResponse.avoid.map((a) => a.palette_id).filter((id): id is string => !!id)),
+    () =>
+      new Set(
+        (briefResponse.avoid ?? [])
+          .map((a) => a.palette_id)
+          .filter((id): id is string => !!id),
+      ),
     [briefResponse.avoid],
   );
 
