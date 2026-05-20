@@ -25,6 +25,18 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Choices Flooring scraper shipped (first half of
+  task #81). Major AU flooring + window-furnishings retailer running
+  a custom Shopify storefront. Walked 4 category PLPs: /timber-
+  flooring/ (12), /laminate-flooring/ (6), /carpet/ (12), /rugs/ (15)
+  — note Choices sells rugs too, which gives us partial coverage of
+  the rug brief while the original "Rug Establishment" URL is
+  unresolved (domain doesn't resolve; awaiting confirmation of brand
+  name from the brief). 45 products / 0 errors / 100% palette
+  pass-rate. Adds laminate as a new flooring sub-type the catalog
+  didn't have. Price stays null — Choices uses qualitative `$$$`
+  tier indicators on the PLP, not flat SKU prices (per-m² for hard
+  flooring, made-to-measure for everything else).
 - `2026-05-20` — **IP-Adapter pivot — visual palette conditioning**.
   After 5 prompt-engineering eval rounds (scorecards: 4.7 → 3.3 → 4.5
   → 4.0 → 4.0 average) palette adherence specifically refused to clear
