@@ -25,6 +25,25 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — The Rug Est scraper shipped (second half of #81,
+  completes the task). Premium AU handmade rug brand at therugest.com
+  (custom CMS, no sitemap/products.json). Walks /current-range +
+  /limited-edition, harvests depth-2 `/p/<range>/<variant>` URLs,
+  visits each detail page for og:image (2000x2000 hero) + h1 + low
+  price tier (rugs are size-priced — we store the cheapest size).
+  First run: 107 rugs / 0 errors / 100% palette pass-rate. Combined
+  with Choices Flooring's 15 rugs, the rug category went from 0 to
+  122 SKUs — substantial coverage for living-room renders.
+- `2026-05-20` — Fal submit fallback. Round 7 evals consistently
+  died at the fal submit step with no diagnostic — the InstantX
+  ip_adapters[] shape was being rejected and the error bubbled up
+  uncaught, leaving runs with no rendered.jpg + empty results.json.
+  submitDepthRender now logs fal's full error body and on IP-Adapter
+  rejection retries with a text-only payload so we always produce a
+  baseline render. Trades "every render fails" for "IP-Adapter may
+  not engage but render lands at round-5 quality." Next eval will
+  surface the exact fal rejection reason so we can fix the config
+  (or pivot to a known-working IP-Adapter on a different host).
 - `2026-05-20` — Choices Flooring scraper shipped (first half of
   task #81). Major AU flooring + window-furnishings retailer running
   a custom Shopify storefront. Walked 4 category PLPs: /timber-

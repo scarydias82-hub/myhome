@@ -16,6 +16,7 @@
     "scrape:adairs": "node scrapers/adairs.js",
     "scrape:carpetcourt": "node scrapers/carpetCourt.js",
     "scrape:choicesflooring": "node scrapers/choicesFlooring.js",
+    "scrape:therugest": "node scrapers/theRugEst.js",
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",

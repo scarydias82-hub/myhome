@@ -19,6 +19,7 @@ import { scrapeWoodcut } from './woodcut.js';
 import { scrapeAdairs } from './adairs.js';
 import { scrapeCarpetCourt } from './carpetCourt.js';
 import { scrapeChoicesFlooring } from './choicesFlooring.js';
+import { scrapeTheRugEst } from './theRugEst.js';
 
 const SCRAPERS = [
   { name: 'Poliform', run: scrapePoliform },
@@ -32,6 +33,7 @@ const SCRAPERS = [
   { name: 'Adairs', run: scrapeAdairs },
   { name: 'Carpet Court', run: scrapeCarpetCourt },
   { name: 'Choices Flooring', run: scrapeChoicesFlooring },
+  { name: 'The Rug Est', run: scrapeTheRugEst },
 ];
 
 const started = Date.now();
