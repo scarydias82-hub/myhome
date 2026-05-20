@@ -27,6 +27,7 @@ import { buildPickingList } from '../../lib/matching';
 import { submitDepthRender, checkRenderStatus, fetchRenderResult, uploadImageBuffer } from '../../lib/fal';
 import { generatePaletteSwatch } from '../../lib/paletteSwatch';
 import { autoFeatureForPalette } from '../../lib/featuring';
+import { trimBlackBorders } from '../../lib/imagePrep';
 import { buildPrompt, getStyle } from '../../lib/styles';
 import { getPalette } from '../../lib/palettes';
 
@@ -153,9 +154,20 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   const localImagePath = path.join(FIXTURES_DIR, fixture.imageFile);
   const imageBytes = await readFile(localImagePath);
   const photoKey = `${EVAL_USER_ID}/_eval/${stamp}-${fixture.id}.jpg`;
+  // Strip phone-screenshot letterbox bars BEFORE resize — see
+  // lib/imagePrep.ts. Without this, canny ControlNet treats the
+  // black-to-photo edge as a hard wall boundary and Flux preserves
+  // the black bars through the render. Also corrupts the aspect
+  // ratio that computeFluxDimensions derives.
+  const trim = await trimBlackBorders(imageBytes);
+  if (trim.trimmed && trim.before && trim.after) {
+    console.log(
+      `  trimmed letterbox: ${trim.before.width}×${trim.before.height} → ${trim.after.width}×${trim.after.height}`,
+    );
+  }
   // Re-encode to JPEG just to normalise (HEIC etc.) — at the same
   // ~1600px resize the upload form uses client-side.
-  const normalised = await sharp(imageBytes)
+  const normalised = await sharp(trim.buf)
     .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 88 })
     .toBuffer();

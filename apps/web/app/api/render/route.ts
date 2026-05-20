@@ -27,6 +27,7 @@ import { getPalette } from '@/lib/palettes';
 import { getDesignerAdvice } from '@/lib/designer';
 import { autoFeatureForPalette } from '@/lib/featuring';
 import { generatePaletteSwatch } from '@/lib/paletteSwatch';
+import { trimBlackBorders } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
 
 // Compute Flux-compatible output dimensions that preserve the source
@@ -227,12 +228,34 @@ export async function POST(request: NextRequest) {
     );
     // Read the source photo's dimensions so Flux outputs at the same
     // aspect — portrait stays portrait, landscape stays landscape.
+    // Also trim phone-screenshot letterbox bars (see lib/imagePrep.ts)
+    // — if any are detected, re-upload the trimmed version to fal
+    // storage and use THAT as the canny / init image so we don't lock
+    // the black borders into the render.
     let dims: { width: number; height: number } | undefined;
+    let controlImageUrl = signed.data.signedUrl;
     try {
       const dl = await admin.storage.from('rooms').download(room.photo_url);
       if (dl.data) {
-        const buf = Buffer.from(await dl.data.arrayBuffer());
-        dims = await computeFluxDimensions(buf);
+        const rawBuf = Buffer.from(await dl.data.arrayBuffer());
+        const trim = await trimBlackBorders(rawBuf);
+        if (trim.trimmed && trim.before && trim.after) {
+          console.log(
+            `[render] trimmed letterbox: ${trim.before.width}×${trim.before.height} → ${trim.after.width}×${trim.after.height}`,
+          );
+          // Re-upload the trimmed photo to fal storage so the URL we
+          // give Flux points at clean room pixels, not bordered ones.
+          try {
+            controlImageUrl = await uploadImageBuffer(
+              trim.buf,
+              `room-${render.id}-trimmed.jpg`,
+              'image/jpeg',
+            );
+          } catch (err) {
+            console.warn('[render] trimmed re-upload failed, using original URL', err);
+          }
+        }
+        dims = await computeFluxDimensions(trim.buf);
       }
     } catch (err) {
       console.warn('[render] could not read photo dimensions, using default', err);
@@ -260,7 +283,7 @@ export async function POST(request: NextRequest) {
     }
     const submission = await submitDepthRender({
       prompt: groundedPrompt,
-      controlImageUrl: signed.data.signedUrl,
+      controlImageUrl,
       paletteSwatchUrl,
       width: dims?.width,
       height: dims?.height,
