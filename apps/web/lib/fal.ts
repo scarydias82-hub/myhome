@@ -121,10 +121,18 @@ export async function uploadImageBuffer(
 //   Round 2 @ strength 0.80 + CRITICAL ceiling            → 3.3 (collapsed)
 //   Round 3 @ strength 0.85 + named tokens                → 4.5 (recovered)
 //   Round 4 @ canny 0.75 + extended NO list               → 4.0 (regressed)
-//   Round 5 (current) @ canny 0.65, strength 0.82,
-//          + IP-Adapter palette swatch                    → testing now
-// Palette adherence specifically stuck at 2-4 across all 5 text-only
-// rounds — only visual conditioning addresses the root cause.
+//   Round 5-7  — eval was silently failing because canny
+//                easycontrol payload was malformed and fal silently
+//                used canny scale=1.0 → over-locked or rejected entirely
+//   Round 8 @ canny 0.65, strength 0.82, IP-Adapter        → 5.2/10
+//                FIRST round with IP-Adapter actually engaging:
+//                palette adherence 2→7, surfaces 2→7. BUT geometry
+//                cratered 7→3 (canny 0.65 too loose) and hallucinations
+//                2 (sliding door / timber floor / new bedhead).
+//   Round 9 (current) — tighten canny to 0.80 + drop strength to 0.78
+//                to claw geometry/hallucinations back while keeping
+//                IP-Adapter's palette win. Target: ≥5.5 with all six
+//                criteria above 4.
 function renderInput(input: DepthRenderInput) {
   // flux-general's typed input is strict; the @fal-ai/client schema
   // expects a specific shape. We construct the full object including
@@ -176,7 +184,12 @@ function renderInput(input: DepthRenderInput) {
         image_url: input.controlImageUrl,
         control_method_url: 'canny',
         image_control_type: 'spatial',
-        scale: 0.65,
+        // Round 9 bump 0.65 → 0.80 to re-lock the original window/
+        // floor/bedhead geometry against the round-8 hallucinations
+        // (sliding-door + courtyard, timber floor patch, rectangular
+        // bedhead replacement). IP-Adapter scale stays at 0.7 — it's
+        // doing the palette job correctly so don't disturb.
+        scale: 0.80,
       },
     ],
     ...(ipAdapters ? { ip_adapters: ipAdapters } : {}),
