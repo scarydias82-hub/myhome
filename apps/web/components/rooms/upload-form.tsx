@@ -809,47 +809,21 @@ function Step3Style({
   onPaletteChange: (p: string) => void;
   trendPreviews: Map<string, TrendPreview>;
 }) {
+  const selectedStyle = STYLES.find((s) => s.slug === style);
   return (
     <>
+      {/* P0-3: palette leads, style is Advanced.
+          Most users have stronger gut feel for a colour than for a style
+          taxonomy ("Japandi vs Contemporary AU vs Minimalist" is industry
+          jargon). Showing 10 palettes first cuts the effective decision
+          space from 80 to 10 for the median user; style override lives
+          behind a disclosure for the people who want it. */}
       <section>
-        <Eyebrow>Step 03 · The aesthetic</Eyebrow>
-        <h2 className="mt-2 font-display text-h3 text-ink">Pick a style</h2>
+        <Eyebrow>Step 03 · 2026 palette</Eyebrow>
+        <h2 className="mt-2 font-display text-h3 text-ink">Pick the colour direction</h2>
         <p className="mt-2 max-w-xl text-[15px] text-ink-soft">
-          Each style seeds the render with a base palette, materials, and mood.
-        </p>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STYLES.map((s) => {
-            const selected = s.slug === style;
-            return (
-              <button
-                key={s.slug}
-                type="button"
-                onClick={() => onStyleChange(s.slug)}
-                className={cn(
-                  'group flex flex-col gap-3 rounded-xl border p-5 text-left transition',
-                  selected
-                    ? 'border-clay/60 bg-cream shadow-soft'
-                    : 'border-ink/[0.06] bg-cream/60 hover:border-ink/20 hover:bg-cream',
-                )}
-                aria-pressed={selected}
-              >
-                <PaletteStrip colors={s.palette} className="h-7" />
-                <div>
-                  <p className="font-display text-h4 text-ink">{s.name}</p>
-                  <p className="mt-1 text-[13px] text-ink-soft">{s.tagline}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section>
-        <Eyebrow>Step 04 · 2026 palette</Eyebrow>
-        <h2 className="mt-2 font-display text-h3 text-ink">Refine the colour direction</h2>
-        <p className="mt-2 max-w-xl text-[15px] text-ink-soft">
-          Optional. Overrides the style's base palette with a trend-forward 2026 palette.
+          The render will lead with this palette. Walls, soft furnishings, and accent pieces
+          will all draw from it.
         </p>
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {listPalettes().map((p) => {
@@ -905,6 +879,64 @@ function Step3Style({
             );
           })}
         </div>
+      </section>
+
+      {/* Style override — collapsed by default. Most users will accept
+          the current style (set on mount to 'japandi'); the override
+          is for people who specifically want Hamptons / Industrial /
+          Coastal / etc. The summary surfaces the current style so they
+          know what they'd be overriding. */}
+      <section>
+        <details className="group/style rounded-xl border border-ink/[0.06] bg-cream/60">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 p-5 [&::-webkit-details-marker]:hidden">
+            <div className="min-w-0">
+              <Eyebrow>Advanced · style direction</Eyebrow>
+              <p className="mt-1 font-display text-h4 text-ink">
+                {selectedStyle?.name ?? 'Contemporary AU'}
+              </p>
+              <p className="mt-1 text-[13px] text-ink-soft">
+                {selectedStyle?.tagline ?? 'Pale oak, plaster walls, eucalypt notes'}
+              </p>
+            </div>
+            <span className="shrink-0 font-mono text-meta uppercase tracking-eyebrow text-clay group-open/style:hidden">
+              + Change style
+            </span>
+            <span className="hidden shrink-0 font-mono text-meta uppercase tracking-eyebrow text-clay group-open/style:inline">
+              − Close
+            </span>
+          </summary>
+          <div className="border-t border-ink/[0.06] p-5">
+            <p className="max-w-xl text-[14px] text-ink-soft">
+              Each style seeds the render with a base material vocab (oak, travertine, brass,
+              linen) and a mood. The palette above still dominates the colour story.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {STYLES.map((s) => {
+                const selected = s.slug === style;
+                return (
+                  <button
+                    key={s.slug}
+                    type="button"
+                    onClick={() => onStyleChange(s.slug)}
+                    className={cn(
+                      'group flex flex-col gap-3 rounded-xl border p-5 text-left transition',
+                      selected
+                        ? 'border-clay/60 bg-cream shadow-soft'
+                        : 'border-ink/[0.06] bg-cream/60 hover:border-ink/20 hover:bg-cream',
+                    )}
+                    aria-pressed={selected}
+                  >
+                    <PaletteStrip colors={s.palette} className="h-7" />
+                    <div>
+                      <p className="font-display text-h4 text-ink">{s.name}</p>
+                      <p className="mt-1 text-[13px] text-ink-soft">{s.tagline}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </details>
       </section>
     </>
   );
