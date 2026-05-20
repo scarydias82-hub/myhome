@@ -7,6 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getServerEnv } from '@/lib/env';
+import { withAnthropicRetry } from '@/lib/anthropic-retry';
 
 let client: Anthropic | null = null;
 
@@ -87,20 +88,29 @@ export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
   // Haiku is ~3× faster than Sonnet for this structured-extraction task and
   // handles vision more than well enough. Sonnet was occasionally taking
   // >60s on Vercel and getting silently killed by the function timeout.
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1500,
-    system: SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'url', url: imageUrl } },
-          { type: 'text', text: 'Analyse this room photo and return the JSON described in your system prompt.' },
+  //
+  // Wrapped in retry-with-backoff because Anthropic returns 529 overloaded
+  // intermittently — a single transient failure shouldn't break the user's
+  // first impression of the product. 3 attempts at 0/2s/5s recovers the
+  // overwhelming majority of overloads silently.
+  const message = await withAnthropicRetry(
+    () =>
+      anthropic.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 1500,
+        system: SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'url', url: imageUrl } },
+              { type: 'text', text: 'Analyse this room photo and return the JSON described in your system prompt.' },
+            ],
+          },
         ],
-      },
-    ],
-  });
+      }),
+    { label: 'vision' },
+  );
 
   const text = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')

@@ -14,6 +14,7 @@ import { getServerEnv } from '@/lib/env';
 import type { Palette } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { fetchKnowledgeContext, formatKnowledgeContext } from '@/lib/knowledge';
+import { withAnthropicRetry } from '@/lib/anthropic-retry';
 
 // Read once at module load — system prompt rarely changes.
 const SYSTEM_PROMPT_PATH = path.join(process.cwd(), 'lib', 'prompts', 'designer-system.md');
@@ -114,13 +115,21 @@ export async function getDesignerAdvice({
   ].join('\n');
 
   const anthropic = getAnthropic();
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
-    temperature: 0.7,
-    system: loadSystemPrompt(),
-    messages: [{ role: 'user', content: userMessage }],
-  });
+  // Retry on 529/503/429 — the designer call runs both in /api/render's
+  // after() block (best-effort) AND in /api/advise (user-blocking). The
+  // user-blocking path benefits from silent recovery, the after() path
+  // just gets fewer ghost failures in logs.
+  const message = await withAnthropicRetry(
+    () =>
+      anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        temperature: 0.7,
+        system: loadSystemPrompt(),
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+    { label: 'designer' },
+  );
 
   const raw = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')

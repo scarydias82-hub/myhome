@@ -404,7 +404,21 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         />
       ) : null}
 
-      {error ? <p className="text-[14px] text-destructive">{error}</p> : null}
+      {error ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-[14px] text-destructive">{error}</p>
+          {/overload|temporar|try again|rate.?limit|briefly/i.test(error) && file ? (
+            <button
+              type="button"
+              onClick={() => analysePhoto(file)}
+              disabled={analysing}
+              className="mt-2 rounded-pill border border-destructive/40 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-destructive transition hover:border-destructive hover:bg-destructive/10 disabled:opacity-40"
+            >
+              {analysing ? 'Retrying…' : '↻ Try again'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-4">
         <Button
