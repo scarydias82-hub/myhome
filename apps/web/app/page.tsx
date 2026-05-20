@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { HomepageDemoRender } from '@/components/landing/demo-render';
 
 // Public landing page. Editorial-luxury treatment per the myMaison brand
 // guidelines: Playfair Display headlines, DM Sans body, DM Mono metadata,
@@ -188,6 +189,12 @@ export default function LandingPage() {
           </p>
         </div>
       </section>
+
+      {/* Above-the-fold interactive demo. Real rendered room with 3
+          numbered hotspots — hover any one to see the product we'd pick.
+          Highest-leverage conversion signal: a visitor sees the
+          shoppable output before they're asked to sign up. */}
+      <HomepageDemoRender />
 
       {/* Retailer strip */}
       <section
