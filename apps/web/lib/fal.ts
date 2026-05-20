@@ -55,23 +55,24 @@ function renderInput(input: DepthRenderInput) {
     image_url: input.controlImageUrl,
     control_lora_image_url: input.controlImageUrl,
     // Tuned via repeat Claude Sonnet vision eval runs (2026-05-19/20).
-    //   Round 1 @ strength 0.87, guidance 4.0 → palette adherence 4/10,
-    //     hallucinated ceiling speaker, view drift.
-    //   Round 2 @ strength 0.80, guidance 4.0, with CRITICAL ceiling
-    //     directive added → palette adherence COLLAPSED to 2/10.
-    //   Round 3 @ strength 0.85, guidance 5.0, named palette tokens →
-    //     palette adherence 3/10, surface 4/10, hallucination 5/10.
-    //     Still drifted to sage-green walls; view still hallucinated
-    //     (suburban dusk → ground-floor red-roof house).
-    //   Round 4 (current) → canny bumped 0.65 → 0.75 to lock geometry +
-    //     ceiling height harder (eval reported spatial compression);
-    //     prompt-side: enriched wall vocab with multiple synonyms
-    //     ("warm wheat, biscuit, cream and oat tones") + adversarial
-    //     "NO green, NO sage, NO khaki" to block the round-3 failure
-    //     mode + single CRITICAL on view (round 2's two-CRITICAL stack
-    //     was the over-constraint, not one alone).
-    strength: input.strength ?? 0.85,
-    control_lora_strength: 0.75,
+    //   Round 1 @ strength 0.87, canny 0.65, guidance 4.0 → 4.7/10.
+    //   Round 2 @ strength 0.80 + CRITICAL ceiling → 3.3/10 (collapsed).
+    //   Round 3 @ strength 0.85 + named tokens → 4.5/10 (recovered).
+    //   Round 4 @ canny 0.75 + extended NO list → 4.0/10 (regressed —
+    //     evaluator: "render is essentially a relit version of the
+    //     original"). Canny 0.75 + strength 0.85 + extensive NO vocab
+    //     compounded into "freeze everything, just relight" —
+    //     geometry went UP (7) but surface transformation crashed (2).
+    //   Round 5 (current) → roll BACK canny to 0.65 (round 4's bump
+    //     was the over-constraint), drop strength 0.85 → 0.82 per
+    //     evaluator suggestion (gives slightly more freedom for
+    //     surface change). Keep the round-4 prompt rewrite (named
+    //     vocab, palette-first ordering, accent-stripping, view
+    //     CRITICAL). The IP-Adapter pivot lives downstream — text
+    //     prompts have plateaued at palette adherence 2-4 across all
+    //     5 rounds; only visual conditioning will break the ceiling.
+    strength: input.strength ?? 0.82,
+    control_lora_strength: 0.65,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),

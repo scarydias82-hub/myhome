@@ -30,7 +30,7 @@ const ROOM_CATEGORY_HINTS: Record<string, string[]> = {
     'Bed', 'Beds',
     'Bedside Table', 'Bedside Tables',
     'Wardrobe',
-    'Rugs', 'Carpet',
+    'Rugs', 'Carpet', 'Flooring',
     'Curtains - Sheers', 'Curtains - Blockout',
   ],
   living_room: [
@@ -40,7 +40,7 @@ const ROOM_CATEGORY_HINTS: Record<string, string[]> = {
     'Occasional Tables',
     'Sideboards',
     'Mirrors',
-    'Rugs', 'Carpet',
+    'Rugs', 'Carpet', 'Flooring',
     'Curtains - Sheers',
     'Lighting',
   ],
@@ -48,18 +48,19 @@ const ROOM_CATEGORY_HINTS: Record<string, string[]> = {
     'Sofa', 'Sofas',
     'Armchair',
     'Coffee Table', 'Coffee Tables',
-    'Rugs', 'Carpet',
+    'Rugs', 'Carpet', 'Flooring',
     'Lighting',
   ],
   dining_room: [
     'Dining',
     'Table', 'Tables',
     'Chair', 'Chairs',
+    'Rugs', 'Flooring',
     'Lighting',
   ],
-  kitchen: ['Stools', 'Lighting'],
-  bathroom: ['Curtains - Sheers'],
-  study: ['Desk', 'Chair', 'Chairs', 'Storage System', 'Rugs', 'Lighting'],
+  kitchen: ['Stools', 'Flooring', 'Lighting'],
+  bathroom: ['Curtains - Sheers', 'Flooring'],
+  study: ['Desk', 'Chair', 'Chairs', 'Storage System', 'Rugs', 'Flooring', 'Lighting'],
 };
 
 const DEFAULT_HINTS = ['Sofa', 'Sofas', 'Rugs', 'Lighting'];
