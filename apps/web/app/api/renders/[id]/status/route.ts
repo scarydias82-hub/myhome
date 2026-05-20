@@ -25,7 +25,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { checkRenderStatus, fetchRenderResult } from '@/lib/fal';
+import { checkActiveStatus, fetchActiveResult } from '@/lib/fal';
 import { buildPickingList } from '@/lib/matching';
 
 export const runtime = 'nodejs';
@@ -85,7 +85,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ status: 'failed', error: 'No fal request id' });
   }
 
-  const fal = await checkRenderStatus(render.fal_request_id);
+  // Provider-aware: dispatches to flux-general or kontext-multi based
+  // on FLUX_PROVIDER env var. Default kontext-multi post-round-14.
+  const fal = await checkActiveStatus(render.fal_request_id);
 
   if (fal.status === 'in_queue' || fal.status === 'in_progress') {
     return NextResponse.json({ status: 'running', falStatus: fal.status });
@@ -106,7 +108,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   }
 
   try {
-    const result = await fetchRenderResult(render.fal_request_id);
+    const result = await fetchActiveResult(render.fal_request_id);
     const outKey = `${user.id}/${render.id}.webp`;
 
     // Step 1: download fal result, upload to storage. ~5s.

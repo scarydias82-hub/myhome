@@ -25,6 +25,33 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — **Render pivot to fal-ai/flux-pro/kontext/multi**
+  shipped to production (tasks #94 + #95 closed). After 15 prompt-
+  engineering rounds against fal-ai/flux-general with canny + IP-
+  Adapter that hovered between 3.3 and 4.7 average, round 14 broke
+  the 5.0 ceiling for the first time using the multi-image Kontext
+  endpoint with per-fixture vision facts injected as preserve
+  directives. Diagnosis of the previous ceiling: canny + IP-Adapter
+  on fal couldn't separately treat surface colour from geometry
+  preservation — IP-Adapter palette only landed on soft furnishings,
+  walls stayed locked by canny edges. Kontext takes [roomPhoto,
+  paletteSwatch] as image_urls and reasons compositionally — palette
+  finally landed on walls. Production wire-up via env-gated
+  getActiveProvider() in lib/fal.ts (default kontext-multi); both
+  /api/render and /api/renders/[id]/status dispatch the right
+  submit/poll pair based on FLUX_PROVIDER. New lib/kontextPrompt.ts
+  shared between /api/render and eval; pipes Claude vision analysis
+  facts (flooring, light.notes, ceiling description, architectural
+  features, existing_furniture[condition=keep|replace]) into the
+  prompt as explicit "MUST preserve" / "ACTIVELY REPLACE" lines so
+  Kontext can't reinterpret architecture as a different style.
+  Round 15 also strengthened NEGATIVE language for recurring
+  hallucinations (crown moulding, pendant lights, casement windows).
+  Also: confirmed both XLabs v1 AND InstantX Flux IP-Adapters fail
+  on fal-ai/flux-general with the same tensor dimension mismatch
+  (32 vs 1056) — fal's flux-general IP-Adapter loader is broken for
+  any Flux adapter. Legacy flux-general path stays accessible via
+  FLUX_PROVIDER=flux-general for rollback if needed.
 - `2026-05-20` — Signorino tile scraper shipped. Premium AU tile +
   natural stone importer (signorino.com.au, custom CMS). Walks /range
   index → 98 ranges total, walks first 40 → 230 tile variants. Each

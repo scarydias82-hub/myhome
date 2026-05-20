@@ -22,11 +22,17 @@ import {
   type RoomFacts,
   type HeroProductDescriptor,
 } from '@/lib/styles';
-import { submitDepthRender, uploadImageBuffer } from '@/lib/fal';
+import {
+  submitDepthRender,
+  submitKontextRender,
+  uploadImageBuffer,
+  getActiveProvider,
+} from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
 import { getDesignerAdvice } from '@/lib/designer';
 import { autoFeatureForPalette } from '@/lib/featuring';
 import { generatePaletteSwatch } from '@/lib/paletteSwatch';
+import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
 
@@ -260,22 +266,14 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       console.warn('[render] could not read photo dimensions, using default', err);
     }
-    // IP-Adapter palette swatch is OPT-IN via FLUX_ENABLE_IP_ADAPTER
-    // env var. Default: OFF in production. Reason: round 11 production
-    // render returned fal status 422 with body
-    //   "Could not load pipeline due to error: The size of tensor a
-    //    (32) must match the size of tensor b (1056)"
-    // — the InstantX/FLUX.1-dev-IP-Adapter + SigLIP encoder combo
-    // we're sending fails to compose at fal's runtime even though
-    // InstantX's HF docs say they should. The eval may have only
-    // succeeded because the fal worker had a cached pipeline from an
-    // earlier request and didn't re-load. Until we have a known-good
-    // IP-Adapter/encoder combo on fal, production stays text-only
-    // (round-5 baseline, ~4.5/10 — shippable). The eval can still
-    // experiment by setting FLUX_ENABLE_IP_ADAPTER=1 in its env.
+    // Generate the palette swatch unconditionally when a palette is
+    // selected — both providers benefit:
+    //   - kontext-multi (default): swatch is REQUIRED as image_urls[1]
+    //   - flux-general:  swatch becomes the IP-Adapter reference IF
+    //     FLUX_ENABLE_IP_ADAPTER=1 (legacy flag, off by default after
+    //     IP-Adapter tensor-mismatch issues forced the Kontext pivot)
     let paletteSwatchUrl: string | null = null;
-    const ipAdapterEnabled = process.env.FLUX_ENABLE_IP_ADAPTER === '1';
-    if (palette && ipAdapterEnabled) {
+    if (palette) {
       try {
         const swatchBuf = await generatePaletteSwatch(palette);
         paletteSwatchUrl = await uploadImageBuffer(
@@ -283,18 +281,47 @@ export async function POST(request: NextRequest) {
           `palette-${palette.id}.png`,
           'image/png',
         );
-        console.log(`[render] IP-Adapter ON — palette swatch uploaded for ${palette.id}`);
+        console.log(`[render] palette swatch uploaded for ${palette.id}`);
       } catch (err) {
-        console.warn('[render] palette swatch upload failed, falling back to text-only', err);
+        console.warn('[render] palette swatch upload failed, will use text-only fallback', err);
       }
     }
-    const submission = await submitDepthRender({
-      prompt: groundedPrompt,
-      controlImageUrl,
-      paletteSwatchUrl,
-      width: dims?.width,
-      height: dims?.height,
-    });
+
+    const provider = getActiveProvider();
+    console.log(`[render] provider: ${provider}`);
+
+    let submission: { requestId: string };
+    if (provider === 'kontext-multi' && palette && paletteSwatchUrl) {
+      // Kontext path — round 14 broke the 5.0 average ceiling using
+      // [roomPhoto, paletteSwatch] + a prompt that names each image's
+      // role and pipes per-fixture preserve directives from vision.
+      const kontextPrompt = buildKontextPrompt({
+        basePrompt: groundedPrompt,
+        paletteName: palette.name,
+        roomFacts: room.analysis as RoomAnalysis | null,
+      });
+      submission = await submitKontextRender({
+        prompt: kontextPrompt,
+        controlImageUrl,
+        paletteSwatchUrl,
+      });
+    } else {
+      // flux-general path. Used when:
+      //   - FLUX_PROVIDER=flux-general explicitly
+      //   - no palette selected (Kontext requires one)
+      //   - palette swatch upload failed
+      // IP-Adapter (paletteSwatchUrl on this path) is opt-in via
+      // FLUX_ENABLE_IP_ADAPTER=1 — disabled by default because the
+      // InstantX + XLabs configs both 422 at fal's runtime.
+      const useIpAdapter = process.env.FLUX_ENABLE_IP_ADAPTER === '1';
+      submission = await submitDepthRender({
+        prompt: groundedPrompt,
+        controlImageUrl,
+        paletteSwatchUrl: useIpAdapter ? paletteSwatchUrl : null,
+        width: dims?.width,
+        height: dims?.height,
+      });
+    }
     await admin
       .from('renders')
       .update({ fal_request_id: submission.requestId })

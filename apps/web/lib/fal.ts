@@ -439,3 +439,39 @@ export async function fetchKontextResult(requestId: string): Promise<DepthRender
   if (!url) throw new Error('fal-kontext returned no image');
   return { imageUrl: url, seed: data.seed ?? 0 };
 }
+
+// --- Provider dispatch -------------------------------------------------
+//
+// Env-gated provider switching so /api/render, the status route, and
+// the eval pipeline can all swap between flux-general (canny + maybe
+// IP-Adapter) and kontext-multi (multi-image natural-language editor)
+// from a single FLUX_PROVIDER env var.
+//
+// Default: kontext-multi. Round 14 eval (5.0/10 avg, all six criteria
+// ≥4) was the first config across 15 iterations to break the 5.0
+// ceiling — and Kontext eliminates the IP-Adapter failure class that
+// killed every flux-general production render. Production now uses
+// Kontext by default. Set FLUX_PROVIDER=flux-general to roll back.
+
+export type FluxProvider = 'flux-general' | 'kontext-multi';
+
+export function getActiveProvider(): FluxProvider {
+  const raw = (process.env.FLUX_PROVIDER ?? 'kontext-multi').toLowerCase();
+  if (raw === 'flux-general') return 'flux-general';
+  if (raw === 'kontext' || raw === 'kontext-multi') return 'kontext-multi';
+  return 'kontext-multi';
+}
+
+// Provider-aware status check. Production status route calls this so
+// the same env var that controls submit also controls poll.
+export async function checkActiveStatus(requestId: string): Promise<RenderStatusInfo> {
+  return getActiveProvider() === 'kontext-multi'
+    ? checkKontextStatus(requestId)
+    : checkRenderStatus(requestId);
+}
+
+export async function fetchActiveResult(requestId: string): Promise<DepthRenderOutput> {
+  return getActiveProvider() === 'kontext-multi'
+    ? fetchKontextResult(requestId)
+    : fetchRenderResult(requestId);
+}
