@@ -18,6 +18,10 @@ interface ShoppableRenderProps {
    *  under the render so the voice frames the look before the user
    *  starts shopping. */
   between?: ReactNode;
+  /** Server-seeded wishlist (#106). Threaded straight through to the
+   *  picking-list panel so heart icons render in their saved state
+   *  on first paint. */
+  initialSavedProductIds?: Set<string>;
 }
 
 type View = 'shop' | 'compare';
@@ -36,6 +40,7 @@ export function ShoppableRender({
   renderId,
   projectId,
   between,
+  initialSavedProductIds,
 }: ShoppableRenderProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [view, setView] = useState<View>('shop');
@@ -134,6 +139,7 @@ export function ShoppableRender({
         onHover={handleHover}
         renderId={renderId}
         projectId={projectId ?? null}
+        initialSavedProductIds={initialSavedProductIds}
       />
     </div>
   );

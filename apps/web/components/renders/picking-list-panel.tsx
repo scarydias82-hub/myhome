@@ -45,6 +45,13 @@ interface PickingListPanelProps {
   onHover: (index: number | null) => void;
   renderId: string;
   projectId?: string | null;
+  /** Server-seeded set of product IDs the current user has already
+   *  saved to their wishlist (P1-7). Match cards initialise their
+   *  saved state from this; toggling fires /api/wishlist and updates
+   *  local state optimistically. Omit / pass empty Set to render every
+   *  card in the unsaved state — the heart still works, it just won't
+   *  show pre-saved items as saved until the user toggles. */
+  initialSavedProductIds?: Set<string>;
 }
 
 interface StagingTarget {
@@ -86,11 +93,46 @@ export function PickingListPanel({
   onHover,
   renderId,
   projectId,
+  initialSavedProductIds,
 }: PickingListPanelProps) {
   const router = useRouter();
   const [staging, setStaging] = useState<StagingTarget | null>(null);
   const [multiOpen, setMultiOpen] = useState(false);
   const [multi, setMulti] = useState<MultiSelection[]>([]);
+  // Per-user wishlist (#106). We seed from the server-side fetch and
+  // mutate optimistically — POST /api/wishlist persists. Rollback on
+  // error keeps the local set honest.
+  const [savedIds, setSavedIds] = useState<Set<string>>(
+    () => new Set(initialSavedProductIds ?? []),
+  );
+
+  async function toggleSaved(productId: string) {
+    const isSaved = savedIds.has(productId);
+    // Optimistic: flip locally first, then sync.
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (isSaved) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+    try {
+      const res = await fetch('/api/wishlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ productId, action: isSaved ? 'remove' : 'save' }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      // Roll back on failure so the UI doesn't drift from the server.
+      console.error('[wishlist] toggle failed', err);
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (isSaved) next.add(productId);
+        else next.delete(productId);
+        return next;
+      });
+    }
+  }
 
   const multiKey = useMemo(
     () => (sel: MultiSelection) => `${sel.itemIndex}:${sel.productId}`,
@@ -164,6 +206,8 @@ export function PickingListPanel({
                   multi.some((p) => p.itemIndex === idx && p.productId !== productId)
                 }
                 multiAtCap={multi.length >= MAX_MULTI}
+                isSaved={(productId) => savedIds.has(productId)}
+                onToggleSaved={(productId) => toggleSaved(productId)}
               />
             </li>
           ))}
@@ -258,6 +302,8 @@ function PickingListEntry({
   onToggleMulti,
   multiSlotTaken,
   multiAtCap,
+  isSaved,
+  onToggleSaved,
 }: {
   item: PickingListItem;
   index: number;
@@ -266,6 +312,8 @@ function PickingListEntry({
   onToggleMulti: (match: PickingMatch) => void;
   multiSlotTaken: (productId: string) => boolean;
   multiAtCap: boolean;
+  isSaved: (productId: string) => boolean;
+  onToggleSaved: (productId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Full-width layout (#99): show the top THREE matches by default so
@@ -298,6 +346,8 @@ function PickingListEntry({
             selectedForMulti={isSelectedFor(m.productId)}
             disabledForMulti={!isSelectedFor(m.productId) && (multiSlotTaken(m.productId) || multiAtCap)}
             onToggleMulti={() => onToggleMulti(m)}
+            saved={isSaved(m.productId)}
+            onToggleSaved={() => onToggleSaved(m.productId)}
           />
         ))}
       </div>
@@ -321,6 +371,8 @@ function MatchCard({
   selectedForMulti,
   disabledForMulti,
   onToggleMulti,
+  saved,
+  onToggleSaved,
 }: {
   match: PickingMatch;
   primary: boolean;
@@ -328,6 +380,8 @@ function MatchCard({
   selectedForMulti: boolean;
   disabledForMulti: boolean;
   onToggleMulti: () => void;
+  saved: boolean;
+  onToggleSaved: () => void;
 }) {
   const target = match.affiliateUrl ?? match.productUrl;
   return (
@@ -387,15 +441,44 @@ function MatchCard({
           </p>
         </div>
       </div>
+      {/* Two-primary-CTA layout (P1-7). Heart-icon Save banks the
+          product to a per-user wishlist independent of any project;
+          Stage is the room-specific staging modal. Compare lives as a
+          quieter icon-toggle on the right so multi-stage isn't a
+          competing primary action. View moves to a small text link
+          below — still discoverable but doesn't pull the eye away
+          from the two main verbs. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-ink/[0.06] pt-3">
-        <label
+        <button
+          type="button"
+          onClick={onToggleSaved}
+          aria-pressed={saved}
+          aria-label={saved ? `Saved · ${match.name}` : `Save ${match.name} to your wishlist`}
           className={cn(
-            'inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow transition',
+            'grid h-9 w-9 place-items-center rounded-full border transition',
+            saved
+              ? 'border-clay/50 bg-clay/15 text-clay'
+              : 'border-ink/15 bg-cream text-ink-soft hover:border-ink/30 hover:text-clay',
+          )}
+        >
+          <HeartIcon filled={saved} />
+        </button>
+        <button
+          type="button"
+          onClick={onStage}
+          className="flex-1 rounded-pill bg-ink px-4 py-2 text-center font-mono text-meta uppercase tracking-eyebrow text-paper transition hover:bg-ink-soft"
+        >
+          Stage in my room
+        </button>
+        <label
+          aria-label={selectedForMulti ? 'Remove from compare set' : 'Add to compare set'}
+          className={cn(
+            'inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border font-mono text-[14px] transition',
             selectedForMulti
-              ? 'border-olive bg-olive/15 text-olive'
+              ? 'border-olive/60 bg-olive/15 text-olive'
               : disabledForMulti
-                ? 'border-ink/10 bg-cream/50 text-ink-faint cursor-not-allowed'
-                : 'border-ink/15 bg-cream text-ink-soft hover:border-ink/30 hover:text-ink cursor-pointer',
+                ? 'cursor-not-allowed border-ink/10 bg-cream/50 text-ink-faint'
+                : 'border-ink/15 bg-cream text-ink-soft hover:border-ink/30 hover:text-ink',
           )}
         >
           <input
@@ -405,24 +488,36 @@ function MatchCard({
             onChange={onToggleMulti}
             className="sr-only"
           />
-          {selectedForMulti ? '✓ Selected' : '+ Stage with…'}
+          {selectedForMulti ? '✓' : '+'}
         </label>
-        <button
-          type="button"
-          onClick={onStage}
-          className="flex-1 rounded-pill bg-ink px-3 py-1.5 text-center font-mono text-meta uppercase tracking-eyebrow text-paper transition hover:bg-ink-soft"
-        >
-          Try alone
-        </button>
-        <a
-          href={target}
-          target="_blank"
-          rel="noopener noreferrer sponsored"
-          className="rounded-pill border border-ink/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
-        >
-          View ↗
-        </a>
       </div>
+      <a
+        href={target}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        className="mt-2 font-mono text-meta uppercase tracking-eyebrow text-ink-faint underline-offset-2 hover:text-clay hover:underline"
+      >
+        View on {match.retailer} ↗
+      </a>
     </div>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
   );
 }

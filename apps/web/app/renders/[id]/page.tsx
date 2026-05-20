@@ -116,6 +116,21 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
     .single();
   const profile = profileRes.data as ProfileRow | null;
 
+  // Seed the saved-state set for heart icons on every match card
+  // (P1-7). Best-effort — if the user_wishlist table hasn't been
+  // created yet (migration 20260520140000 not applied) the query
+  // returns an error and we render every card unsaved.
+  let savedProductIds = new Set<string>();
+  const wishlistRes = await supabase
+    .from('user_wishlist')
+    .select('product_id')
+    .eq('user_id', user.id);
+  if (!wishlistRes.error && wishlistRes.data) {
+    savedProductIds = new Set(
+      (wishlistRes.data as { product_id: string }[]).map((r) => r.product_id),
+    );
+  }
+
   // Fetch every revision so the strip can show full history and we know
   // which image to render as the "after". Once the 20260520 migration has
   // run, every succeeded render has at least an 'original' revision. If
@@ -239,6 +254,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               totalEstimateAud={render.cost_estimate_aud}
               renderId={render.id}
               projectId={render.project_id}
+              initialSavedProductIds={savedProductIds}
               between={
                 <section className="mt-2">
                   <DesignerRead
