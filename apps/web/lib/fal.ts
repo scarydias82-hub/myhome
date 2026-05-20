@@ -158,7 +158,7 @@ function renderInput(input: DepthRenderInput) {
   return {
     prompt: input.prompt,
     image_url: input.controlImageUrl,
-    strength: input.strength ?? 0.82,
+    strength: input.strength ?? 0.78,
     image_size: input.width && input.height
       ? { width: input.width, height: input.height }
       : ('landscape_4_3' as const),
