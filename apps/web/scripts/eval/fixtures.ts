@@ -17,7 +17,11 @@ export const FIXTURES: Fixture[] = [
   {
     id: 'bedroom-upstairs',
     description: 'Upstairs bedroom, panelled wall behind bed',
-    imageFile: 'master_bed.png',
+    // 5712×4284 camera-original JPEG, 4:3 — no letterbox bars (the
+    // previous master_bed.PNG was a 2532×1170 real-estate-website
+    // screenshot with ~38% black-bar contamination that broke canny
+    // edge detection and aspect-ratio derivation).
+    imageFile: 'bedroom_test.jpg',
     style: 'contemporary-au',
     paletteId: 'warm-grounded-earth',
   },
