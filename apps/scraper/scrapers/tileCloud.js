@@ -30,12 +30,18 @@ const RETAILER_SLUG = 'tile-cloud';
 // Shopify collection walk. Tile Cloud's collection URLs follow
 // /collections/<slug>?page=N. We target bathroom + kitchen-splashback
 // surfaces since those are the rooms where tile renders most matter.
+// Tile Cloud's collection slugs use category prefixes ("room-",
+// "pattern-", "material-"); the bare slugs I guessed first time
+// (bathroom-wall-tiles, splashback-tiles, mosaic-tiles) 404'd. These
+// are the real ones, verified against /collections.
 const CATEGORY_PLPS = [
-  { path: '/collections/bathroom-floor-tiles', category: 'Tiles', cap: 80 },
-  { path: '/collections/bathroom-wall-tiles',  category: 'Tiles', cap: 80 },
-  { path: '/collections/splashback-tiles',     category: 'Tiles', cap: 40 },
+  { path: '/collections/bathroom-floor-tiles',     category: 'Tiles', cap: 80 },
+  { path: '/collections/room-bathroom-tiles',      category: 'Tiles', cap: 80 },
+  { path: '/collections/room-splashback-tiles',    category: 'Tiles', cap: 40 },
   // Mosaics — high-character bathroom feature surfaces, smaller volume.
-  { path: '/collections/mosaic-tiles',         category: 'Tiles', cap: 30 },
+  { path: '/collections/pattern-mosaic-tiles',     category: 'Tiles', cap: 30 },
+  // Subway tiles — bathroom + kitchen splashback staple.
+  { path: '/collections/shape-subway-tiles',       category: 'Tiles', cap: 30 },
 ];
 
 const MAX_PAGES_PER_PLP = 10;

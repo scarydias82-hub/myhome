@@ -8,7 +8,15 @@
 // Re-runnable: upserts by (palette_id, room_type). Skip combinations that
 // already exist unless --refresh is passed.
 
-import 'dotenv/config';
+// override:true so the .env file is authoritative for the scraper.
+// Some dev shells inherit env vars as empty strings from parent
+// processes (Anthropic CLI tooling for example exports
+// ANTHROPIC_API_KEY=""). dotenv's default behaviour respects existing
+// env vars even when empty, which makes this script fail its env
+// check despite the key being present in .env. override:true makes
+// the .env value win.
+import * as dotenv from 'dotenv';
+dotenv.config({ override: true });
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
