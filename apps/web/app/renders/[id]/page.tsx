@@ -14,6 +14,10 @@ import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
 import { RevisionStrip, type RevisionStripItem } from '@/components/renders/revision-strip';
 import { RenderActionBand } from '@/components/renders/render-action-band';
+import { CompleteTheLook } from '@/components/renders/complete-the-look';
+import { fetchCompleteTheLook } from '@/lib/completeTheLook';
+import { getStyle } from '@/lib/styles';
+import { findPaletteByHexes } from '@/lib/palettes';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -188,6 +192,24 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   const isDone = render.status === 'succeeded' && afterSigned?.data?.signedUrl;
   const isFailed = render.status === 'failed' || render.status === 'cancelled';
 
+  // Complete-the-look (#116) — category-aligned picking list under the
+  // hotspot one. Resolves the palette id from style_profile.palette hexes
+  // (we don't persist palette_id today, just the hex array). Style tags
+  // are pulled from the style descriptor's mood + slug. Empty array
+  // when render isn't done yet so the section hides itself.
+  const ctlPaletteId = findPaletteByHexes(profile?.palette ?? null)?.id ?? null;
+  const ctlStyleTags = profile?.source_ref
+    ? [...(getStyle(profile.source_ref)?.mood ?? []), profile.source_ref]
+    : [];
+  const completeTheLookCategories = isDone
+    ? await fetchCompleteTheLook({
+        admin,
+        roomType: room?.room_type ?? null,
+        paletteId: ctlPaletteId,
+        styleTags: ctlStyleTags,
+      })
+    : [];
+
   return (
     <>
       <header className="border-b border-ink/[0.06]">
@@ -272,6 +294,18 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               revisions={signedRevisions}
               activeRevisionId={activeRevisionIdForStrip}
             />
+            {/* Complete the look (#116) — category-aligned picks under
+                the detection-based hotspot list. Surfaces categories
+                the user would shop for this room type (cushions,
+                throws, art, lighting, etc.) that the render frame
+                didn't necessarily capture. Server-rendered with the
+                same palette/style/room filters as the picking list. */}
+            {completeTheLookCategories.length > 0 ? (
+              <CompleteTheLook
+                categories={completeTheLookCategories}
+                initialSavedProductIds={savedProductIds}
+              />
+            ) : null}
             {/* End-of-render action band (#107) — three follow-up moves
                 so the user has a clear next step after the wow moment:
                 try another palette · share the link · save to project.
