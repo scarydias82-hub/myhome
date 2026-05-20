@@ -269,9 +269,17 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             engage with for the 25-60s Flux pass) and after completion
             (full critique). The supporting profile/palette/materials
             row sits BELOW the designer read, since by then the designer
-            voice has framed what the palette means for this room. */}
+            voice has framed what the palette means for this room.
+            paletteName + roomLabel are passed so the wait placeholder
+            personalises ("reading your west-facing bedroom for warm
+            grounded earth") instead of saying generic copy. */}
         <section className="mt-10">
-          <DesignerRead advice={render.designer_read} renderId={render.id} />
+          <DesignerRead
+            advice={render.designer_read}
+            renderId={render.id}
+            paletteName={profile?.source_ref?.replace(/-/g, ' ') ?? null}
+            roomLabel={room?.room_type?.replace(/_/g, ' ') ?? null}
+          />
         </section>
 
         {profile ? (

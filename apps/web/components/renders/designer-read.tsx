@@ -40,9 +40,23 @@ export interface DesignerAdvice {
 interface DesignerReadProps {
   advice: DesignerAdvice | null;
   renderId: string;
+  /** Optional palette name (e.g. "Warm Grounded Earth"). Surfaced in
+   *  the placeholder so the wait state feels personalised rather than
+   *  generic ("reading your warm grounded earth bedroom" beats
+   *  "reading the room"). */
+  paletteName?: string | null;
+  /** Optional human room label (e.g. "west-facing bedroom"). Same
+   *  goal — fold into the placeholder so the user sees we know what
+   *  they uploaded. */
+  roomLabel?: string | null;
 }
 
-export function DesignerRead({ advice: initialAdvice, renderId }: DesignerReadProps) {
+export function DesignerRead({
+  advice: initialAdvice,
+  renderId,
+  paletteName,
+  roomLabel,
+}: DesignerReadProps) {
   const [advice, setAdvice] = useState<DesignerAdvice | null>(initialAdvice);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +123,7 @@ export function DesignerRead({ advice: initialAdvice, renderId }: DesignerReadPr
       ) : error ? (
         <ReadingError message={error} />
       ) : (
-        <ReadingPlaceholder />
+        <ReadingPlaceholder paletteName={paletteName} roomLabel={roomLabel} />
       )}
     </section>
   );
@@ -117,7 +131,24 @@ export function DesignerRead({ advice: initialAdvice, renderId }: DesignerReadPr
 
 // Loading state — also shown on the very first page load before /api/advise
 // has had time to respond. Pulsing dot signals work-in-progress.
-function ReadingPlaceholder() {
+// When palette + room context is available we surface them so the wait
+// state reads as "we know what you picked" rather than generic.
+function ReadingPlaceholder({
+  paletteName,
+  roomLabel,
+}: {
+  paletteName?: string | null;
+  roomLabel?: string | null;
+}) {
+  const headline =
+    paletteName && roomLabel
+      ? `Reading your ${roomLabel} for ${paletteName}.`
+      : paletteName
+        ? `Considering ${paletteName} for your room.`
+        : roomLabel
+          ? `Reading your ${roomLabel}.`
+          : 'Reading the room.';
+
   return (
     <div className="p-6 md:p-8">
       <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-6">
@@ -127,16 +158,16 @@ function ReadingPlaceholder() {
             className="inline-flex h-2 w-2 animate-pulse rounded-full bg-clay"
           />
           <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-            Reading the room
+            Designer at work
           </p>
         </div>
-        <p className="mt-3 max-w-md font-display text-[20px] leading-snug text-ink">
-          Claude is looking at your room photo, considering the palette,
-          and drafting recommendations.
+        <p className="mt-3 max-w-md font-display text-[22px] leading-snug text-ink">
+          {headline}
         </p>
         <p className="mt-2 max-w-md text-[14px] text-ink-soft">
-          Usually 15 to 25 seconds. The render is building in parallel —
-          both should land soon.
+          Claude is reading the light, the architecture, and the palette
+          — then drafting recommendations specific to your space. Usually
+          15 to 25 seconds. The render is building in parallel.
         </p>
       </div>
     </div>
