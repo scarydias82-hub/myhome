@@ -12,6 +12,21 @@ import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
 
+// P0-2 confidence gate. When Claude returns ALL the load-bearing
+// facts we skip the manual review step entirely — the user can still
+// hit "Edit" on the confirmed summary if they want to override. We
+// reserve manual confirm for analyses where the room is ambiguous
+// (room_type unknown/other, no flooring read, no light cues) since
+// those are the cases where the downstream render most depends on
+// the user catching a misread.
+function isHighConfidenceAnalysis(a: RoomAnalysis): boolean {
+  if (!a.room_type || a.room_type === 'other') return false;
+  if (!a.flooring) return false;
+  if (!a.light?.direction && !a.light?.quality) return false;
+  if (!a.existing_colours || a.existing_colours.length === 0) return false;
+  return true;
+}
+
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
@@ -227,6 +242,13 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           json.error ??
             'Vision analysis was unavailable, but you can still proceed. The restyle will be less precise.',
         );
+        setAnalysisConfirmed(true);
+      } else if (isHighConfidenceAnalysis(json.analysis)) {
+        // P0-2: skip the manual review step when Claude returned all
+        // the load-bearing facts. The summary still renders in the
+        // confirmed state with an "Edit" affordance — we just don't
+        // require a click to advance. Reserves the manual confirm for
+        // analyses where something Claude returned looks shaky.
         setAnalysisConfirmed(true);
       }
     } catch (err) {
