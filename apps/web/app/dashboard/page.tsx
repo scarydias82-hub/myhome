@@ -163,6 +163,11 @@ export default async function DashboardPage() {
       matchNote: pinterestConnected ? 'Matches your saved boards' : null,
       imageUrl: `${supabaseUrl}/storage/v1/object/public/trends/${t.image_storage_key}`,
       paletteId: t.palette_id,
+      // Persona metadata threaded so TrendsSection can bucket cards
+      // into the 2026 vs Timeless carousels. Falls back to 5 (neutral)
+      // when the palette lookup misses, so unknown palettes land in
+      // the 2026 carousel by default.
+      timelessness: palette?.timelessness ?? 5,
     };
   });
 

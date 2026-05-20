@@ -1,11 +1,28 @@
 'use client';
 
+// Trends section — two horizontal carousels.
+//
+// Until #118 (persona metadata) landed, every palette was 2026-trend-
+// forward and a single feed made sense. With Layer 3a we added 6
+// timeless palettes (Federation, Hamptons Heritage, Mid-Century Walnut,
+// Coastal Whitewash, English Country, Modernist Restraint) which sit
+// editorially apart from the 2026 picks. Stacking them in one feed
+// confused the read; splitting them into two carousels with citation
+// intros tells the user clearly: "this is what's hot now" vs "this is
+// what doesn't date".
+//
+// Bucket logic: timelessness >= 7 → Timeless directions. < 7 → 2026.
+// Threshold tuned to split the current 16-palette set into 10 trend +
+// 6 timeless (matches the editorial intent of the Layer 3 expansion).
+//
+// Default order: 2026 first, Timeless below. Persona-aware reordering
+// (when the user has a brief) is a future enhancement — for now the
+// static default reflects the homepage's existing positioning.
+
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
 import { SectionHeader } from '@/components/dashboard/shared/section-header';
 import { PaletteStrip } from '@/components/dashboard/shared/palette-strip';
-import { cn } from '@/lib/utils';
 
 export interface DashboardTrendCard {
   id: string;
@@ -18,101 +35,143 @@ export interface DashboardTrendCard {
   matchNote: string | null; // computed from user's boards
   imageUrl: string;
   paletteId: string;
+  /** Persona-metadata from palettes.json. 1 = trend, 10 = timeless.
+   *  Drives the carousel bucket assignment. */
+  timelessness: number;
 }
 
 interface TrendsSectionProps {
   trends: DashboardTrendCard[];
 }
 
+const TIMELESS_THRESHOLD = 7;
+
 export function TrendsSection({ trends }: TrendsSectionProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(trends[0]?.id ?? null);
+  const trendForward = trends.filter((t) => (t.timelessness ?? 5) < TIMELESS_THRESHOLD);
+  const timeless = trends.filter((t) => (t.timelessness ?? 5) >= TIMELESS_THRESHOLD);
 
   return (
     <section id="trends" className="py-10">
-      <SectionHeader
-        title="Design trends for you"
-        action={{ label: 'See all trends →', href: '/dashboard#trends' }}
+      {/* 2026 trend carousel — what's hot this year, sourced from WGSN,
+          Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU et al. */}
+      <TrendsCarousel
+        anchor="trends-2026"
+        title="2026 trends"
+        intro="Curated from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU, and the year's dominant designer voices."
+        cards={trendForward}
+        emptyCopy="Trend cards are still generating — check back in a few minutes."
       />
 
-      <ul className="space-y-4">
-        {trends.map((t) => {
-          const isOpen = expandedId === t.id;
-          const tintCss = `linear-gradient(135deg, ${t.paletteHexes[0] ?? '#F4EFE6'}1A 0%, ${t.paletteHexes[2] ?? '#C4956A'}10 100%)`;
-          return (
-            <li key={t.id}>
-              <article
-                className={cn(
-                  'overflow-hidden rounded-2xl border transition',
-                  isOpen ? 'border-editorial-borderStrong' : 'border-editorial-border',
-                )}
-                style={{ background: tintCss }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(isOpen ? null : t.id)}
-                  aria-expanded={isOpen}
-                  className="grid w-full grid-cols-[200px_1fr_auto] items-center gap-6 p-5 text-left md:grid-cols-[260px_1fr_auto]"
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-editorial-cream">
-                    <Image
-                      src={t.imageUrl}
-                      alt={t.headline}
-                      fill
-                      sizes="260px"
-                      className="object-cover"
-                      unoptimized
-                    />
-                  </div>
-                  <div>
-                    <p className="font-dmmono text-[10px] uppercase tracking-[0.12em] text-editorial-taupe">
-                      {t.season} · {t.roomType.replace(/_/g, ' ')}
-                    </p>
-                    <p className="mt-2 font-serif text-[22px] leading-tight text-editorial-ink">
-                      {t.headline}
-                    </p>
-                    <PaletteStrip colors={t.paletteHexes.slice(0, 5)} className="mt-3" />
-                    {t.matchNote ? (
-                      <p className="mt-2 font-dmsans text-[12px] italic text-editorial-cognac">
-                        {t.matchNote}
-                      </p>
-                    ) : null}
-                  </div>
-                  <span
-                    aria-hidden
-                    className={cn(
-                      'font-dmmono text-[14px] text-editorial-cognac transition-transform',
-                      isOpen ? 'rotate-90' : 'rotate-0',
-                    )}
-                  >
-                    ›
-                  </span>
-                </button>
-                {isOpen ? (
-                  <div className="border-t border-editorial-border bg-editorial-surface/60 p-5">
-                    <p className="max-w-2xl font-dmsans text-[14px] leading-relaxed text-editorial-ink">
-                      {t.description}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <Link
-                        href={`/projects/new?palette=${t.paletteId}&room=${t.roomType}`}
-                        className="rounded-full bg-editorial-ink px-4 py-2 font-dmsans text-[12px] font-medium text-editorial-cream transition hover:opacity-90"
-                      >
-                        ✦ Generate room with this palette
-                      </Link>
-                      <Link
-                        href={`/catalogue?palette=${t.paletteId}`}
-                        className="rounded-full border border-editorial-borderStrong px-4 py-2 font-dmsans text-[12px] font-medium text-editorial-ink transition hover:bg-editorial-cream"
-                      >
-                        Shop matching products
-                      </Link>
-                    </div>
-                  </div>
-                ) : null}
-              </article>
-            </li>
-          );
-        })}
-      </ul>
+      {/* Timeless carousel — heritage / classic / modernist frameworks
+          that aren't year-bound. Surfaces the Layer 3 expansion. */}
+      <TrendsCarousel
+        anchor="trends-timeless"
+        title="Timeless directions"
+        intro="Heritage, classic and modernist frameworks — durable colour stories grounded in Federation, Hamptons, Mid-Century and modernist principles."
+        cards={timeless}
+        emptyCopy="Timeless trend cards are still generating."
+      />
     </section>
+  );
+}
+
+function TrendsCarousel({
+  anchor,
+  title,
+  intro,
+  cards,
+  emptyCopy,
+}: {
+  anchor: string;
+  title: string;
+  intro: string;
+  cards: DashboardTrendCard[];
+  emptyCopy: string;
+}) {
+  return (
+    <section id={anchor} className="mb-12 last:mb-0">
+      <SectionHeader
+        title={title}
+        action={{ label: 'See all →', href: `/dashboard#${anchor}` }}
+      />
+      <p className="mt-2 max-w-3xl font-dmsans text-[13px] leading-relaxed text-editorial-taupe">
+        {intro}
+      </p>
+
+      {cards.length === 0 ? (
+        <p className="mt-6 font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-taupe">
+          {emptyCopy}
+        </p>
+      ) : (
+        // Horizontal snap-scroll. Cards keep a fixed width so multiple
+        // are partially visible — the half-clipped trailing card is the
+        // affordance that says "there's more to the right". -mx + px on
+        // the inner padding lets the first card sit flush against the
+        // container edge without breaking out of the layout grid.
+        <div className="-mx-2 mt-5 overflow-x-auto pb-3 [scrollbar-width:thin]">
+          <ul className="flex snap-x snap-mandatory gap-4 px-2">
+            {cards.map((t) => (
+              <li key={t.id} className="snap-start shrink-0 basis-[280px] md:basis-[320px]">
+                <TrendCardArticle card={t} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TrendCardArticle({ card: t }: { card: DashboardTrendCard }) {
+  const tintCss = `linear-gradient(135deg, ${t.paletteHexes[0] ?? '#F4EFE6'}1A 0%, ${t.paletteHexes[2] ?? '#C4956A'}10 100%)`;
+  return (
+    <article
+      className="flex h-full flex-col overflow-hidden rounded-2xl border border-editorial-border transition hover:border-editorial-borderStrong"
+      style={{ background: tintCss }}
+    >
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-editorial-cream">
+        <Image
+          src={t.imageUrl}
+          alt={t.headline}
+          fill
+          sizes="320px"
+          className="object-cover"
+          unoptimized
+        />
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div>
+          <p className="font-dmmono text-[10px] uppercase tracking-[0.12em] text-editorial-taupe">
+            {t.season} · {t.roomType.replace(/_/g, ' ')}
+          </p>
+          <p className="mt-2 line-clamp-2 font-serif text-[18px] leading-tight text-editorial-ink">
+            {t.headline}
+          </p>
+          <PaletteStrip colors={t.paletteHexes.slice(0, 5)} className="mt-3" />
+          {t.matchNote ? (
+            <p className="mt-2 font-dmsans text-[11px] italic text-editorial-cognac">
+              {t.matchNote}
+            </p>
+          ) : null}
+        </div>
+        <p className="line-clamp-3 font-dmsans text-[12px] leading-relaxed text-editorial-taupe">
+          {t.description}
+        </p>
+        <div className="mt-auto flex flex-wrap gap-2 pt-2">
+          <Link
+            href={`/projects/new?palette=${t.paletteId}&room=${t.roomType}`}
+            className="flex-1 rounded-full bg-editorial-ink px-3 py-2 text-center font-dmsans text-[11px] font-medium text-editorial-cream transition hover:opacity-90"
+          >
+            ✦ Generate
+          </Link>
+          <Link
+            href={`/catalogue?palette=${t.paletteId}`}
+            className="rounded-full border border-editorial-borderStrong px-3 py-2 font-dmsans text-[11px] font-medium text-editorial-ink transition hover:bg-editorial-cream"
+          >
+            Shop
+          </Link>
+        </div>
+      </div>
+    </article>
   );
 }
