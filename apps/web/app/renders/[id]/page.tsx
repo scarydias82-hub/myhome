@@ -227,6 +227,11 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
 
         {isDone && beforeSigned?.data?.signedUrl && afterSigned?.data?.signedUrl ? (
           <>
+            {/* When done: designer read sits BETWEEN the rendered image
+                and the picking list. That ordering matters — the
+                designer voice frames how to read the room before the
+                user starts shopping, mirroring how a real designer
+                would walk you through a moodboard. */}
             <ShoppableRender
               beforeUrl={beforeSigned.data.signedUrl}
               afterUrl={afterSigned.data.signedUrl}
@@ -234,6 +239,16 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               totalEstimateAud={render.cost_estimate_aud}
               renderId={render.id}
               projectId={render.project_id}
+              between={
+                <section className="mt-2">
+                  <DesignerRead
+                    advice={render.designer_read}
+                    renderId={render.id}
+                    paletteName={profile?.source_ref?.replace(/-/g, ' ') ?? null}
+                    roomLabel={room?.room_type?.replace(/_/g, ' ') ?? null}
+                  />
+                </section>
+              }
             />
             <RevisionStrip
               renderId={render.id}
@@ -242,45 +257,50 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             />
           </>
         ) : isFailed ? (
-          <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">
-            <p className="font-display text-h3 text-ink">Something went sideways.</p>
-            <p className="mx-auto mt-3 max-w-md text-[15px] text-ink-soft">
-              The render couldn't complete. This is usually transient — try another photo or run it
-              again.
-            </p>
-            <div className="mt-6">
-              <Link href="/rooms/new">
-                <Button variant="cta" size="lg">
-                  Try another render
-                </Button>
-              </Link>
+          <>
+            <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">
+              <p className="font-display text-h3 text-ink">Something went sideways.</p>
+              <p className="mx-auto mt-3 max-w-md text-[15px] text-ink-soft">
+                The render couldn't complete. This is usually transient — try another photo or run it
+                again.
+              </p>
+              <div className="mt-6">
+                <Link href="/rooms/new">
+                  <Button variant="cta" size="lg">
+                    Try another render
+                  </Button>
+                </Link>
+              </div>
             </div>
-          </div>
+            <section className="mt-10">
+              <DesignerRead
+                advice={render.designer_read}
+                renderId={render.id}
+                paletteName={profile?.source_ref?.replace(/-/g, ' ') ?? null}
+                roomLabel={room?.room_type?.replace(/_/g, ' ') ?? null}
+              />
+            </section>
+          </>
         ) : (
-          <RenderPoll
-            renderId={render.id}
-            initialStatus={render.status}
-            createdAt={render.created_at}
-          />
+          <>
+            <RenderPoll
+              renderId={render.id}
+              initialStatus={render.status}
+              createdAt={render.created_at}
+            />
+            {/* During the wait the designer read lives directly below
+                the poll spinner — engagement during the 25-60s Flux
+                pass, personalised by palette + room. */}
+            <section className="mt-10">
+              <DesignerRead
+                advice={render.designer_read}
+                renderId={render.id}
+                paletteName={profile?.source_ref?.replace(/-/g, ' ') ?? null}
+                roomLabel={room?.room_type?.replace(/_/g, ' ') ?? null}
+              />
+            </section>
+          </>
         )}
-
-        {/* Designer read sits IMMEDIATELY under the image area — both
-            during the wait (placeholder gives the user something to
-            engage with for the 25-60s Flux pass) and after completion
-            (full critique). The supporting profile/palette/materials
-            row sits BELOW the designer read, since by then the designer
-            voice has framed what the palette means for this room.
-            paletteName + roomLabel are passed so the wait placeholder
-            personalises ("reading your west-facing bedroom for warm
-            grounded earth") instead of saying generic copy. */}
-        <section className="mt-10">
-          <DesignerRead
-            advice={render.designer_read}
-            renderId={render.id}
-            paletteName={profile?.source_ref?.replace(/-/g, ' ') ?? null}
-            roomLabel={room?.room_type?.replace(/_/g, ' ') ?? null}
-          />
-        </section>
 
         {profile ? (
           <section className="mt-12 grid gap-8 md:grid-cols-3">

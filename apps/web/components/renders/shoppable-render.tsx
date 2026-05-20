@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { BeforeAfterSlider } from '@/components/renders/before-after-slider';
@@ -13,6 +13,11 @@ interface ShoppableRenderProps {
   totalEstimateAud: number | null;
   renderId: string;
   projectId?: string | null;
+  /** Optional slot rendered between the image and the picking list.
+   *  Used by the render page to drop the designer read in directly
+   *  under the render so the voice frames the look before the user
+   *  starts shopping. */
+  between?: ReactNode;
 }
 
 type View = 'shop' | 'compare';
@@ -30,6 +35,7 @@ export function ShoppableRender({
   totalEstimateAud,
   renderId,
   projectId,
+  between,
 }: ShoppableRenderProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [view, setView] = useState<View>('shop');
@@ -117,6 +123,10 @@ export function ShoppableRender({
           Some links earn us a commission at no extra cost to you.
         </p>
       </div>
+
+      {/* `between` slot — host page drops the designer read here so the
+          voice frames the look before the shopping decisions begin. */}
+      {between ?? null}
 
       <PickingListPanel
         items={items}
