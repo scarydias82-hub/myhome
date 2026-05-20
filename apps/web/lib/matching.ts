@@ -29,6 +29,10 @@ export interface PickingMatch {
   productUrl: string;
   affiliateUrl: string | null;
   similarity: number; // 0..1 normalised from Claude's rank position
+  /** Paint products (Dulux) carry the swatch hex directly. The UI
+   *  renders a coloured tile when this is present, sidestepping the
+   *  fact that many paint rows have no usable product photo. */
+  hex?: string | null;
 }
 
 // bbox values are percentages in [0, 1] so the result page can position
@@ -304,6 +308,9 @@ async function buildWallPaintItem({
       imageUrl: r.paint.image_url ?? '',
       productUrl: r.paint.product_url,
       affiliateUrl: r.paint.affiliate_url,
+      // Pass the swatch hex through so the UI can render a coloured
+      // tile instead of trying to load a (often-missing) product photo.
+      hex: r.paint.dimensions?.hex ?? null,
       // Convert distance into a 0..1 similarity score. Top match = 1.0;
       // we cap the falloff at 0.5 so even the 5th option still reads as
       // "decent match" rather than "no match" in the UI.

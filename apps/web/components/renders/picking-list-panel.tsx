@@ -19,6 +19,9 @@ export interface PickingMatch {
   productUrl: string;
   affiliateUrl: string | null;
   similarity: number;
+  // Paint products carry the swatch hex — we render a coloured tile
+  // instead of an <Image> when this is set.
+  hex?: string | null;
 }
 
 export interface PickingListItem {
@@ -310,14 +313,32 @@ function MatchCard({
     >
       <div className="flex gap-3">
         <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded bg-ink/[0.04]">
-          <Image
-            src={match.imageUrl}
-            alt={match.name}
-            fill
-            sizes="80px"
-            className="object-cover transition group-hover:scale-105"
-            unoptimized
-          />
+          {match.hex ? (
+            // Paint swatch — Dulux rows often have no usable product
+            // photo, but the swatch hex IS the product. Render a solid
+            // tile with a faint ring so it reads as a sample chip, not
+            // a missing-image placeholder.
+            <div
+              className="absolute inset-0 rounded ring-1 ring-inset ring-ink/10"
+              style={{ backgroundColor: match.hex }}
+              aria-label={`${match.name} colour swatch`}
+            />
+          ) : match.imageUrl ? (
+            <Image
+              src={match.imageUrl}
+              alt={match.name}
+              fill
+              sizes="80px"
+              className="object-cover transition group-hover:scale-105"
+              unoptimized
+            />
+          ) : (
+            // No image and no hex — keep the slot legible rather than
+            // showing a broken-image icon.
+            <div className="absolute inset-0 flex items-center justify-center text-meta uppercase tracking-eyebrow text-ink-faint">
+              No image
+            </div>
+          )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-between">
           <div>
