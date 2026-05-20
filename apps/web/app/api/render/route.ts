@@ -94,16 +94,56 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as Body;
-  if (!body.roomId || !body.style) {
-    return NextResponse.json({ error: 'Missing roomId or style.' }, { status: 400 });
+  if (!body.roomId) {
+    return NextResponse.json({ error: 'Missing roomId.' }, { status: 400 });
   }
-  const style = getStyle(body.style);
-  if (!style) {
-    return NextResponse.json({ error: `Unknown style: ${body.style}` }, { status: 400 });
-  }
-  const palette = body.paletteId ? getPalette(body.paletteId) ?? null : null;
 
   const admin = createAdminClient() as unknown as SupabaseClient;
+
+  // Brief-driven defaults (#93): when the render is scoped to a project
+  // and that project has a synthesised brief, use brief.recommendation
+  // as the palette + style fallback if the body didn't pass them. This
+  // closes the loop — the designer's recommendation actually drives the
+  // render the user gets, without them having to re-pick the same
+  // palette in /rooms/new.
+  let briefStyleSlug: string | null = null;
+  let briefPaletteId: string | null = null;
+  if (body.projectId) {
+    const briefProjectRes = await admin
+      .from('projects')
+      .select('user_id, brief')
+      .eq('id', body.projectId)
+      .single();
+    const briefProject = briefProjectRes.data as
+      | {
+          user_id: string;
+          brief: {
+            response?: { recommendation?: { palette_id?: string; style_slug?: string } };
+          } | null;
+        }
+      | null;
+    if (briefProject && briefProject.user_id === user.id) {
+      const rec = briefProject.brief?.response?.recommendation;
+      if (rec) {
+        briefStyleSlug = rec.style_slug ?? null;
+        briefPaletteId = rec.palette_id ?? null;
+      }
+    }
+  }
+
+  const styleSlug = body.style ?? briefStyleSlug;
+  if (!styleSlug) {
+    return NextResponse.json(
+      { error: 'Pick a style — or set a project brief and the designer will choose for you.' },
+      { status: 400 },
+    );
+  }
+  const style = getStyle(styleSlug);
+  if (!style) {
+    return NextResponse.json({ error: `Unknown style: ${styleSlug}` }, { status: 400 });
+  }
+  const paletteIdToUse = body.paletteId ?? briefPaletteId;
+  const palette = paletteIdToUse ? getPalette(paletteIdToUse) ?? null : null;
 
   const roomRes = await admin
     .from('rooms')

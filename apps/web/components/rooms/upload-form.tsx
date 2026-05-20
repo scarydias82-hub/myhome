@@ -96,6 +96,31 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   // show the user what each palette looks like in a room LIKE theirs.
   const [trendPreviews, setTrendPreviews] = useState<Map<string, TrendPreview>>(new Map());
 
+  // Brief-driven defaults (#93): when this render is scoped to a project
+  // that has a synthesised brief, pre-fill the style + palette state
+  // from brief.recommendation so the designer's recommendation drives
+  // the picker. User can still override either; we just remove the
+  // friction of re-picking what they already agreed to.
+  const [briefPreFilled, setBriefPreFilled] = useState(false);
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    fetch(`/api/projects/${projectId}/brief`)
+      .then((r) => r.json())
+      .then((j: { response?: { recommendation?: { palette_id?: string; style_slug?: string } } | null }) => {
+        if (cancelled) return;
+        const rec = j.response?.recommendation;
+        if (!rec) return;
+        if (rec.style_slug) setStyle(rec.style_slug as StyleSlug);
+        if (rec.palette_id) setPaletteId(rec.palette_id);
+        setBriefPreFilled(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   useEffect(() => {
     if (!analysisConfirmed) return;
     let cancelled = false;
@@ -382,13 +407,25 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       ) : null}
 
       {analysisConfirmed ? (
-        <Step3Style
-          style={style}
-          onStyleChange={setStyle}
-          paletteId={paletteId}
-          onPaletteChange={setPaletteId}
-          trendPreviews={trendPreviews}
-        />
+        <>
+          {briefPreFilled ? (
+            <div className="rounded-lg border border-clay/30 bg-clay/5 px-4 py-3">
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
+                Pre-filled from your project brief
+              </p>
+              <p className="mt-1 text-[13px] text-ink-soft">
+                The designer's recommendation is selected below. Change anything you'd like.
+              </p>
+            </div>
+          ) : null}
+          <Step3Style
+            style={style}
+            onStyleChange={setStyle}
+            paletteId={paletteId}
+            onPaletteChange={setPaletteId}
+            trendPreviews={trendPreviews}
+          />
+        </>
       ) : null}
 
       {analysisConfirmed ? (
