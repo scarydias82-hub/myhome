@@ -387,6 +387,13 @@ function Step3Review({
   // Selection state for the three-carousel chooser. Initialised from
   // Claude's recommendation when the response arrives.
   const [selection, setSelection] = useState<CarouselSelection | null>(null);
+  // #127 — avoid modal state. When the user clicks Generate with a
+  // pick that lives in response.avoid[], we surface the warning before
+  // navigating to /rooms/new.
+  const [avoidWarning, setAvoidWarning] = useState<
+    | { paletteId: string; styleSlug: string; matchedAvoid: { palette_id: string | null; style_slug: string | null; reason: string } }
+    | null
+  >(null);
 
   // #124 — single unified analyse trigger. Fires both analyseRoom and
   // synthesiseBrief on the server (with the room facts feeding into
@@ -500,28 +507,130 @@ function Step3Review({
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        {/* Generate render carries the user's chooser selection through
-            as URL params. /rooms/new pre-fills palette + style state
-            from these (P0-3 wiring already in place). #127 will gate
-            this button with the avoid-confirmation modal. */}
-        <Link
-          href={
-            response
-              ? `/rooms/new?projectId=${projectId}` +
-                `&paletteId=${(selection?.paletteId ?? response.recommendation.palette_id)}` +
-                `&style=${response.recommendation.style_slug}`
-              : `/rooms/new?projectId=${projectId}`
-          }
+        {/* Generate render carries the user's chooser selection
+            through as URL params. /rooms/new pre-fills palette +
+            style from these (P0-3 wiring already in place). The
+            button itself isn't a Link — we gate on the avoid list
+            (#127) and only navigate after confirmation. */}
+        <Button
+          variant="cta"
+          size="lg"
+          disabled={!ready || !response}
+          onClick={() => {
+            if (!response) return;
+            const chosenPaletteId = selection?.paletteId ?? response.recommendation.palette_id;
+            const chosenStyle = response.recommendation.style_slug;
+            const matched = response.avoid.find(
+              (a) => a.palette_id === chosenPaletteId || a.style_slug === chosenStyle,
+            );
+            if (matched) {
+              setAvoidWarning({
+                paletteId: chosenPaletteId,
+                styleSlug: chosenStyle,
+                matchedAvoid: matched,
+              });
+              return;
+            }
+            router.push(
+              `/rooms/new?projectId=${projectId}&paletteId=${chosenPaletteId}&style=${chosenStyle}`,
+            );
+          }}
         >
-          <Button variant="cta" size="lg" disabled={!ready || !response}>
-            ✦ Generate render
-          </Button>
-        </Link>
+          ✦ Generate render
+        </Button>
         <Button variant="ghost" size="md" onClick={onContinue}>
           See past renders →
         </Button>
       </div>
+
+      {avoidWarning ? (
+        <AvoidConfirmModal
+          warning={avoidWarning}
+          palettes={palettes}
+          styles={styles}
+          onCancel={() => setAvoidWarning(null)}
+          onConfirm={() => {
+            const w = avoidWarning;
+            setAvoidWarning(null);
+            router.push(
+              `/rooms/new?projectId=${projectId}&paletteId=${w.paletteId}&style=${w.styleSlug}`,
+            );
+          }}
+        />
+      ) : null}
     </StepShell>
+  );
+}
+
+// --- Avoid confirmation modal (#127) -------------------------------------
+
+function AvoidConfirmModal({
+  warning,
+  palettes,
+  styles,
+  onCancel,
+  onConfirm,
+}: {
+  warning: {
+    paletteId: string;
+    styleSlug: string;
+    matchedAvoid: {
+      palette_id: string | null;
+      style_slug: string | null;
+      reason: string;
+    };
+  };
+  palettes: BriefPaletteLookup[];
+  styles: BriefStyleLookup[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const palette = palettes.find((p) => p.id === warning.paletteId);
+  const style = styles.find((s) => s.slug === warning.styleSlug);
+  // Build the human label for what Claude flagged.
+  const flaggedLabel =
+    palettes.find((p) => p.id === warning.matchedAvoid.palette_id)?.name ??
+    styles.find((s) => s.slug === warning.matchedAvoid.style_slug)?.name ??
+    warning.matchedAvoid.palette_id ??
+    warning.matchedAvoid.style_slug ??
+    'this direction';
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="avoid-modal-title"
+    >
+      <div className="w-full max-w-lg rounded-2xl border border-ink/[0.06] bg-cream p-6 shadow-soft md:p-8">
+        <Eyebrow>Designer flagged this</Eyebrow>
+        <p
+          id="avoid-modal-title"
+          className="mt-3 font-display text-h3 text-ink"
+        >
+          {palette ? `You picked ${palette.name}.` : 'You picked something I flagged.'}
+        </p>
+        <p className="mt-4 max-w-md text-[14px] leading-relaxed text-ink">
+          I'd advised against {flaggedLabel} because {warning.matchedAvoid.reason}
+        </p>
+        {style ? (
+          <p className="mt-2 text-[13px] text-ink-soft">
+            Paired with the {style.name} style direction.
+          </p>
+        ) : null}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Button variant="cta" size="md" onClick={onConfirm}>
+            Continue with my pick
+          </Button>
+          <Button variant="ghost" size="md" onClick={onCancel}>
+            ← Go back and reconsider
+          </Button>
+        </div>
+        <p className="mt-4 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+          The render will still run — this is your call. The designer just
+          wants you to know.
+        </p>
+      </div>
+    </div>
   );
 }
 

@@ -54,6 +54,9 @@ interface AnalyseResponse {
   error?: string;
 }
 
+// Kept for the auto-feature path internal contract; the user-facing
+// Step 5 hero products picker was removed in #128. See #129 for the
+// "I'm Feeling Lucky" auto-curation that will replace it server-side.
 interface FeaturedProduct {
   id: string;
   name: string;
@@ -87,9 +90,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
 
   // Hero products are an optional Step 5 — user selects up to 3 specific
   // catalogue items to "feature" so the Flux prompt biases toward them.
-  const [heroProducts, setHeroProducts] = useState<FeaturedProduct[] | null>(null);
-  const [heroLoading, setHeroLoading] = useState(false);
-  const [featuredIds, setFeaturedIds] = useState<string[]>([]);
+  // Hero products picker dropped in #128. The server-side auto-feature
+  // path in /api/render still selects palette-matched products to bias
+  // the Flux prompt — it just no longer needs a user-curated list to
+  // start from. Kept featuredIds typing as an empty array constant so
+  // the existing render-submit payload doesn't change shape.
+  const featuredIds: string[] = [];
 
   // Trend-card previews per palette — loaded once the analysis confirms,
   // filtered by the room_type Claude identified so the palette swatches
@@ -121,22 +127,11 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     };
   }, [projectId]);
 
-  useEffect(() => {
-    if (!analysisConfirmed) return;
-    let cancelled = false;
-    setHeroLoading(true);
-    fetch(`/api/featured-products?style=${style}&paletteId=${paletteId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return;
-        setHeroProducts((j.products as FeaturedProduct[]) ?? []);
-      })
-      .catch(() => {})
-      .finally(() => !cancelled && setHeroLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [analysisConfirmed, style, paletteId]);
+  // #128 — featured-products fetch dropped. The server-side
+  // auto-feature path in /api/render runs the same query when the
+  // body's featuredProductIds is empty, so the prompt biasing still
+  // happens — just without a user-facing curation step that 90% of
+  // visitors skipped.
 
   useEffect(() => {
     if (!analysisConfirmed) return;
@@ -428,18 +423,11 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         </>
       ) : null}
 
-      {analysisConfirmed ? (
-        <Step5HeroProducts
-          products={heroProducts}
-          loading={heroLoading}
-          selectedIds={featuredIds}
-          onToggle={(id) =>
-            setFeaturedIds((prev) =>
-              prev.includes(id) ? prev.filter((i) => i !== id) : prev.length < 3 ? [...prev, id] : prev,
-            )
-          }
-        />
-      ) : null}
+      {/* Step 5 hero products picker removed in #128. The auto-feature
+          path in /api/render still selects palette-matched products to
+          bias the Flux prompt — no user-facing step needed. #129 will
+          replace this with Claude-driven product curation
+          ("I'm Feeling Lucky") at first Fal pass. */}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
