@@ -365,6 +365,32 @@ async function buildPickingItem({
   };
 }
 
+// Map a detected category → list of catalog categories that should
+// be considered candidates. Different scrapers use inconsistent
+// singular/plural and category sub-divisions (e.g. Carpet Court
+// stores "Curtains - Sheers" + "Curtains - Blockout", Poliform writes
+// "Sofa" not "Sofas", Adairs writes "Quilt Covers" not "Quilts").
+// Without this map an `.eq('category', 'Curtains')` query finds zero
+// rows despite 17 Carpet Court sheers being in the catalog — that's
+// the "no catalog matches for curtains" demand-signal line we saw in
+// every render eval. Map covers the cross-retailer mismatches we've
+// observed; falls through to [category] for anything not listed.
+const CATEGORY_FAMILIES: Record<string, string[]> = {
+  Curtains: ['Curtains', 'Curtains - Sheers', 'Curtains - Blockout'],
+  'Side Tables': ['Side Tables', 'Bedside Table', 'Bedside Tables', 'Occasional Tables'],
+  Sofas: ['Sofas', 'Sofa'],
+  Beds: ['Beds', 'Bed'],
+  Chairs: ['Chairs', 'Chair', 'Armchair'],
+  'Coffee Tables': ['Coffee Tables', 'Coffee Table'],
+  Tables: ['Tables', 'Table'],
+  Consoles: ['Consoles', 'Console Table'],
+  'Storage & Desks': ['Storage & Desks', 'Storage System', 'Wardrobe'],
+};
+
+function categoryCandidates(category: string): string[] {
+  return CATEGORY_FAMILIES[category] ?? [category];
+}
+
 async function fetchCandidates({
   admin,
   category,
@@ -375,10 +401,11 @@ async function fetchCandidates({
   // Pull a diverse slate of products in the target category. We sort by
   // price descending to bias toward more representative pieces — cheap
   // accessories can dominate categories like "Lighting" otherwise.
+  const cats = categoryCandidates(category);
   const { data, error } = await admin
     .from('products')
     .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url')
-    .eq('category', category)
+    .in('category', cats)
     .not('image_url', 'is', null)
     .order('price_aud', { ascending: false, nullsFirst: false })
     .limit(CANDIDATES_PER_ITEM);
