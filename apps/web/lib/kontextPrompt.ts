@@ -17,13 +17,16 @@
 
 import type { RoomAnalysis } from './vision';
 
-// Build the per-room preserve directives from the existing Claude
-// vision analysis. Round 14 used the looser version of these
-// directives and broke 5.0 average for the first time across 15
-// render iterations. Round 15 strengthens the NEGATIVE language for
-// the recurring failures (ceiling moulding, pendant lights, window
-// type swaps) and adds an active bedding-replacement directive.
-export function roomFactsToPreserveDirectives(
+type FurnItem = { item: string; condition: string };
+
+// ARCHITECTURE-ONLY preserve directives. Round 16 split the previous
+// "preserve everything" approach into two: this function emits only
+// the structural bones (floor material, window type, ceiling, door
+// locations) that MUST stay. Furniture is handled separately as
+// active TRANSFORM directives — the round 15 prompt was preserving
+// too much existing decor, which made the render feel like a tint
+// not a makeover (user feedback: "nothing really changed").
+export function roomFactsToArchitecturalPreserves(
   facts: RoomAnalysis | null | undefined,
 ): string[] {
   if (!facts) return [];
@@ -31,70 +34,102 @@ export function roomFactsToPreserveDirectives(
 
   if (facts.flooring) {
     out.push(
-      `Floor: MUST remain "${facts.flooring}". FORBIDDEN: timber, parquet, vinyl, polished concrete, tiles, floorboards, or any material change.`,
+      `Floor SURFACE TYPE stays as "${facts.flooring}" (a new rug ON TOP is fine and encouraged). FORBIDDEN: changing the floor itself to timber, parquet, vinyl, tiles.`,
     );
   }
 
-  // Window description lives in light.notes — e.g. "Large window with
-  // floor-to-ceiling curtains; light appears morning sun".
   if (facts.light?.notes) {
     out.push(
-      `Window: MUST keep the EXACT same window as image 1 — ${facts.light.notes}. FORBIDDEN: casement, sash, multi-pane, smaller window, radiator beneath window, framed mullions. The window MUST stay the same SIZE and FRAME STYLE.`,
+      `Window: keep the SAME window opening as image 1 — ${facts.light.notes}. FORBIDDEN: casement, sash, multi-pane, smaller window, radiator beneath, framed mullions. New curtains in palette tones are encouraged.`,
     );
   }
 
-  // Ceiling — extract from existing_colours so Kontext doesn't add
-  // ornamental period features. Round 14 still added crown moulding
-  // despite a directive, so this version is more emphatic.
   const ceiling = facts.existing_colours?.find((c) => c.surface === 'ceiling');
   if (ceiling) {
     out.push(
-      `Ceiling: ${ceiling.description}. The ceiling MUST stay plain and flat. ABSOLUTELY FORBIDDEN: crown moulding, cornice, architrave, ceiling rose, pendant light, ceiling pendant, ceiling fan, beams, coffers, recessed downlights — none of these exist in image 1 and they MUST NOT be added.`,
+      `Ceiling: ${ceiling.description}. Stays plain and flat. ABSOLUTELY FORBIDDEN: crown moulding, cornice, architrave, ceiling rose, pendant light, ceiling pendant, ceiling fan, beams, coffers, recessed downlights.`,
     );
   }
 
+  // Architectural features = built-in things (panelled walls, arches,
+  // skylights) that are part of the building, not decor. Keep these.
   if (facts.architectural_features?.length) {
     out.push(
-      `Preserve these architectural features exactly as shown in image 1: ${facts.architectural_features.join('; ')}.`,
+      `Preserve these built-in architectural features from image 1: ${facts.architectural_features.join('; ')}.`,
     );
   }
 
-  // Keep-list from furniture: items the designer wants preserved
-  // exactly. The render must show these in the same shape/position.
-  type FurnItem = { item: string; condition: string };
-  const keep = (facts as RoomAnalysis & { existing_furniture?: FurnItem[] }).existing_furniture
-    ?.filter((f) => f.condition === 'keep')
-    .map((f) => f.item) ?? [];
-  if (keep.length) {
-    out.push(`Must remain in the render with the same shape and position: ${keep.join('; ')}.`);
-  }
-
-  // Active replace-list: items the designer wants swapped. Round 14
-  // left the existing burnt-orange bedding untouched ("contradicting
-  // the designer's instruction to break the beige-on-beige sameness"
-  // per the evaluator). Make the replacement directive active not
-  // implicit.
-  const replace = (facts as RoomAnalysis & { existing_furniture?: FurnItem[] }).existing_furniture
-    ?.filter((f) => f.condition === 'replace')
-    .map((f) => f.item) ?? [];
-  if (replace.length) {
-    out.push(
-      `ACTIVELY REPLACE these items with new pieces in the palette tones: ${replace.join('; ')}. These should look meaningfully different — new textures, new fabrics, new shapes — not just colour-tinted versions of the originals.`,
-    );
-  }
-
-  // Generic anti-hallucination — Kontext loves to "complete" a scene
-  // by inventing rooms behind doorways.
+  // Anti-hallucination — Kontext invents rooms behind doors.
   out.push(
-    `Through any doorway or opening: show ONLY what is visible in image 1 (typically an unfurnished dark hallway, a wall, or a void). FORBIDDEN: furnished rooms, beds, art, vases, or any decorative scene through doors.`,
+    `Through any doorway or opening: show ONLY what is visible in image 1 (unfurnished hallway, wall, void). FORBIDDEN: furnished rooms, beds, art, vases behind doors.`,
   );
 
   return out;
 }
 
-// Build the full Kontext prompt. Round 15 structure: lead with the
-// concrete palette instruction (Kontext pays most attention to the
-// opening), then preserve directives, then designer-style guidance.
+// ACTIVE TRANSFORM directives — what should change. This is the
+// "makeover" half of the prompt. Round 16 makes these much more
+// aggressive than round 15: user feedback was "nothing really
+// changed" even with palette adherence scoring 7/10. The eval scorer
+// rewards palette presence; the user wants visual drama.
+export function roomFactsToTransformDirectives(
+  facts: RoomAnalysis | null | undefined,
+): string[] {
+  const out: string[] = [];
+
+  // Existing items the vision flagged as replace candidates.
+  if (facts) {
+    const replace =
+      (facts as RoomAnalysis & { existing_furniture?: FurnItem[] }).existing_furniture
+        ?.filter((f) => f.condition === 'replace')
+        .map((f) => f.item) ?? [];
+    if (replace.length) {
+      out.push(
+        `REPLACE these items with new pieces in the palette tones — different textures, fabrics, possibly different shapes (not just tinted versions): ${replace.join('; ')}.`,
+      );
+    }
+  }
+
+  // Bed base callout — the round 15 render kept it clinical white
+  // even though we said "actively replace". Naming the bed base
+  // explicitly + describing the target.
+  const isBedroom = (facts?.room_type ?? '').toLowerCase().includes('bedroom');
+  if (isBedroom) {
+    out.push(
+      `BED MAKEOVER: dress the bed completely in palette tones — replace the bed base (no clinical white box), add an upholstered or boucle-textured bedhead, layer the bedding with palette-toned linen quilt + 3-4 cushions of varying sizes and textures + a throw blanket at the foot.`,
+    );
+  }
+
+  // Standard layering additions for any room — these are the things
+  // that turn "a wall repaint" into "a makeover".
+  out.push(
+    `ADD layering elements: a textured area rug (jute, wool, or palette-toned cotton) under the main furniture; styled accessories on surfaces (ceramics, books, a small plant); a wall art piece or two; floor-length curtains if there are windows.`,
+  );
+
+  out.push(
+    `The output should feel like a designer styled the room from scratch — meaningful new fabric textures, new accent pieces, new layering. NOT just the same furniture with the wall colour tweaked.`,
+  );
+
+  return out;
+}
+
+// Back-compat wrapper for code paths that still call the old API.
+// The new builder uses the split architecture/transform functions
+// above directly.
+export function roomFactsToPreserveDirectives(
+  facts: RoomAnalysis | null | undefined,
+): string[] {
+  return roomFactsToArchitecturalPreserves(facts);
+}
+
+// Round 16 prompt — split into TRANSFORM-FORWARD + ARCHITECTURE-
+// LOCKED sections. User feedback after round 15 production render
+// was "nothing really changed in the visual — expected a room
+// makeover". The eval scorer rewarded palette presence (palette
+// adherence 7/10) but the user perceived the render as too timid.
+// Round 16 reframes the prompt so "boldly transform decor" comes
+// FIRST and dominates, while architecture preservation is reduced
+// to just the bones (floor type, window opening, ceiling shape).
 export function buildKontextPrompt({
   basePrompt,
   paletteName,
@@ -104,28 +139,38 @@ export function buildKontextPrompt({
   paletteName: string;
   roomFacts?: RoomAnalysis | null;
 }): string {
-  const preserves = roomFactsToPreserveDirectives(roomFacts);
+  const preserves = roomFactsToArchitecturalPreserves(roomFacts);
+  const transforms = roomFactsToTransformDirectives(roomFacts);
+
   const sections: string[] = [
-    `Restyle the room shown in image 1 using the ${paletteName} palette shown as colour stripes in image 2.`,
-    `Image 1 is the source room. Image 2 is the palette swatch reference.`,
+    // Lead with the makeover framing + the swatch-visibility fix.
+    `BOLD ROOM RESTYLE: transform the room shown in image 1 using the ${paletteName} palette from image 2.`,
+    `Image 1 is the SOURCE ROOM to restyle. Image 2 is a COLOUR REFERENCE swatch — use its stripe colours to inform the palette, but DO NOT include the colour stripes as a visible element in the output. The output must show only the restyled room, no swatch, no bands, no colour reference panels.`,
     ``,
-    `Apply the palette from image 2:`,
-    `- Walls take the top stripe colour (the largest band)`,
-    `- Soft furnishings — bedding, cushions, throws, curtains — take the lighter stripe tones`,
-    `- Larger furniture and accents take the deeper stripe tones`,
+    `PALETTE APPLICATION:`,
+    `- Walls take the lighter stripe colours from image 2 as the dominant wall paint`,
+    `- Soft furnishings (bedding, cushions, curtains, throws) use a mix of light + mid stripe tones`,
+    `- Larger furniture upholstery + statement pieces use the deeper stripe tones`,
+    `- The render should feel like a meaningful makeover, not a wall repaint`,
     ``,
   ];
 
+  if (transforms.length > 0) {
+    sections.push(`ACTIVELY TRANSFORM (this is the makeover — be decisive):`);
+    for (const t of transforms) sections.push(`- ${t}`);
+    sections.push('');
+  }
+
   if (preserves.length > 0) {
-    sections.push(`STRUCTURAL PRESERVATION (facts about image 1 that MUST be honoured):`);
+    sections.push(`ARCHITECTURE LOCK (only the bones — change everything else):`);
     for (const p of preserves) sections.push(`- ${p}`);
     sections.push('');
   }
 
   sections.push(
-    `The render MUST look like the SAME ROOM with new colours and new soft furnishings. Do NOT reinterpret it as a different architectural style (cottage, period, industrial, mid-century etc.). Do NOT change the camera angle, viewpoint, or room footprint.`,
+    `The render MUST look like the SAME ROOM (same walls, windows, ceiling, camera angle) but with VISIBLY different decor — new fabrics, new colours, new accessories, new layering. Do NOT reinterpret it as a different architectural style. Do NOT just tint the existing furniture — replace and layer.`,
     ``,
-    `Additional designer guidance: ${basePrompt.slice(0, 600)}`,
+    `Designer guidance: ${basePrompt.slice(0, 500)}`,
   );
 
   return sections.join('\n');
