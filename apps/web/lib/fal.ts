@@ -153,13 +153,16 @@ function renderInput(input: DepthRenderInput) {
           path: IP_ADAPTER_PATH,
           weight_name: IP_ADAPTER_WEIGHT_NAME,
           image_encoder_path: IP_ADAPTER_ENCODER,
-          // Round 6 used 0.4 → no visible effect (likely the adapter
-          // didn't load at all). Round 7 bumps to 0.7 — if InstantX
-          // loads properly we should see a clear pull toward palette
-          // colours. If even 0.7 has no effect, the input shape itself
-          // is being silently rejected by fal and we need a different
-          // diagnostic path (fal logs or a test call).
-          scale: 0.7,
+          // Round 11 bumps 0.7 → 0.9. Rounds 8-10 showed IP-Adapter
+          // lands palette on soft furnishings (bedding, pillows,
+          // curtains) but not walls — canny preservation of wall
+          // edges dominates the colour fill. Higher IP-Adapter scale
+          // gives the palette conditioning more authority across
+          // every pixel, including geometrically-constrained ones
+          // like walls. Risk: too much pressure can flatten the
+          // render toward the swatch's stripe geometry, but at 0.9
+          // we're still well under the "obvious overlay" threshold.
+          scale: 0.9,
         },
       ]
     : undefined;
