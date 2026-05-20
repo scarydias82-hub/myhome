@@ -27,6 +27,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { checkActiveStatus, fetchActiveResult } from '@/lib/fal';
 import { buildPickingList } from '@/lib/matching';
+import { findPaletteByHexes } from '@/lib/palettes';
 
 export const runtime = 'nodejs';
 // Full finalise (upload + picking list) fits inside 60s for typical
@@ -43,6 +44,7 @@ interface RenderRow {
   fal_request_id: string | null;
   completed_at: string | null;
   style_profile_id: string | null;
+  room_id: string | null;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -57,7 +59,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const renderRes = await admin
     .from('renders')
     .select(
-      'id, user_id, status, output_url, picking_list, cost_estimate_aud, fal_request_id, completed_at, style_profile_id',
+      'id, user_id, status, output_url, picking_list, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id',
     )
     .eq('id', id)
     .single();
@@ -139,7 +141,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     // surface a Dulux wall-paint match at the front of the picking
     // list. Optional — if the profile is missing or has no palette
     // we just skip the wall-paint item.
+    //
+    // We ALSO reverse-lookup the palette id from the hex array so the
+    // candidate fetcher can pre-filter by palette_tags + room_tags
+    // (Round 17 pre-selection). Falls back gracefully when either
+    // signal is missing — the matcher then queries category-only as
+    // it did before.
     let paletteHexes: string[] | undefined;
+    let paletteId: string | undefined;
     if (render.style_profile_id) {
       const profileRes = await admin
         .from('style_profiles')
@@ -148,6 +157,30 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         .single();
       const profile = profileRes.data as { palette: string[] | null } | null;
       paletteHexes = profile?.palette ?? undefined;
+      const palette = findPaletteByHexes(paletteHexes);
+      paletteId = palette?.id;
+    }
+
+    // Room type lives in rooms.analysis. Used to filter the picking
+    // list candidate pool to room-appropriate products (Beds in
+    // bedrooms, Dining Tables in dining rooms, etc.). The room slug
+    // shape matches palette.recommended_rooms (snake_case).
+    let roomType: string | undefined;
+    if (render.room_id) {
+      const roomRes = await admin
+        .from('rooms')
+        .select('analysis, room_type')
+        .eq('id', render.room_id)
+        .single();
+      const room = roomRes.data as {
+        analysis: { room_type?: string | null } | null;
+        room_type: string | null;
+      } | null;
+      const rawRoomType = room?.analysis?.room_type ?? room?.room_type ?? undefined;
+      if (rawRoomType) roomType = rawRoomType.toLowerCase().replace(/\s+/g, '_');
+    }
+    if (paletteId || roomType) {
+      console.log(`[status] picking-list filter context: palette=${paletteId} room=${roomType}`);
     }
 
     // Step 3: best-effort picking-list build. We have ~50s of remaining
@@ -161,6 +194,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         admin,
         renderImageUrl: result.imageUrl,
         paletteHexes,
+        paletteId,
+        roomType,
       });
       await admin
         .from('renders')

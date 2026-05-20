@@ -23,6 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { USER_AGENT } from './userAgent.js';
+import { deriveTags } from './productTags.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PALETTES_PATH = path.resolve(__dirname, '../../web/lib/palettes.json');
@@ -168,10 +169,21 @@ export function tagWithPalettes(hex) {
 // from the Dulux scraper) so we don't waste a fetch + decode on a
 // swatch image when we already have the retailer-published hex.
 //
-// Returns { hex, tags } — hex is the colour we decided on (existing
-// or freshly extracted), tags is the list of palette IDs it matches.
-export async function classifyProduct({ imageUrl, existingHex }) {
+// Returns { hex, tags, styleTags, roomTags, moodTags }:
+//   hex        — the colour we decided on (existing or freshly extracted)
+//   tags       — palette IDs the hex matches (drop the row if empty)
+//   styleTags  — derived from the matched palettes' style_tags
+//   roomTags   — derived from the matched palettes' recommended_rooms
+//                 PLUS any category-implied rooms (Beds → bedroom etc.)
+//   moodTags   — derived from the matched palettes' vibe descriptors
+//
+// All four tag arrays are persisted on the products row. The picking-list
+// builder then filters the candidate pool by palette ∩ style ∩ room
+// before the Claude vision ranker runs.
+export async function classifyProduct({ imageUrl, existingHex, category }) {
   const hex = existingHex || (await extractDominantHex(imageUrl));
-  if (!hex) return { hex: null, tags: [] };
-  return { hex, tags: tagWithPalettes(hex) };
+  if (!hex) return { hex: null, tags: [], styleTags: [], roomTags: [], moodTags: [] };
+  const tags = tagWithPalettes(hex);
+  const { style_tags, room_tags, mood_tags } = deriveTags({ paletteTags: tags, category });
+  return { hex, tags, styleTags: style_tags, roomTags: room_tags, moodTags: mood_tags };
 }

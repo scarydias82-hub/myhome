@@ -57,3 +57,26 @@ export function paletteSwatch(p: Palette): string[] {
   const order: RoomRole[] = ['wall', 'sofa', 'floor', 'accent', 'trim'];
   return order.map((r) => p.room_roles[r].hex);
 }
+
+// Reverse-lookup a palette id from a hex array — used by the picking-list
+// builder to recover the palette id from style_profiles.palette (which
+// only stores hex codes). Match is exact-set-equality on lower-cased
+// hexes so we don't accidentally collide on palettes that share a single
+// colour (most palettes share the same espresso/black trim hex).
+export function findPaletteByHexes(hexes: string[] | null | undefined): Palette | null {
+  if (!hexes || hexes.length === 0) return null;
+  const want = new Set(hexes.map((h) => h.toLowerCase()));
+  for (const p of PALETTES) {
+    const have = new Set(p.colors.map((c) => c.hex.toLowerCase()));
+    if (have.size !== want.size) continue;
+    let allMatch = true;
+    for (const h of want) {
+      if (!have.has(h)) {
+        allMatch = false;
+        break;
+      }
+    }
+    if (allMatch) return p;
+  }
+  return null;
+}

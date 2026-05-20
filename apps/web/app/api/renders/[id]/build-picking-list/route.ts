@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildPickingList } from '@/lib/matching';
+import { findPaletteByHexes } from '@/lib/palettes';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -28,6 +29,7 @@ interface RenderRow {
   output_url: string | null;
   picking_list: unknown[] | null;
   style_profile_id: string | null;
+  room_id: string | null;
 }
 
 interface Body {
@@ -55,7 +57,7 @@ export async function POST(
 
   const renderRes = await admin
     .from('renders')
-    .select('id, user_id, output_url, picking_list, style_profile_id')
+    .select('id, user_id, output_url, picking_list, style_profile_id, room_id')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -79,8 +81,12 @@ export async function POST(
     return NextResponse.json({ status: 'already_built' });
   }
 
-  // Pull palette from the style profile so wall-paint matching can fire.
+  // Pull palette from the style profile so wall-paint matching can fire,
+  // and reverse-lookup the palette id so the candidate fetcher can apply
+  // the palette/room pre-filter (Round 17). Falls back to category-only
+  // when either signal is unresolved.
   let paletteHexes: string[] | undefined;
+  let paletteId: string | undefined;
   if (render.style_profile_id) {
     const profileRes = await admin
       .from('style_profiles')
@@ -89,6 +95,24 @@ export async function POST(
       .single();
     const profile = profileRes.data as { palette: string[] | null } | null;
     paletteHexes = profile?.palette ?? undefined;
+    paletteId = findPaletteByHexes(paletteHexes)?.id;
+  }
+
+  // Pull room_type for the room filter — same slug shape as
+  // palette.recommended_rooms (snake_case).
+  let roomType: string | undefined;
+  if (render.room_id) {
+    const roomRes = await admin
+      .from('rooms')
+      .select('analysis, room_type')
+      .eq('id', render.room_id)
+      .single();
+    const room = roomRes.data as {
+      analysis: { room_type?: string | null } | null;
+      room_type: string | null;
+    } | null;
+    const rawRoomType = room?.analysis?.room_type ?? room?.room_type ?? undefined;
+    if (rawRoomType) roomType = rawRoomType.toLowerCase().replace(/\s+/g, '_');
   }
 
   // Sign a fresh URL for the render image so matching can pull it.
@@ -104,6 +128,8 @@ export async function POST(
       admin,
       renderImageUrl: signed.data.signedUrl,
       paletteHexes,
+      paletteId,
+      roomType,
     });
     await admin
       .from('renders')

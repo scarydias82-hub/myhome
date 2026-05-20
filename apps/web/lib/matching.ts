@@ -90,6 +90,8 @@ export async function buildPickingList({
   admin,
   renderImageUrl,
   paletteHexes,
+  paletteId,
+  roomType,
 }: {
   admin: SupabaseClient;
   renderImageUrl: string;
@@ -98,6 +100,15 @@ export async function buildPickingList({
    *  detectable as discrete objects by Florence-2, so we inject them
    *  here based on the palette the user chose. */
   paletteHexes?: string[];
+  /** Palette id (e.g. "warm-grounded-earth"). When set, the candidate
+   *  pool is filtered to products whose `palette_tags @> [paletteId]`.
+   *  Combined with `roomType`, this narrows the 8-candidate Claude
+   *  ranker slot to style-compatible, room-appropriate options. */
+  paletteId?: string;
+  /** Room slug (e.g. "bedroom", "living_room"). When set, the candidate
+   *  pool is restricted to products tagged for this room (or with the
+   *  "any" sentinel for room-agnostic items like paint). */
+  roomType?: string;
 }): Promise<MatchResult> {
   const imgBuf = Buffer.from(await (await fetch(renderImageUrl)).arrayBuffer());
   const metadata = await sharp(imgBuf).metadata();
@@ -126,7 +137,9 @@ export async function buildPickingList({
   );
 
   const settled = await Promise.allSettled(
-    boxes.map((box) => buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box })),
+    boxes.map((box) =>
+      buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box, paletteId, roomType }),
+    ),
   );
 
   const items: PickingListItem[] = [];
@@ -319,12 +332,16 @@ async function buildPickingItem({
   imageWidth,
   imageHeight,
   box,
+  paletteId,
+  roomType,
 }: {
   admin: SupabaseClient;
   imgBuf: Buffer;
   imageWidth: number;
   imageHeight: number;
   box: Bbox;
+  paletteId?: string;
+  roomType?: string;
 }): Promise<PickingListItem | null> {
   const category = categoryForLabel(box.label);
   const cropBuf = await sharp(imgBuf)
@@ -337,7 +354,7 @@ async function buildPickingItem({
     .jpeg({ quality: 85 })
     .toBuffer();
 
-  const candidates = await fetchCandidates({ admin, category });
+  const candidates = await fetchCandidates({ admin, category, paletteId, roomType });
   const matches = await rankWithClaude(cropBuf, candidates);
 
   // Items where the catalogue has no SKUs in the detected category are
@@ -394,17 +411,58 @@ function categoryCandidates(category: string): string[] {
 async function fetchCandidates({
   admin,
   category,
+  paletteId,
+  roomType,
 }: {
   admin: SupabaseClient;
   category: string;
+  paletteId?: string;
+  roomType?: string;
 }): Promise<ProductRow[]> {
   // Pull a diverse slate of products in the target category. We sort by
   // price descending to bias toward more representative pieces — cheap
   // accessories can dominate categories like "Lighting" otherwise.
+  //
+  // Layered filters when palette + room context is available:
+  //   - palette_tags @> [paletteId]            → only style-compatible
+  //   - room_tags && [roomType, 'any']         → only room-appropriate
+  // Plus a graceful fallback: if the layered query returns nothing we
+  // re-run with just the category filter so the user always sees
+  // candidates. The pre-filter is a "narrow when possible, never
+  // starve" guarantee — losing a strict filter is better than an empty
+  // picking-list item.
   const cats = categoryCandidates(category);
+  const selectCols =
+    'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url';
+
+  if (paletteId && roomType) {
+    let q = admin
+      .from('products')
+      .select(selectCols)
+      .in('category', cats)
+      .not('image_url', 'is', null)
+      .contains('palette_tags', [paletteId])
+      .overlaps('room_tags', [roomType, 'any'])
+      .order('price_aud', { ascending: false, nullsFirst: false })
+      .limit(CANDIDATES_PER_ITEM);
+    const filtered = await q;
+    if (filtered.error) {
+      console.error('candidate fetch (filtered) failed', filtered.error);
+    } else if (filtered.data && filtered.data.length > 0) {
+      console.log(
+        `[matching] candidates(${category}, palette=${paletteId}, room=${roomType}): ${filtered.data.length}`,
+      );
+      return filtered.data as ProductRow[];
+    } else {
+      console.log(
+        `[matching] candidates(${category}, palette=${paletteId}, room=${roomType}): 0 — falling back to category-only`,
+      );
+    }
+  }
+
   const { data, error } = await admin
     .from('products')
-    .select('id, name, retailer, category, price_aud, image_url, product_url, affiliate_url')
+    .select(selectCols)
     .in('category', cats)
     .not('image_url', 'is', null)
     .order('price_aud', { ascending: false, nullsFirst: false })

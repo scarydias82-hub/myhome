@@ -119,9 +119,10 @@ for await (const { retailer, products } of walkRetailerDirs()) {
     const existingHex = row.dimensions && typeof row.dimensions === 'object'
       ? row.dimensions.hex ?? null
       : null;
-    const { hex, tags } = await classifyProduct({
+    const { hex, tags, styleTags, roomTags, moodTags } = await classifyProduct({
       imageUrl: row.image_url,
       existingHex,
+      category: row.category,
     });
     if (tags.length === 0) {
       skippedPalette++;
@@ -129,6 +130,9 @@ for await (const { retailer, products } of walkRetailerDirs()) {
     }
     row.dimensions = { ...(row.dimensions ?? {}), hex };
     row.palette_tags = tags;
+    row.style_tags = styleTags;
+    row.room_tags = roomTags;
+    row.mood_tags = moodTags;
     const { error } = await supabase
       .from('products')
       .upsert(row, { onConflict: 'retailer,sku' });
