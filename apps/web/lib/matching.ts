@@ -33,6 +33,16 @@ export interface PickingMatch {
    *  renders a coloured tile when this is present, sidestepping the
    *  fact that many paint rows have no usable product photo. */
   hex?: string | null;
+  /** Physical dimensions in centimetres, parsed from the product page
+   *  at scrape time (apps/scraper/utils/parseDimensions.js). Surfaced
+   *  on the match card so the user can read W × D × H without clicking
+   *  through to the retailer. Any axis may be null if the scraper
+   *  couldn't extract it. */
+  dimensions?: {
+    width_cm?: number | null;
+    depth_cm?: number | null;
+    height_cm?: number | null;
+  } | null;
 }
 
 // bbox values are percentages in [0, 1] so the result page can position
@@ -78,6 +88,13 @@ interface ProductRow {
   image_url: string;
   product_url: string;
   affiliate_url: string | null;
+  dimensions:
+    | {
+        width_cm?: number | null;
+        depth_cm?: number | null;
+        height_cm?: number | null;
+      }
+    | null;
 }
 
 let anthropic: Anthropic | null = null;
@@ -500,7 +517,7 @@ async function fetchCandidates({
   // picking-list item.
   const cats = categoryCandidates(category);
   const selectCols =
-    'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url';
+    'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
 
   if (paletteId && roomType) {
     let q = admin
@@ -605,6 +622,9 @@ async function rankWithClaude(
       imageUrl: p.image_url,
       productUrl: p.product_url,
       affiliateUrl: p.affiliate_url,
+      // Pass W × D × H through to the picking list so the user can
+      // verify fit without clicking through to the retailer (P1-6).
+      dimensions: p.dimensions ?? null,
       // Normalise rank into a 0..1 similarity score (top = 1.0, bottom ~ 0.5).
       similarity: Math.max(0, 1 - position * 0.1),
     };

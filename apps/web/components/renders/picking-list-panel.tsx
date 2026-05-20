@@ -22,6 +22,14 @@ export interface PickingMatch {
   // Paint products carry the swatch hex — we render a coloured tile
   // instead of an <Image> when this is set.
   hex?: string | null;
+  // Physical W × D × H. Any axis may be null if the scraper couldn't
+  // extract it. Surfaced on the match card so the user can verify fit
+  // without clicking through to the retailer.
+  dimensions?: {
+    width_cm?: number | null;
+    depth_cm?: number | null;
+    height_cm?: number | null;
+  } | null;
 }
 
 export interface PickingListItem {
@@ -57,6 +65,20 @@ const aud = new Intl.NumberFormat('en-AU', {
   currency: 'AUD',
   maximumFractionDigits: 0,
 });
+
+// Format whatever subset of W × D × H we have. Returns null if no axis
+// is set so the caller can skip rendering the line entirely.
+function formatDimensions(
+  d: PickingMatch['dimensions'] | null | undefined,
+): string | null {
+  if (!d) return null;
+  const w = d.width_cm != null ? `W ${Math.round(d.width_cm)}` : null;
+  const dp = d.depth_cm != null ? `D ${Math.round(d.depth_cm)}` : null;
+  const h = d.height_cm != null ? `H ${Math.round(d.height_cm)}` : null;
+  const parts = [w, dp, h].filter((p): p is string => p !== null);
+  if (parts.length === 0) return null;
+  return `${parts.join(' × ')} cm`;
+}
 
 export function PickingListPanel({
   items,
@@ -354,6 +376,11 @@ function MatchCard({
             <p className="mt-0.5 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
               {match.retailer}
             </p>
+            {formatDimensions(match.dimensions) ? (
+              <p className="mt-0.5 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                {formatDimensions(match.dimensions)}
+              </p>
+            ) : null}
           </div>
           <p className="mt-1 font-display text-h4 text-ink">
             {match.priceAud != null ? aud.format(match.priceAud) : 'POA'}
