@@ -12,6 +12,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { ProjectPhases } from '@/components/projects/project-phases';
 import { CompleteProjectButton } from '@/components/projects/complete-project-button';
 import { ShortlistRow } from '@/components/projects/shortlist-row';
+import { BriefPicker, type BriefPaletteLookup, type BriefStyleLookup } from '@/components/projects/brief-picker';
+import { listPalettes, paletteSwatch } from '@/lib/palettes';
+import { STYLES } from '@/lib/styles';
+import type { BriefSynthesis } from '@/lib/brief/synthesiser';
 import type { PickingListItem, PickingMatch } from '@/components/renders/picking-list-panel';
 
 export const dynamic = 'force-dynamic';
@@ -179,7 +183,31 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  const briefDone = Boolean(project.brief);
+  // Brief is shaped as { tags: string[], response: BriefSynthesis | null,
+  // updated_at: string } in the projects.brief JSONB column. Defensive
+  // shape-check tolerates the old briefs that pre-date the tag flow.
+  const briefData = (project.brief as
+    | { tags?: string[]; response?: BriefSynthesis | null; updated_at?: string }
+    | null) ?? null;
+  const initialBriefTags = Array.isArray(briefData?.tags) ? briefData!.tags! : [];
+  const initialBriefResponse = briefData?.response ?? null;
+  const briefDone = initialBriefResponse !== null;
+
+  // Palette + style lookup tables for the brief response card —
+  // server-rendered so we don't have to ship the full palettes.json to
+  // the client just to display two names.
+  const briefPalettes: BriefPaletteLookup[] = listPalettes().map((p) => ({
+    id: p.id,
+    name: p.name,
+    vibe: p.vibe,
+    swatch: paletteSwatch(p),
+  }));
+  const briefStyles: BriefStyleLookup[] = STYLES.map((s) => ({
+    slug: s.slug,
+    name: s.name,
+    tagline: s.tagline,
+  }));
+
   const siteDone = rooms.length > 0 && rooms.some((r) => r.analysis);
   const inspirationDone = Boolean(project.pinterest_style_profile_id);
   const proposalDone = renders.some((r) => r.status === 'succeeded');
@@ -252,6 +280,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             designDone={false}
             proposalDone={proposalDone}
           />
+        ) : null}
+
+        {/* Project brief — tag picker + Claude designer response card.
+            Only shown during in-progress. Once a brief response exists
+            the card renders by default; "Edit your brief" opens the
+            picker. */}
+        {project.status === 'in_progress' ? (
+          <section className="mt-12">
+            <BriefPicker
+              projectId={project.id}
+              initialTags={initialBriefTags}
+              initialResponse={initialBriefResponse}
+              palettes={briefPalettes}
+              styles={briefStyles}
+            />
+          </section>
         ) : null}
 
         {/* Review phase — gallery of shortlisted artefacts */}
