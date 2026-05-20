@@ -158,15 +158,25 @@ function renderInput(input: DepthRenderInput) {
     guidance_scale: 5.0,
     num_images: 1,
     enable_safety_checker: true,
-    // Canny structure preservation — same role as the legacy endpoint's
-    // control_lora_image_url at strength 0.65. easycontrols[] is the
-    // flux-general shortcut: fal preprocesses canny from the image, we
-    // just set the method + scale.
+    // Canny structure preservation. Round-8 eval surfaced fal's
+    // actual schema:
+    //   - control_method_url   = the control LoRA to use ('canny' is
+    //                            a built-in alias; fal also accepts
+    //                            'depth', 'hedsketch', 'pose', etc.
+    //                            or a safetensors URL)
+    //   - image_control_type   = HOW the control conditions Flux —
+    //                            'spatial' (structural — what canny IS)
+    //                            or 'subject' (style/identity, like IP-Adapter)
+    //                            REQUIRED — fal returned 422 without it
+    //   - scale                = control weight (was `conditioning_scale`
+    //                            in my round-7 code — silently ignored
+    //                            by fal, which then used default 1.0)
     easycontrols: [
       {
         image_url: input.controlImageUrl,
         control_method_url: 'canny',
-        conditioning_scale: 0.65,
+        image_control_type: 'spatial',
+        scale: 0.65,
       },
     ],
     ...(ipAdapters ? { ip_adapters: ipAdapters } : {}),
