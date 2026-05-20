@@ -30,7 +30,7 @@ import {
 } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
 import { getDesignerAdvice } from '@/lib/designer';
-import { autoFeatureForPalette } from '@/lib/featuring';
+import { autoFeatureForPalette, autoFeatureClaude } from '@/lib/featuring';
 import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders } from '@/lib/imagePrep';
@@ -214,7 +214,10 @@ export async function POST(request: NextRequest) {
 
   let heroProducts: HeroProductDescriptor[] = [];
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
-    // User explicitly picked products to feature.
+    // Legacy path: user explicitly picked products to feature via the
+    // (now-deprecated) hero-products picker. Kept for backward compat
+    // if any client still sends featuredProductIds; the wizard flow
+    // never does.
     const ids = body.featuredProductIds.slice(0, 3);
     const { data } = await admin
       .from('products')
@@ -222,24 +225,68 @@ export async function POST(request: NextRequest) {
       .in('id', ids);
     if (data) heroProducts = data as HeroProductDescriptor[];
   } else if (palette) {
-    // Auto-feature path: user picked a palette but no specific products.
-    // Pull palette-matched, room-appropriate catalogue items and name
-    // them in the prompt so Flux anchors closer to real products
-    // instead of inventing generic "linen bedding". Closes part of the
-    // catalog-to-render gap that the picking-list step (which runs
-    // post-render) couldn't address — see lib/featuring.ts.
+    // #129 — Claude-curated default. Reads the brief + room + palette
+    // + style + a candidate set and picks 3-5 cohesive products that
+    // respect the user's avoid list and material preferences. Each
+    // render becomes meaningfully more aligned to the brief.
+    //
+    // Brief context comes from the project's stored brief (synthesised
+    // in Step 3 of the wizard via /api/projects/[id]/analyse). When
+    // the render isn't project-scoped, or the project has no brief
+    // yet, briefResponse is null — Claude still picks from candidates
+    // but with no avoid signal.
     const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
-    heroProducts = await autoFeatureForPalette({
+    const roomFacts = (room.analysis as RoomAnalysis | null) ?? null;
+
+    // Fetch brief (best-effort — falls through to null on any error)
+    let briefResponse: import('@/lib/brief/synthesiser').BriefSynthesis | null = null;
+    let briefTags: string[] = [];
+    if (verifiedProjectId) {
+      const briefRes = await admin
+        .from('projects')
+        .select('brief')
+        .eq('id', verifiedProjectId)
+        .maybeSingle();
+      const brief = (briefRes.data as
+        | { brief: { tags?: string[]; response?: import('@/lib/brief/synthesiser').BriefSynthesis | null } | null }
+        | null)?.brief;
+      briefResponse = brief?.response ?? null;
+      briefTags = Array.isArray(brief?.tags) ? brief!.tags! : [];
+    }
+
+    // Try the Claude-curated path first. autoFeatureClaude returns []
+    // on any failure (no candidates, Claude unreachable, parse error,
+    // hallucinated ids) — caller then transparently falls back to the
+    // metadata-only path so Anthropic outages don't block renders.
+    heroProducts = await autoFeatureClaude({
       admin,
       paletteId: palette.id,
+      paletteName: palette.name,
+      styleSlug: style.slug,
+      styleName: style.name,
       roomType,
-      limit: 3,
+      roomFacts,
+      briefResponse,
+      briefTags,
+      limit: 4,
     });
-    if (heroProducts.length > 0) {
-      console.log(
-        `[render] auto-featured ${heroProducts.length} for palette=${palette.id} room=${roomType}: ` +
-          heroProducts.map((p) => `${p.retailer}/${p.category}/${p.name}`).join(' · '),
-      );
+
+    if (heroProducts.length === 0) {
+      // Fallback: metadata-only filter. Still better than no biasing
+      // at all; the prompt will name palette-matched products even
+      // if Claude couldn't reason about cohesion.
+      heroProducts = await autoFeatureForPalette({
+        admin,
+        paletteId: palette.id,
+        roomType,
+        limit: 3,
+      });
+      if (heroProducts.length > 0) {
+        console.log(
+          `[render] FALLBACK metadata auto-feature ${heroProducts.length} for palette=${palette.id} room=${roomType}: ` +
+            heroProducts.map((p) => `${p.retailer}/${p.category}/${p.name}`).join(' · '),
+        );
+      }
     }
   }
 
