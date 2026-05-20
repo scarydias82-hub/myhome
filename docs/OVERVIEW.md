@@ -25,6 +25,31 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — **IP-Adapter pivot — visual palette conditioning**.
+  After 5 prompt-engineering eval rounds (scorecards: 4.7 → 3.3 → 4.5
+  → 4.0 → 4.0 average) palette adherence specifically refused to clear
+  4/10. Diagnosis: Flux's training has only loose associations between
+  paint names and hex values; "warm wheat tones" can land anywhere in
+  the warm-beige tonal space. Text vocab has a structural ceiling.
+  Pivoted from `fal-ai/flux-control-lora-canny/image-to-image` to
+  `fal-ai/flux-general/image-to-image`, which exposes the underlying
+  Flux pipeline so we can stack three conditioning signals in one
+  call: init image (room photo), canny structure preservation via
+  `easycontrols[]`, and palette swatch visual conditioning via
+  `ip_adapters[]`. New `lib/paletteSwatch.ts` generates a 512x512 PNG
+  with the palette's 5 role colours (Wheat / Caramel / Walnut /
+  Cognac / Espresso for Warm Grounded Earth) as horizontal stripes;
+  it gets uploaded to fal storage per-render and passed as the
+  IP-Adapter reference. New `lib/fal.ts:uploadImageBuffer()` handles
+  the Buffer → File → fal.storage.upload roundtrip. IP-Adapter weights:
+  `XLabs-AI/flux-ip-adapter` with `openai/clip-vit-large-patch14`
+  encoder, scale 0.4 (balanced — higher flattens to swatch geometry,
+  lower doesn't move the needle). Legacy endpoint kept for the
+  /api/warm warmup ping only. Eval runner updated in tandem — and
+  fixed a long-standing bug where eval was calling
+  `buildPrompt(style, analysis, null)` with no palette argument
+  (production has been passing palette since round 3; eval lagged).
+  Round 6 eval is the moment of truth.
 - `2026-05-20` — Auto-feature palette-matched catalogue items in
   render prompt. Before this, Fal re-imagined every soft furnishing
   generically — "linen bedding" became Flux's idea of generic linen,

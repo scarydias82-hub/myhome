@@ -22,10 +22,11 @@ import {
   type RoomFacts,
   type HeroProductDescriptor,
 } from '@/lib/styles';
-import { submitDepthRender } from '@/lib/fal';
+import { submitDepthRender, uploadImageBuffer } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
 import { getDesignerAdvice } from '@/lib/designer';
 import { autoFeatureForPalette } from '@/lib/featuring';
+import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import type { RoomAnalysis } from '@/lib/vision';
 
 // Compute Flux-compatible output dimensions that preserve the source
@@ -236,9 +237,31 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       console.warn('[render] could not read photo dimensions, using default', err);
     }
+    // Generate + upload a palette swatch image to feed Flux via
+    // IP-Adapter. This is the round-5 pivot: text-only prompts
+    // plateaued at palette adherence 2-4 across 5 eval rounds. The
+    // visual swatch is a 512x512 PNG with the 5 role colours as
+    // stripes — Flux conditions on it directly, no language ambiguity.
+    let paletteSwatchUrl: string | null = null;
+    if (palette) {
+      try {
+        const swatchBuf = await generatePaletteSwatch(palette);
+        paletteSwatchUrl = await uploadImageBuffer(
+          swatchBuf,
+          `palette-${palette.id}.png`,
+          'image/png',
+        );
+        console.log(`[render] palette swatch uploaded for ${palette.id}: ${paletteSwatchUrl}`);
+      } catch (err) {
+        // Non-fatal — if swatch upload fails we still render via the
+        // text-only path. Better a slightly worse render than no render.
+        console.warn('[render] palette swatch upload failed, falling back to text-only', err);
+      }
+    }
     const submission = await submitDepthRender({
       prompt: groundedPrompt,
       controlImageUrl: signed.data.signedUrl,
+      paletteSwatchUrl,
       width: dims?.width,
       height: dims?.height,
     });

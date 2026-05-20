@@ -24,7 +24,9 @@ import { evaluateRender, type Scorecard } from './evaluator';
 import { analyseRoom } from '../../lib/vision';
 import { getDesignerAdvice } from '../../lib/designer';
 import { buildPickingList } from '../../lib/matching';
-import { submitDepthRender, checkRenderStatus, fetchRenderResult } from '../../lib/fal';
+import { submitDepthRender, checkRenderStatus, fetchRenderResult, uploadImageBuffer } from '../../lib/fal';
+import { generatePaletteSwatch } from '../../lib/paletteSwatch';
+import { autoFeatureForPalette } from '../../lib/featuring';
 import { buildPrompt, getStyle } from '../../lib/styles';
 import { getPalette } from '../../lib/palettes';
 
@@ -182,9 +184,41 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   const designerPath = path.join(out, 'designer-read.json');
   await writeFile(designerPath, JSON.stringify(designer, null, 2));
 
-  // 4. Build prompt + submit to fal.
-  const prompt = buildPrompt(style, analysis, null);
-  const { requestId } = await submitDepthRender({ prompt, controlImageUrl: originalSignedUrl });
+  // 4. Build prompt with palette + auto-featured catalogue items
+  //    (mirror what /api/render does in production).  Until 2026-05-20
+  //    the eval was calling buildPrompt(style, analysis, null) — no
+  //    palette param! That meant every "palette adherence" score for
+  //    rounds 1-4 was measured against a prompt that didn't mention
+  //    the selected palette at all. Production has been passing
+  //    palette since round 3; the eval just lagged. Fixed in tandem
+  //    with the IP-Adapter pivot.
+  const heroProducts = palette
+    ? await autoFeatureForPalette({
+        admin: admin as unknown as Parameters<typeof autoFeatureForPalette>[0]['admin'],
+        paletteId: palette.id,
+        roomType: analysis?.room_type ?? null,
+        limit: 3,
+      })
+    : [];
+  if (heroProducts.length > 0) {
+    console.log(`  auto-featured: ${heroProducts.map((p) => p.name).join(' · ')}`);
+  }
+  const prompt = buildPrompt(style, analysis, heroProducts.length ? heroProducts : null, palette);
+  let paletteSwatchUrl: string | null = null;
+  if (palette) {
+    try {
+      const swatchBuf = await generatePaletteSwatch(palette);
+      paletteSwatchUrl = await uploadImageBuffer(swatchBuf, `palette-${palette.id}.png`, 'image/png');
+      console.log(`  swatch uploaded: ${paletteSwatchUrl}`);
+    } catch (err) {
+      console.warn('  swatch upload failed, text-only:', (err as Error).message);
+    }
+  }
+  const { requestId } = await submitDepthRender({
+    prompt,
+    controlImageUrl: originalSignedUrl,
+    paletteSwatchUrl,
+  });
 
   // 5. Poll until fal completes.
   const result = await pollFal(requestId);
