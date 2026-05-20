@@ -58,8 +58,8 @@ const ROOM_CATEGORY_HINTS: Record<string, string[]> = {
     'Rugs', 'Flooring',
     'Lighting',
   ],
-  kitchen: ['Stools', 'Flooring', 'Lighting'],
-  bathroom: ['Curtains - Sheers', 'Flooring'],
+  kitchen: ['Stools', 'Flooring', 'Tiles', 'Lighting'],
+  bathroom: ['Tiles', 'Curtains - Sheers', 'Flooring'],
   study: ['Desk', 'Chair', 'Chairs', 'Storage System', 'Rugs', 'Flooring', 'Lighting'],
 };
 

@@ -25,6 +25,28 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Signorino tile scraper shipped. Premium AU tile +
+  natural stone importer (signorino.com.au, custom CMS). Walks /range
+  index → 98 ranges total, walks first 40 → 230 tile variants. Each
+  range page exposes ~6 colour variants as <img> elements with alt
+  text like "Bari Amazonite", "Allure - Alaska", "Anthology Dark".
+  alt → variant name; img.src → high-res hero. Tiles category is
+  particularly valuable because each tile has a very specific
+  dominant colour (calacatta marble = #F3F0E8, terracotta = #C4785A,
+  black slate = #2A2825) — palette-match filter places them very
+  precisely. Also added Tiles to bathroom + kitchen room hints in
+  lib/featuring.ts so auto-feature picks them up. 230 tiles / 0
+  errors. Can extend TARGET_RANGES later if more variety needed
+  (58 ranges remain unwalked).
+- `2026-05-20` — Letterbox trim. The eval fixture (master_bed.PNG,
+  2532×1170) was an iPhone screenshot of a real-estate-website photo
+  with 38% of the width consumed by black bars. Three downstream
+  failures resulted: canny ControlNet preserved the black-to-photo
+  boundary, computeFluxDimensions mis-derived a 2.16:1 aspect, and
+  the Claude vision evaluator scored the whole bordered output. New
+  lib/imagePrep.ts trimBlackBorders() handles it via sharp.trim().
+  Used in both the eval pipeline and /api/render (re-uploads trimmed
+  buffer to fal storage so the user's original photo isn't mutated).
 - `2026-05-20` — The Rug Est scraper shipped (second half of #81,
   completes the task). Premium AU handmade rug brand at therugest.com
   (custom CMS, no sitemap/products.json). Walks /current-range +

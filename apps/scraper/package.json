@@ -17,6 +17,7 @@
     "scrape:carpetcourt": "node scrapers/carpetCourt.js",
     "scrape:choicesflooring": "node scrapers/choicesFlooring.js",
     "scrape:therugest": "node scrapers/theRugEst.js",
+    "scrape:signorino": "node scrapers/signorino.js",
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",
