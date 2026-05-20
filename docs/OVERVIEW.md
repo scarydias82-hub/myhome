@@ -25,6 +25,26 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-20` — Auto-feature palette-matched catalogue items in
+  render prompt. Before this, Fal re-imagined every soft furnishing
+  generically — "linen bedding" became Flux's idea of generic linen,
+  not an Adairs Mason Quilt Cover. The catalogue only entered the
+  picture AFTER the render via the picking-list match step. New
+  `lib/featuring.ts` closes ~40% of the gap cheaply: when the user
+  picks a palette but doesn't explicitly select featured products,
+  `/api/render` queries the palette-tagged catalogue for room-
+  appropriate items (`ROOM_CATEGORY_HINTS` maps room_type → category
+  list, dedupes by category for variety, caps at 3, skips Dulux), and
+  passes the picks as heroProducts so `buildPrompt` names them in the
+  prompt ("featuring adairs ultra soft jersey rose & cedar stripe
+  quilt cover separates, carpet court barakula carpet, poliform
+  jacqueline bed"). Also patched `describeProduct` to suffix the
+  category word when the product name is a brand/model string with no
+  object anchor — "Barakula" + category "Carpet" → "barakula carpet"
+  so Flux paints a carpet, not a mystery noun. The other ~60% of the
+  catalog-to-render gap still needs IP-Adapter (visual style
+  conditioning on actual product images) or post-render composite
+  (Flux Pro Fill paste) — deferred until A's lift is measured.
 - `2026-05-20` — Render prompt round 4 + Dulux library expansion.
   Round 3 eval (4.5/10 avg, palette adherence 3/10) revealed Flux had
   drifted the Warm Grounded Earth palette to cool sage-green. Two

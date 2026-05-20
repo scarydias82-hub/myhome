@@ -25,6 +25,7 @@ import {
 import { submitDepthRender } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
 import { getDesignerAdvice } from '@/lib/designer';
+import { autoFeatureForPalette } from '@/lib/featuring';
 import type { RoomAnalysis } from '@/lib/vision';
 
 // Compute Flux-compatible output dimensions that preserve the source
@@ -165,12 +166,33 @@ export async function POST(request: NextRequest) {
 
   let heroProducts: HeroProductDescriptor[] = [];
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
+    // User explicitly picked products to feature.
     const ids = body.featuredProductIds.slice(0, 3);
     const { data } = await admin
       .from('products')
       .select('name, category, retailer')
       .in('id', ids);
     if (data) heroProducts = data as HeroProductDescriptor[];
+  } else if (palette) {
+    // Auto-feature path: user picked a palette but no specific products.
+    // Pull palette-matched, room-appropriate catalogue items and name
+    // them in the prompt so Flux anchors closer to real products
+    // instead of inventing generic "linen bedding". Closes part of the
+    // catalog-to-render gap that the picking-list step (which runs
+    // post-render) couldn't address — see lib/featuring.ts.
+    const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
+    heroProducts = await autoFeatureForPalette({
+      admin,
+      paletteId: palette.id,
+      roomType,
+      limit: 3,
+    });
+    if (heroProducts.length > 0) {
+      console.log(
+        `[render] auto-featured ${heroProducts.length} for palette=${palette.id} room=${roomType}: ` +
+          heroProducts.map((p) => `${p.retailer}/${p.category}/${p.name}`).join(' · '),
+      );
+    }
   }
 
   // Kick off the designer LLM in the background. It doesn't depend on

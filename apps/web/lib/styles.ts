@@ -379,9 +379,19 @@ export function buildPrompt(
 // Strip retailer/marketing fluff from a product name → a generic descriptive
 // phrase Flux can latch onto. "Westwood Bench with Storage" → "westwood bench
 // with storage" (lower-case keeps it stylistic, not product-page-y).
+//
+// Add the category word as a suffix if the cleaned name doesn't already
+// contain it — many product names are pure brand/model strings
+// ("Barakula", "Jacqueline") that mean nothing to Flux without an
+// object-type anchor. With this, "Barakula" + category "Carpet" →
+// "barakula carpet" so Flux paints a carpet, not a mystery noun.
 function describeProduct(p: HeroProductDescriptor): string {
   const cleaned = p.name.replace(/\s*-\s*[^-]+$/g, '').toLowerCase();
-  return cleaned;
+  const cat = (p.category ?? '').toLowerCase().trim();
+  if (!cat) return cleaned;
+  const catSingular = cat.replace(/s$/, '');
+  if (cleaned.includes(cat) || cleaned.includes(catSingular)) return cleaned;
+  return `${cleaned} ${catSingular}`;
 }
 
 function factsRoomType(raw: string): string {
