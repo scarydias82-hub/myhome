@@ -51,6 +51,7 @@ import {
 import {
   ShowpieceRenderSection,
   type ShowpieceRender,
+  type ShowpieceHotspot,
 } from '@/components/dashboard/sections/showpiece-render-section';
 import {
   VisionBoardsSection,
@@ -110,6 +111,25 @@ interface TrendRow {
 
 interface ShortlistAggRow {
   product_id: string | null;
+}
+
+// Local mirror of the picking list shape from lib/matching.ts. We
+// keep this isolated so the dashboard fetch doesn't have to import
+// the full PickingListItem (which pulls in matching internals); only
+// the fields we surface as hotspots matter here.
+interface PickingListShape {
+  itemLabel: string;
+  category: string;
+  bbox: { x: number; y: number; w: number; h: number };
+  matches: Array<{
+    productId: string;
+    name: string;
+    retailer: string;
+    priceAud: number | null;
+    imageUrl: string;
+    productUrl: string;
+    affiliateUrl?: string | null;
+  }>;
 }
 
 export default async function DashboardPage() {
@@ -403,10 +423,11 @@ export default async function DashboardPage() {
 
   // Showpiece render — most recent succeeded render for this user.
   // The picking_list and palette hex resolution drives the metadata
-  // band underneath the image.
+  // band underneath the image, AND the hotspot overlay (#136).
   let showpiece: ShowpieceRender | null = null;
+  let showpieceHotspots: ShowpieceHotspot[] = [];
   if (latestRender && latestRender.image_url) {
-    const list = (latestRender.picking_list as unknown[] | null) ?? [];
+    const list = (latestRender.picking_list as PickingListShape[] | null) ?? [];
     // Resolve palette hexes from the originating project (if any)
     const showpiecePalette = renders.find((r) => r.id === latestRender.id);
     const paletteRef = showpiecePalette
@@ -422,6 +443,28 @@ export default async function DashboardPage() {
       budgetAud: latestRender.cost_estimate_aud,
       createdAt: latestRender.created_at,
     };
+    // Derive hotspots from the picking list — each item's bbox +
+    // top match becomes a tap-to-reveal dot on the render image.
+    showpieceHotspots = list
+      .filter((it) => it && it.bbox && it.matches && it.matches.length > 0)
+      .map((it) => {
+        const top = it.matches[0];
+        return {
+          itemLabel: it.itemLabel,
+          category: it.category,
+          bbox: it.bbox,
+          match: top
+            ? {
+                productId: top.productId,
+                name: top.name,
+                retailer: top.retailer,
+                priceAud: top.priceAud,
+                imageUrl: top.imageUrl,
+                productUrl: top.affiliateUrl ?? top.productUrl,
+              }
+            : null,
+        };
+      });
   }
 
   // Vision boards — real data via the new Phase 2 schema (#135).
@@ -488,6 +531,7 @@ export default async function DashboardPage() {
             never reads blank. Phase 3 layers hotspot dots on top. */}
         <ShowpieceRenderSection
           render={showpiece}
+          hotspots={showpieceHotspots}
           demoImageUrl="https://v3.fal.media/files/penguin/3kbcoR4cyqUaXuk_BJryT_image.webp"
         />
 
