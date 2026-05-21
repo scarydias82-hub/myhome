@@ -435,7 +435,10 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         </section>
       ) : null}
 
-      {analysing ? <AnalysingPlaceholder /> : null}
+      {/* AnalysingPlaceholder removed in favour of the overlay-on-photo
+          treatment inside Step1Upload's preview. The standalone
+          placeholder competed visually with the photo and made the
+          page feel busy during the ~8s vision wait. */}
       {/* #117 — Step 2 review hidden from the user-facing flow. The
           analysis still runs server-side and caches on rooms.analysis
           (we need the room facts for buildPrompt's architecture-
@@ -447,16 +450,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
 
       {analysisConfirmed ? (
         <>
-          {briefPreFilled ? (
-            <div className="rounded-lg border border-clay/30 bg-clay/5 px-4 py-3">
-              <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
-                Pre-filled from your project brief
-              </p>
-              <p className="mt-1 text-[13px] text-ink-soft">
-                The designer's recommendation is selected below. Change anything you'd like.
-              </p>
-            </div>
-          ) : null}
+          <DesignerSummaryCard
+            analysis={analysis}
+            briefPreFilled={briefPreFilled}
+            paletteId={paletteId}
+            direction={direction}
+          />
           <Step3Style
             paletteId={paletteId}
             onPaletteChange={setPaletteId}
@@ -541,6 +540,7 @@ function Step1Upload({
   file,
   preview,
   converting,
+  analysing,
   onPick,
   onOpenCamera,
   onBrowseFiles,
@@ -593,7 +593,7 @@ function Step1Upload({
         </div>
 
         {preview ? (
-          <div className="overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
+          <div className="relative overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
             <Image
               src={preview}
               alt="Your room"
@@ -602,6 +602,27 @@ function Step1Upload({
               className="h-full w-full object-cover"
               unoptimized
             />
+            {/* Analysing overlay — sits ON the photo so the Claude
+                vision call feels like the designer leaning in to
+                inspect the room, rather than a generic "loading"
+                placeholder elsewhere on the page. */}
+            {analysing ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-ink/55 p-6 text-center backdrop-blur-sm">
+                <div className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream/40 bg-cream/10 backdrop-blur">
+                  <span aria-hidden className="animate-pulse text-cream text-[20px]">◎</span>
+                </div>
+                <p className="mt-4 font-display text-h3 leading-tight text-cream md:text-[24px]">
+                  We&rsquo;re waiting for the designer&rsquo;s opinion…
+                </p>
+                <p className="mt-2 max-w-sm font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
+                  Claude is reading the light, the flooring, the architecture and the colour
+                  story of this room — about 8 seconds.
+                </p>
+                <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-cream/20">
+                  <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : converting ? (
           <div className="grid min-h-[260px] place-items-center rounded-xl border border-ink/[0.06] bg-cream p-8 text-center">
@@ -618,6 +639,129 @@ function Step1Upload({
       </div>
     </section>
   );
+}
+
+// DesignerSummaryCard — the "punchy designer summary" that lands
+// after Claude vision completes. Two purposes:
+//   1. Tell the user what Claude SAW (room read: type / light / floor)
+//   2. Tell the user what the designer RECOMMENDS (when there's a brief)
+//      + visualise what's pre-selected in the carousels below
+//
+// Surfaces always when analysisConfirmed; the recommendation block
+// only renders when briefPreFilled (i.e. the user came in via a
+// project workflow with an existing brief). When there's no brief
+// the card stays useful — it's a room-read summary the user can
+// glance at before scrolling into the carousels.
+function DesignerSummaryCard({
+  analysis,
+  briefPreFilled,
+  paletteId,
+  direction,
+}: {
+  analysis: RoomAnalysis | null;
+  briefPreFilled: boolean;
+  paletteId: string;
+  direction: '2026' | 'timeless' | null;
+}) {
+  const palette = listPalettes().find((p) => p.id === paletteId) ?? null;
+
+  // Compose the room-read line. We pick the highest-value facts and
+  // skip null/unknown values so the line reads tight rather than
+  // "Living room · unknown · unknown".
+  const roomReadParts: string[] = [];
+  if (analysis?.room_type && analysis.room_type !== 'other') {
+    roomReadParts.push(analysis.room_type.replace(/_/g, ' '));
+  }
+  if (analysis?.light?.direction) {
+    roomReadParts.push(`${analysis.light.direction}-facing`);
+  } else if (analysis?.light?.quality) {
+    roomReadParts.push(analysis.light.quality);
+  }
+  if (analysis?.flooring) roomReadParts.push(analysis.flooring);
+
+  const directionLabel =
+    direction === '2026'
+      ? '2026 trend direction'
+      : direction === 'timeless'
+        ? 'Tried & tested direction'
+        : null;
+
+  return (
+    <section className="rounded-2xl border border-clay/40 bg-gradient-to-br from-clay/[0.06] via-cream to-cream p-5 md:p-7">
+      <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between md:gap-4">
+        <Eyebrow>The designer&rsquo;s read</Eyebrow>
+        <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+          {briefPreFilled ? 'Brief + vision · grounded' : 'Vision only · grounded'}
+        </p>
+      </div>
+
+      {/* Room read — capitalised first letter, dots between parts. */}
+      <p className="mt-3 font-display text-h3 leading-tight text-ink md:text-[26px]">
+        {roomReadParts.length > 0
+          ? capitalise(roomReadParts.join(' · '))
+          : 'Room read pending'}
+      </p>
+
+      {/* Recommendation block — only when there's a brief. Otherwise
+          the room read alone tells the user "the designer saw your
+          space; now pick a palette below." */}
+      {briefPreFilled && palette ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
+              Recommended for this room
+            </p>
+            <p className="mt-1 font-display text-h4 text-ink md:text-[20px]">
+              {palette.name}
+            </p>
+            <p className="mt-1 font-dmsans text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
+              {palette.vibe}
+              {directionLabel ? (
+                <>
+                  {' '}·{' '}
+                  <span className="text-clay">{directionLabel}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
+          {/* Swatch chip — visual anchor for the recommendation so
+              the user maps "name" to "actual colours" instantly. */}
+          <div className="flex h-10 w-40 shrink-0 overflow-hidden rounded-full border border-ink/10 md:w-32">
+            {paletteSwatch(palette).slice(0, 5).map((hex, i) => (
+              <div key={`${hex}-${i}`} className="flex-1" style={{ backgroundColor: hex }} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Pre-selection summary chips — visible whenever we have any
+          selection. Tells the user "this is set; scroll to change." */}
+      {(briefPreFilled && palette) || direction ? (
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-ink/[0.06] pt-4">
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            Pre-selected:
+          </p>
+          {palette ? (
+            <span className="inline-flex items-center gap-1.5 rounded-pill border border-clay/40 bg-clay/10 px-3 py-1 font-mono text-meta uppercase tracking-eyebrow text-clay">
+              ✓ {palette.name}
+            </span>
+          ) : null}
+          {directionLabel ? (
+            <span className="inline-flex items-center gap-1.5 rounded-pill border border-clay/40 bg-clay/10 px-3 py-1 font-mono text-meta uppercase tracking-eyebrow text-clay">
+              ✓ {directionLabel}
+            </span>
+          ) : null}
+          <p className="basis-full font-dmsans text-[12px] text-ink-soft md:basis-auto md:ml-1 md:text-[13px]">
+            Scroll to swap anything before rendering.
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function capitalise(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function AnalysingPlaceholder() {
