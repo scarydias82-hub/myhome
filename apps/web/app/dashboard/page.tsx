@@ -113,6 +113,12 @@ interface ShortlistAggRow {
   product_id: string | null;
 }
 
+interface FeaturedRow {
+  product_id: string;
+  hook: string;
+  position: number;
+}
+
 // Local mirror of the picking list shape from lib/matching.ts. We
 // keep this isolated so the dashboard fetch doesn't have to import
 // the full PickingListItem (which pulls in matching internals); only
@@ -165,6 +171,7 @@ export default async function DashboardPage() {
     shortlistsLifetimeRes,
     latestRenderRes,
     visionBoardsRes,
+    featuredRes,
   ] = await Promise.all([
     supabase
       .from('projects')
@@ -227,6 +234,16 @@ export default async function DashboardPage() {
       .select('id, name, cover_image_url, item_count, updated_at')
       .order('updated_at', { ascending: false })
       .limit(8),
+    // Weekly Claude-curated featured set (#137). When this is empty
+    // (no recent cron run, or before the first run) we fall back to
+    // the Phase 1 heuristic. Read via admin so users see the same
+    // curated set regardless of their own RLS scope.
+    admin
+      .from('featured_products')
+      .select('product_id, hook, position')
+      .gt('featured_until', new Date().toISOString())
+      .order('position', { ascending: true })
+      .limit(12),
   ]);
 
   const projects = (projectsRes.data as ProjectRow[] | null) ?? [];
@@ -255,12 +272,21 @@ export default async function DashboardPage() {
   const count7d = aggregateCounts(saves7d);
   const countLifetime = aggregateCounts(savesLifetime);
 
+  // Active curated featured set (#137). When present this preempts
+  // the heuristic — Claude wrote a cohesive theme for the week,
+  // we want to ship that as-is.
+  const curatedFeatured = (featuredRes.data as FeaturedRow[] | null) ?? [];
+  const curatedById = new Map(curatedFeatured.map((r) => [r.product_id, r]));
+
   // Hydrate the top-N product rows for featured + trending.
   // Trending = top 8 by 7d count (or lifetime if cold-start)
-  // Featured = top 8 by lifetime among "quality" products (have
-  // image + style_tags). Phase 4 (#137) replaces this with Claude.
+  // Featured = curated rows (Claude) if present, else top 8 by
+  // lifetime among "quality" products (have image + style_tags).
   const trendingIds = pickTopN(count7d.size > 0 ? count7d : countLifetime, 8);
-  const featuredIds = pickTopN(countLifetime, 8, trendingIds);
+  const featuredIds =
+    curatedFeatured.length > 0
+      ? curatedFeatured.map((r) => r.product_id)
+      : pickTopN(countLifetime, 8, trendingIds);
 
   // Fetch the product detail rows for both sets. Use a single query
   // unioning all needed IDs; we'll split downstream.
@@ -381,7 +407,10 @@ export default async function DashboardPage() {
       priceAud: p.price_aud,
       imageUrl: p.image_url,
       productUrl: p.affiliate_url ?? p.product_url,
-      hook: hookForFeatured(p, countLifetime.get(p.id) ?? 0),
+      // Curated rows carry a Claude-written hook tied to the theme.
+      // Heuristic fallback computes a hook from save counts +
+      // style_tags signals.
+      hook: curatedById.get(p.id)?.hook ?? hookForFeatured(p, countLifetime.get(p.id) ?? 0),
       styleTags: (p.style_tags ?? []).slice(0, 2),
     }));
 
