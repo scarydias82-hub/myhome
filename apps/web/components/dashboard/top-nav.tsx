@@ -9,8 +9,8 @@ interface TopNavProps {
 // regular, both Playfair Display. BETA chip. Centre nav for major IA.
 export function TopNav({ initials, fullName }: TopNavProps) {
   return (
-    <header className="sticky top-0 z-40 h-[52px] border-b border-editorial-border bg-editorial-cream/85 backdrop-blur">
-      <div className="mx-auto flex h-full max-w-[1200px] items-center justify-between px-6">
+    <header className="sticky top-0 z-40 h-[52px] border-b border-editorial-border bg-editorial-cream/85 backdrop-blur pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto flex h-full max-w-[1200px] items-center justify-between px-4 md:px-6">
         <Link
           href="/dashboard"
           className="flex items-center gap-2"

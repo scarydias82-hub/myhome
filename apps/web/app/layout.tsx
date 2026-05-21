@@ -3,6 +3,7 @@ import { Playfair_Display, DM_Sans, DM_Mono } from 'next/font/google';
 import './globals.css';
 import { PostHogProvider } from '@/components/posthog-provider';
 import { PWARegister } from '@/components/pwa-register';
+import { BottomNav } from '@/components/mobile/bottom-nav';
 
 // Editorial brand fonts — Playfair Display (display), DM Sans (body),
 // DM Mono (metadata + caps). The legacy Saltbush font vars
@@ -61,7 +62,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}
     >
       <body className="min-h-screen bg-editorial-cream bg-grain font-dmsans text-editorial-ink antialiased">
-        <PostHogProvider>{children}</PostHogProvider>
+        {/* pb-24 on mobile reserves space for the fixed BottomNav so
+            page content isn't covered. md:pb-0 cancels it on desktop
+            where the BottomNav is hidden. */}
+        <div className="pb-24 md:pb-0">
+          <PostHogProvider>{children}</PostHogProvider>
+        </div>
+        <BottomNav />
         <PWARegister />
       </body>
     </html>

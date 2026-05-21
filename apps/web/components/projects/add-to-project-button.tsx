@@ -174,7 +174,9 @@ function PickerModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4"
+      // Bottom sheet on mobile (items-end + no padding so sheet
+      // sticks to viewport edges), centered modal on md+.
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/70 md:items-center md:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-to-project-title"
@@ -182,7 +184,12 @@ function PickerModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-ink/[0.06] bg-cream p-6 shadow-soft">
+      <div className="w-full overflow-hidden border border-ink/[0.06] bg-cream shadow-soft md:max-w-md md:rounded-2xl rounded-t-2xl pb-[env(safe-area-inset-bottom)] md:rounded-b-2xl md:pb-0">
+        {/* Drag-handle dimple — visual sheet affordance on mobile. */}
+        <div className="flex justify-center pt-2 md:hidden">
+          <div className="h-1 w-10 rounded-full bg-ink/15" />
+        </div>
+        <div className="p-6 pt-4 md:pt-6">
         <p
           id="add-to-project-title"
           className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint"
@@ -218,6 +225,7 @@ function PickerModal({
           >
             Cancel
           </button>
+        </div>
         </div>
       </div>
     </div>

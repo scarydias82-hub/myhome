@@ -56,7 +56,10 @@ export function TrendingProductsSection({ products }: TrendingProductsSectionPro
           {products.map((p) => (
             <li
               key={p.id}
-              className="snap-start shrink-0 basis-[240px] md:basis-[280px]"
+              // Mobile: 75vw so two cards are half-visible at once,
+              // matching the "trending" feel of a feed scroll. md+
+              // reverts to fixed widths.
+              className="snap-start shrink-0 basis-[75vw] sm:basis-[50vw] md:basis-[280px]"
             >
               <TrendingCard product={p} />
             </li>

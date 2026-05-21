@@ -157,15 +157,19 @@ function LiveShowpiece({
                 style={{ left: `${cx}%`, top: `${cy}%` }}
                 className={cn(
                   'absolute -translate-x-1/2 -translate-y-1/2',
-                  'grid h-9 w-9 place-items-center rounded-full',
-                  // Outer 36px tap target is transparent; visible dot
-                  // is the inner element below.
+                  // Mobile gets 44x44 (Apple HIG minimum); desktop
+                  // shrinks to 36x36 since hover targeting is more
+                  // forgiving with a mouse.
+                  'grid h-11 w-11 place-items-center rounded-full md:h-9 md:w-9',
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-editorial-cream',
                 )}
               >
                 <span
                   className={cn(
-                    'block h-3.5 w-3.5 rounded-full border-2 transition',
+                    // Visible dot scales with the touch target on
+                    // mobile so it feels deliberate, not lost in the
+                    // larger hit area.
+                    'block h-4 w-4 rounded-full border-2 transition md:h-3.5 md:w-3.5',
                     isActive
                       ? 'border-editorial-ink bg-editorial-cream scale-125'
                       : 'border-editorial-cream bg-editorial-cognac/90 group-hover:scale-110 animate-pulse',

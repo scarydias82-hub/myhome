@@ -157,16 +157,30 @@ export function AddToVisionBoardButton({
             : '✦ Save to board'}
       </button>
 
-      {/* Picker modal — only mounted when status='picker'. Mobile-
-          first: full-screen on small screens, centered card on md+. */}
+      {/* Picker modal — bottom sheet on mobile, centered card on md+.
+          The flex layout flips alignment: items-end on mobile so the
+          sheet sticks to the bottom edge; items-center on md+. */}
       {status === 'picker' ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-ink/60 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 md:items-center md:p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) setStatus('idle');
           }}
         >
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-cream">
+          <div
+            className={cn(
+              'w-full overflow-hidden bg-cream md:max-w-md md:rounded-2xl',
+              // Mobile sheet: only top corners round, full bleed to
+              // screen edges, safe-area-inset padding for the home
+              // indicator on iOS.
+              'rounded-t-2xl pb-[env(safe-area-inset-bottom)] md:rounded-b-2xl md:pb-0',
+            )}
+          >
+            {/* Drag-handle dimple — visual cue this is a sheet that
+                can be dismissed. Mobile-only. */}
+            <div className="flex justify-center pt-2 md:hidden">
+              <div className="h-1 w-10 rounded-full bg-ink/15" />
+            </div>
             <div className="border-b border-ink/[0.06] p-5">
               <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
                 Save to which board?

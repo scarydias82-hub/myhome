@@ -68,7 +68,10 @@ export function FeaturedProductsSection({ products }: FeaturedProductsSectionPro
           {products.map((p) => (
             <li
               key={p.id}
-              className="snap-start shrink-0 basis-[260px] md:basis-[300px]"
+              // Mobile: ~85vw so one card dominates the screen, with
+              // a sliver of the next card peeking — the "more right"
+              // affordance. md+ keeps fixed widths for desktop scan.
+              className="snap-start shrink-0 basis-[85vw] sm:basis-[60vw] md:basis-[300px]"
             >
               <FeaturedCard product={p} />
             </li>
