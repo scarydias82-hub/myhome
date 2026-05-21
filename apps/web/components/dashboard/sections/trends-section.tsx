@@ -23,6 +23,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { SectionHeader } from '@/components/dashboard/shared/section-header';
 import { PaletteStrip } from '@/components/dashboard/shared/palette-strip';
+import { AddToVisionBoardButton } from '@/components/vision-boards/add-to-vision-board-button';
 
 export interface DashboardTrendCard {
   id: string;
@@ -173,7 +174,9 @@ function PaletteSwatchCard({ palette: p }: { palette: DashboardPaletteCard }) {
           {p.trendSource}
         </p>
         {/* Shop is primary (products-first); start a project is the
-            secondary path. Reflects the dashboard's product-led IA. */}
+            secondary path; Save to board is the lowest-commitment
+            "I like this" action. Reflects the dashboard's product-
+            led IA + the moodboard funnel from Phase 2. */}
         <div className="mt-3 flex flex-wrap gap-2">
           <Link
             href={`/catalogue?palette=${p.id}`}
@@ -187,6 +190,10 @@ function PaletteSwatchCard({ palette: p }: { palette: DashboardPaletteCard }) {
           >
             Start a project
           </Link>
+          <AddToVisionBoardButton
+            ref={{ itemType: 'palette', paletteId: p.id }}
+            variant="compact"
+          />
         </div>
       </div>
     </article>
@@ -276,7 +283,8 @@ function TrendCardArticle({ card: t }: { card: DashboardTrendCard }) {
           {t.description}
         </p>
         {/* Shop this trend is the primary CTA — products-first IA. The
-            render-with-this-trend path becomes secondary. */}
+            render-with-this-trend path becomes secondary. Save-to-
+            board is the lowest-commitment third option. */}
         <div className="mt-auto flex flex-wrap gap-2 pt-2">
           <Link
             href={`/catalogue?palette=${t.paletteId}&room=${t.roomType}`}
@@ -290,6 +298,10 @@ function TrendCardArticle({ card: t }: { card: DashboardTrendCard }) {
           >
             Render it
           </Link>
+          <AddToVisionBoardButton
+            ref={{ itemType: 'trend', trendCardId: t.id }}
+            variant="compact"
+          />
         </div>
       </div>
     </article>

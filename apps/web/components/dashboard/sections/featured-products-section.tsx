@@ -21,6 +21,7 @@ import Link from 'next/link';
 import { SectionHeader } from '@/components/dashboard/shared/section-header';
 import { Tag } from '@/components/dashboard/shared/tag';
 import { AddToProjectButton } from '@/components/projects/add-to-project-button';
+import { AddToVisionBoardButton } from '@/components/vision-boards/add-to-vision-board-button';
 
 export interface FeaturedProductCard {
   id: string;
@@ -128,8 +129,12 @@ function FeaturedCard({ product: p }: { product: FeaturedProductCard }) {
             persistently visible (vs the AR section's expand-to-reveal
             pattern). Mobile users shouldn't need to tap twice to add
             something they want. */}
-        <div className="mt-auto pt-2">
-          <AddToProjectButton productId={p.id} />
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+          <AddToProjectButton productId={p.id} variant="compact" />
+          <AddToVisionBoardButton
+            ref={{ itemType: 'product', productId: p.id }}
+            variant="compact"
+          />
         </div>
       </div>
     </article>

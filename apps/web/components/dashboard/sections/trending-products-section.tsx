@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { SectionHeader } from '@/components/dashboard/shared/section-header';
 import { Tag } from '@/components/dashboard/shared/tag';
 import { AddToProjectButton } from '@/components/projects/add-to-project-button';
+import { AddToVisionBoardButton } from '@/components/vision-boards/add-to-vision-board-button';
 
 export interface TrendingProductCard {
   id: string;
@@ -121,8 +122,12 @@ function TrendingCard({ product: p }: { product: TrendingProductCard }) {
             <Tag tone="taupe">{p.category}</Tag>
           </div>
         ) : null}
-        <div className="mt-auto pt-2">
-          <AddToProjectButton productId={p.id} />
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+          <AddToProjectButton productId={p.id} variant="compact" />
+          <AddToVisionBoardButton
+            ref={{ itemType: 'product', productId: p.id }}
+            variant="compact"
+          />
         </div>
       </div>
     </article>

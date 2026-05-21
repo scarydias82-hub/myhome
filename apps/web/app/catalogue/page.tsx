@@ -8,6 +8,7 @@ import { Pill } from '@/components/saltbush/pill';
 import { Button } from '@/components/ui/button';
 import { SortSelect } from '@/components/catalogue/sort-select';
 import { AddToProjectButton } from '@/components/projects/add-to-project-button';
+import { AddToVisionBoardButton } from '@/components/vision-boards/add-to-vision-board-button';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 
@@ -229,8 +230,18 @@ export default async function CataloguePage({
                       </p>
                     </div>
                   </a>
-                  <div className="mt-auto border-t border-ink/[0.06] p-3">
-                    <AddToProjectButton productId={p.id} />
+                  {/* Two CTAs side-by-side — Add to project (commits
+                      to a real workflow) + Save to board (lower-
+                      commitment moodboard save). Mobile keeps them on
+                      the same row at compact variant; the buttons
+                      shrink-wrap to their content so even a tiny
+                      phone fits both. */}
+                  <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-ink/[0.06] p-3">
+                    <AddToProjectButton productId={p.id} variant="compact" />
+                    <AddToVisionBoardButton
+                      ref={{ itemType: 'product', productId: p.id }}
+                      variant="compact"
+                    />
                   </div>
                 </div>
               </li>

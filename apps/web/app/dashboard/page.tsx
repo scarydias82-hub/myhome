@@ -144,6 +144,7 @@ export default async function DashboardPage() {
     shortlists30dRes,
     shortlistsLifetimeRes,
     latestRenderRes,
+    visionBoardsRes,
   ] = await Promise.all([
     supabase
       .from('projects')
@@ -199,6 +200,13 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Vision boards — user's most recently-updated, max 8 on the
+    // dashboard strip. The detail / index pages show the full set.
+    supabase
+      .from('vision_boards')
+      .select('id, name, cover_image_url, item_count, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(8),
   ]);
 
   const projects = (projectsRes.data as ProjectRow[] | null) ?? [];
@@ -416,9 +424,23 @@ export default async function DashboardPage() {
     };
   }
 
-  // Vision boards — empty list for Phase 1; the section renders an
-  // explanatory empty-state. Phase 2 (#135) wires up real fetches.
-  const visionBoards: VisionBoardCard[] = [];
+  // Vision boards — real data via the new Phase 2 schema (#135).
+  // Thumbnails are not populated here; the section's empty-cover
+  // fallback uses the cover_image_url first, then falls back to an
+  // "Empty board" placeholder. Derived item thumbnails (first
+  // 4 product/trend images per board) is a Phase 3 enhancement.
+  const visionBoards: VisionBoardCard[] = (
+    (visionBoardsRes.data as
+      | { id: string; name: string; cover_image_url: string | null; item_count: number; updated_at: string }[]
+      | null) ?? []
+  ).map((b) => ({
+    id: b.id,
+    name: b.name,
+    itemCount: b.item_count,
+    coverImageUrl: b.cover_image_url,
+    itemThumbnails: [],
+    updatedAt: b.updated_at,
+  }));
 
   // Nexus pipeline state — kept from the previous dashboard so the
   // CTA still reflects the user's progress.
