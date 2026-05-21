@@ -49,6 +49,41 @@ product, the system, or the business. Cross-reference SHAs with
   (submitMs / inferenceMs / fetchMs / falInputBytes) so future
   perf changes are measurable. Wall-clock timings section added to
   summary.md.
+- `2026-05-22` — **Vision boards Pass B — image upload → Claude
+  vision → catalogue match (#139b).** Users can upload an
+  inspiration image (Pinterest pin, IG screenshot, magazine photo)
+  to a board; Claude Sonnet 4.6 vision identifies the product into a
+  fixed vocabulary (category + style descriptors + materials + colour
+  family + confidence) and we score the AU catalogue by overlap to
+  return the top 6 matches with a "+ Add to board" button per match.
+  Schema: vision_board_items.item_type extended to 'image';
+  vision-board-uploads private Storage bucket with per-user-folder
+  RLS. Library: lib/vision-board-image-match.ts (identifyImage,
+  matchCatalogue, normaliseCategory mapping free-text categories to
+  our fixed vocab). API: POST /api/vision-boards/[id]/upload accepts
+  multipart photo ≤4 MB, uploads, calls vision, inserts a polymorphic
+  'image' item, rolls the upload back on any downstream failure (no
+  orphan blobs). UI: BoardImageUpload sits between the analysis card
+  and item grid; ImageCard renders uploaded images via signed URL
+  (1-hour TTL, threaded through the page since the bucket's private).
+  Closes the fourth capability of the vision-board scope. Backfilled
+  retroactively (commit 1356e1d didn't update the changelog inline).
+- `2026-05-22` — **Vision boards Pass A — Claude designer's-read
+  (#139a).** One Claude Sonnet 4.6 call delivering four capabilities
+  per board, rendered as an editorial card above the item grid:
+  through-line + tensions + strength badge, room-style pills,
+  cross-user popularity (headline + differentiator), and retailer
+  recommendations (~$0.05-0.10 / ~15s). Library: runBoardAnalysis()
+  hydrates the board, computes cross-user popularity via admin client,
+  calls Claude, persists. KNOWN_RETAILERS list (12 AU retailers we
+  actually scrape, with strength categories) bounds Claude's retailer
+  picks to real retailers, not hallucinated ones. Schema:
+  vision_board_analyses table (response + snapshot + history). API:
+  POST /api/vision-boards/[id]/analyse fresh-runs, GET returns latest
+  cached or null. UI states: loading / no-analysis / running / result
+  / stale (board drifted ≥2 items since the read). Wired into
+  /vision-boards/[id] above VisionBoardDetail. Backfilled
+  retroactively (commit 22e4ac3 didn't update the changelog inline).
 - `2026-05-22` — iOS PWA status bar flipped to `black-translucent`
   (was `default`). Content now extends edge-to-edge under the status
   bar. Status bar icons render white over our cream background —
