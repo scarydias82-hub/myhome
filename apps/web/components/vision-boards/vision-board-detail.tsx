@@ -30,7 +30,7 @@ interface ItemPayload {
 
 export interface BoardItem {
   id: string;
-  itemType: 'palette' | 'trend' | 'product' | 'note';
+  itemType: 'palette' | 'trend' | 'product' | 'note' | 'image';
   paletteId: string | null;
   trendCardId: string | null;
   productId: string | null;
@@ -147,6 +147,21 @@ export function VisionBoardDetail({
               ) : item.itemType === 'note' ? (
                 <NoteCard
                   body={typeof item.payload.body === 'string' ? item.payload.body : ''}
+                  onRemove={() => removeItem(item.id)}
+                  pending={pendingRemove === item.id}
+                />
+              ) : item.itemType === 'image' ? (
+                <ImageCard
+                  signedUrl={
+                    typeof item.payload.signed_url === 'string'
+                      ? item.payload.signed_url
+                      : null
+                  }
+                  identification={
+                    item.payload.identification as
+                      | { primary_subject?: string; category?: string }
+                      | undefined
+                  }
                   onRemove={() => removeItem(item.id)}
                   pending={pendingRemove === item.id}
                 />
@@ -346,6 +361,54 @@ function ProductCard({
         </p>
         {caption ? (
           <p className="mt-1 line-clamp-2 italic text-[12px] text-ink-soft">&ldquo;{caption}&rdquo;</p>
+        ) : null}
+        <RemoveButton onRemove={onRemove} pending={pending} />
+      </div>
+    </article>
+  );
+}
+
+function ImageCard({
+  signedUrl,
+  identification,
+  onRemove,
+  pending,
+}: {
+  signedUrl: string | null;
+  identification?: { primary_subject?: string; category?: string };
+  onRemove: () => void;
+  pending: boolean;
+}) {
+  return (
+    <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-ink/[0.06] bg-cream">
+      <div className="relative aspect-square w-full bg-paper-warm bg-grain">
+        {signedUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={signedUrl}
+            alt={identification?.primary_subject ?? 'Inspiration upload'}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="grid h-full place-items-center font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            Image expired
+          </div>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <Pill tone="clay" size="sm">
+          Inspiration
+        </Pill>
+        {identification?.primary_subject ? (
+          <p className="line-clamp-2 font-display text-[15px] leading-tight text-ink">
+            {identification.primary_subject}
+          </p>
+        ) : null}
+        {identification?.category ? (
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            {identification.category}
+          </p>
         ) : null}
         <RemoveButton onRemove={onRemove} pending={pending} />
       </div>

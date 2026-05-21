@@ -12,8 +12,11 @@ import { DisplayHeading } from '@/components/saltbush/display-heading';
 import { isSupabaseConfigured, publicEnv } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { listPalettes, paletteSwatch } from '@/lib/palettes';
+import { createAdminClient } from '@/lib/supabase/admin';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { VisionBoardDetail } from '@/components/vision-boards/vision-board-detail';
 import { VisionBoardAnalysisCard } from '@/components/vision-boards/vision-board-analysis-card';
+import { BoardImageUpload } from '@/components/vision-boards/board-image-upload';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +31,7 @@ interface BoardRow {
 
 interface ItemRow {
   id: string;
-  item_type: 'palette' | 'trend' | 'product' | 'note';
+  item_type: 'palette' | 'trend' | 'product' | 'note' | 'image';
   palette_id: string | null;
   trend_card_id: string | null;
   product_id: string | null;
@@ -112,6 +115,25 @@ export default async function VisionBoardDetailPage({
   const products = (productsRes.data as ProductRow[] | null) ?? [];
   const supabaseUrl = publicEnv.NEXT_PUBLIC_SUPABASE_URL ?? '';
 
+  // Image items carry a storage_key in payload; sign each one so the
+  // client can render the private upload. 1-hour TTL is plenty for
+  // a page session.
+  const imageItems = items.filter((i) => i.item_type === 'image');
+  const signedUrlsByItemId = new Map<string, string>();
+  if (imageItems.length > 0) {
+    const admin = createAdminClient() as unknown as SupabaseClient;
+    await Promise.all(
+      imageItems.map(async (it) => {
+        const key = (it.payload as { storage_key?: string } | null)?.storage_key;
+        if (!key) return;
+        const res = await admin.storage
+          .from('vision-board-uploads')
+          .createSignedUrl(key, 60 * 60);
+        if (res.data?.signedUrl) signedUrlsByItemId.set(it.id, res.data.signedUrl);
+      }),
+    );
+  }
+
   // Resolve palette swatches statically from palettes.json — no DB
   // hop needed. Indexed by palette_id slug.
   const palettesById = new Map(listPalettes().map((p) => [p.id, p]));
@@ -159,6 +181,14 @@ export default async function VisionBoardDetailPage({
           />
         </div>
 
+        {/* Image upload → catalogue match (#139 Pass B). User pastes /
+            uploads a Pinterest pin / IG screenshot / random product
+            photo → Claude identifies the product → we surface the
+            closest matches in our catalogue. */}
+        <div className="mb-6 md:mb-8">
+          <BoardImageUpload boardId={board.id} />
+        </div>
+
         <VisionBoardDetail
           boardId={board.id}
           items={items.map((i) => ({
@@ -167,7 +197,12 @@ export default async function VisionBoardDetailPage({
             paletteId: i.palette_id,
             trendCardId: i.trend_card_id,
             productId: i.product_id,
-            payload: i.payload ?? {},
+            payload: {
+              ...(i.payload ?? {}),
+              // Inject the signed URL for image items so the client
+              // can render the private upload.
+              signed_url: signedUrlsByItemId.get(i.id) ?? null,
+            },
           }))}
           palettes={palettesData}
           trendCards={trendCards.map((t) => ({
