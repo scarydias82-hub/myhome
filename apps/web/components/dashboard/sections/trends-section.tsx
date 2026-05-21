@@ -172,12 +172,22 @@ function PaletteSwatchCard({ palette: p }: { palette: DashboardPaletteCard }) {
         <p className="mt-auto line-clamp-1 font-dmmono text-[10px] uppercase tracking-[0.12em] text-editorial-taupe">
           {p.trendSource}
         </p>
-        <Link
-          href={`/projects/new?palette=${p.id}`}
-          className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-editorial-ink px-3 py-1.5 font-dmsans text-[11px] font-medium text-editorial-cream transition hover:opacity-90"
-        >
-          ✦ Start a project
-        </Link>
+        {/* Shop is primary (products-first); start a project is the
+            secondary path. Reflects the dashboard's product-led IA. */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={`/catalogue?palette=${p.id}`}
+            className="rounded-full bg-editorial-ink px-3 py-1.5 font-dmsans text-[11px] font-medium text-editorial-cream transition hover:opacity-90"
+          >
+            ✦ Shop this palette
+          </Link>
+          <Link
+            href={`/projects/new?palette=${p.id}`}
+            className="rounded-full border border-editorial-borderStrong px-3 py-1.5 font-dmsans text-[11px] font-medium text-editorial-ink transition hover:bg-editorial-cream"
+          >
+            Start a project
+          </Link>
+        </div>
       </div>
     </article>
   );
@@ -265,18 +275,20 @@ function TrendCardArticle({ card: t }: { card: DashboardTrendCard }) {
         <p className="line-clamp-3 font-dmsans text-[12px] leading-relaxed text-editorial-taupe">
           {t.description}
         </p>
+        {/* Shop this trend is the primary CTA — products-first IA. The
+            render-with-this-trend path becomes secondary. */}
         <div className="mt-auto flex flex-wrap gap-2 pt-2">
           <Link
-            href={`/projects/new?palette=${t.paletteId}&room=${t.roomType}`}
+            href={`/catalogue?palette=${t.paletteId}&room=${t.roomType}`}
             className="flex-1 rounded-full bg-editorial-ink px-3 py-2 text-center font-dmsans text-[11px] font-medium text-editorial-cream transition hover:opacity-90"
           >
-            ✦ Generate
+            ✦ Shop this trend
           </Link>
           <Link
-            href={`/catalogue?palette=${t.paletteId}`}
+            href={`/projects/new?palette=${t.paletteId}&room=${t.roomType}`}
             className="rounded-full border border-editorial-borderStrong px-3 py-2 font-dmsans text-[11px] font-medium text-editorial-ink transition hover:bg-editorial-cream"
           >
-            Shop
+            Render it
           </Link>
         </div>
       </div>

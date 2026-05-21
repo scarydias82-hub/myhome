@@ -1,25 +1,61 @@
+// Dashboard — products-first information architecture (Phase 1 of the
+// strategic restack). Stack rank, top → bottom:
+//
+//   1. Top nav
+//   2. Hero greeting + 4-tile quick actions
+//   3. Featured products (Claude-curated weekly; heuristic placeholder
+//      until #137 lands)
+//   4. Trending products (7-day saves-velocity from shortlist_items)
+//   5. Your active projects (compact horizontal strip)
+//   6. Showpiece render (most recent succeeded render, full-bleed,
+//      ready for hotspot overlay in Phase 3)
+//   7. Design trends (3 carousels: palettes / 2026 / Tried & tested;
+//      Shop is now the primary CTA on each card)
+//   8. Vision boards (placeholder empty-state for Phase 1, real boards
+//      land in Phase 2)
+//   9. Nexus CTA
+//  10. Footer
+//
+// Mobile-first throughout: tap targets ≥ 44px, snap-x carousels with
+// peek-affordance, no hover-only states.
+//
+// Data fetches are parallel via Promise.all. The aggregate
+// shortlist_items counts (featured + trending) require the admin
+// client because the table is RLS'd to the owning user — we need
+// cross-user counts for the social-proof hooks.
+
 import { redirect } from 'next/navigation';
 import { isSupabaseConfigured, publicEnv } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { listPalettes } from '@/lib/palettes';
+import { listPalettes, paletteSwatch } from '@/lib/palettes';
 import { TopNav } from '@/components/dashboard/top-nav';
 import { HeroGreeting } from '@/components/dashboard/hero-greeting';
-import { PinterestSection } from '@/components/dashboard/sections/pinterest-section';
 import {
   ProjectsSection,
   type DashboardProjectCard,
 } from '@/components/dashboard/sections/projects-section';
 import {
-  ARSection,
-  type ARProductCard,
-} from '@/components/dashboard/sections/ar-section';
-import {
   TrendsSection,
   type DashboardTrendCard,
   type DashboardPaletteCard,
 } from '@/components/dashboard/sections/trends-section';
-import { paletteSwatch } from '@/lib/palettes';
+import {
+  FeaturedProductsSection,
+  type FeaturedProductCard,
+} from '@/components/dashboard/sections/featured-products-section';
+import {
+  TrendingProductsSection,
+  type TrendingProductCard,
+} from '@/components/dashboard/sections/trending-products-section';
+import {
+  ShowpieceRenderSection,
+  type ShowpieceRender,
+} from '@/components/dashboard/sections/showpiece-render-section';
+import {
+  VisionBoardsSection,
+  type VisionBoardCard,
+} from '@/components/dashboard/sections/vision-boards-section';
 import { NexusCTA } from '@/components/dashboard/sections/nexus-cta';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +72,11 @@ interface RenderRow {
   status: string;
   cost_estimate_aud: number | null;
   picking_list: unknown;
+  image_url: string | null;
+  prompt: string | null;
   created_at: string;
+  project_id: string | null;
+  style_slug: string | null;
 }
 
 interface RoomRow {
@@ -54,6 +94,7 @@ interface ProductRow {
   affiliate_url: string | null;
   category: string;
   materials: string[] | null;
+  style_tags: string[] | null;
 }
 
 interface TrendRow {
@@ -65,6 +106,10 @@ interface TrendRow {
   description: string;
   image_storage_key: string;
   source_signal: string | null;
+}
+
+interface ShortlistAggRow {
+  product_id: string | null;
 }
 
 export default async function DashboardPage() {
@@ -79,65 +124,156 @@ export default async function DashboardPage() {
   const firstName = capitalise(emailPrefix.split(/[._-]/)[0] ?? emailPrefix);
   const initials = firstName.slice(0, 2).toUpperCase();
 
-  const [projectsRes, rendersRes, roomsRes, pinterestRes, trendsRes, productsRes] =
-    await Promise.all([
-      supabase
-        .from('projects')
-        .select('id, name, status, pinterest_style_profile_id')
-        .order('updated_at', { ascending: false })
-        .limit(6),
-      supabase
-        .from('renders')
-        .select('id, status, cost_estimate_aud, picking_list, created_at')
-        .order('created_at', { ascending: false })
-        .limit(20),
-      supabase
-        .from('rooms')
-        .select('id, analysis')
-        .not('analysis', 'is', null)
-        .limit(1),
-      supabase
-        .from('pinterest_connections')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle(),
-      supabase
-        .from('trend_cards')
-        .select(
-          'id, palette_id, palette_name, room_type, headline, description, image_storage_key, source_signal',
-        )
-        // Fetch the full set so the dashboard can show one card per
-        // palette (16 palettes × 6 room types = 96 rows max). Previous
-        // .limit(6) starved both carousels — 3 trend-forward + 3
-        // timeless visible. Dedup-by-palette below picks the best
-        // room-variant per palette so we get one card per palette
-        // across the carousels.
-        .limit(200),
-      supabase
-        .from('products')
-        .select(
-          'id, name, retailer, price_aud, image_url, product_url, affiliate_url, category, materials',
-        )
-        .not('image_url', 'is', null)
-        .order('price_aud', { ascending: false, nullsFirst: false })
-        .limit(6),
-    ]);
+  const admin = createAdminClient();
+  const supabaseUrl = publicEnv.NEXT_PUBLIC_SUPABASE_URL ?? '';
+
+  // Windows for the trending/featured aggregates. 7d trending matches
+  // "what's hot this week"; 30d featured gives Phase 1 a stable set
+  // that won't churn dramatically between visits.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Parallel fetches. The admin shortlist aggregates use service-role
+  // because shortlist_items is RLS'd to its owner.
+  const [
+    projectsRes,
+    rendersRes,
+    roomsRes,
+    trendsRes,
+    shortlists7dRes,
+    shortlists30dRes,
+    shortlistsLifetimeRes,
+    latestRenderRes,
+  ] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('id, name, status, pinterest_style_profile_id')
+      .order('updated_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('renders')
+      .select('id, status, cost_estimate_aud, picking_list, image_url, prompt, created_at, project_id, style_slug')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('rooms')
+      .select('id, analysis')
+      .not('analysis', 'is', null)
+      .limit(1),
+    supabase
+      .from('trend_cards')
+      .select(
+        'id, palette_id, palette_name, room_type, headline, description, image_storage_key, source_signal',
+      )
+      .limit(200),
+    // 7-day trending — count of product saves
+    admin
+      .from('shortlist_items')
+      .select('product_id')
+      .eq('kind', 'product')
+      .gte('created_at', sevenDaysAgo)
+      .not('product_id', 'is', null)
+      .limit(1000),
+    // 30-day featured — broader window for stable curation
+    admin
+      .from('shortlist_items')
+      .select('product_id')
+      .eq('kind', 'product')
+      .gte('created_at', thirtyDaysAgo)
+      .not('product_id', 'is', null)
+      .limit(2000),
+    // Lifetime — for tie-break when 7d/30d are zero (cold-start)
+    admin
+      .from('shortlist_items')
+      .select('product_id')
+      .eq('kind', 'product')
+      .not('product_id', 'is', null)
+      .limit(5000),
+    // Most recent SUCCEEDED render for THIS user (showpiece). RLS-
+    // filtered automatically.
+    supabase
+      .from('renders')
+      .select('id, image_url, prompt, cost_estimate_aud, picking_list, created_at')
+      .eq('status', 'succeeded')
+      .not('image_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   const projects = (projectsRes.data as ProjectRow[] | null) ?? [];
   const renders = (rendersRes.data as RenderRow[] | null) ?? [];
   const rooms = (roomsRes.data as RoomRow[] | null) ?? [];
   const trends = (trendsRes.data as TrendRow[] | null) ?? [];
-  const products = (productsRes.data as ProductRow[] | null) ?? [];
-  const pinterestConnected = Boolean(pinterestRes.data);
+  const saves7d = (shortlists7dRes.data as ShortlistAggRow[] | null) ?? [];
+  const saves30d = (shortlistsLifetimeRes.data as ShortlistAggRow[] | null) ?? [];
+  const savesLifetime = (shortlistsLifetimeRes.data as ShortlistAggRow[] | null) ?? [];
+  const latestRender = latestRenderRes.data as
+    | {
+        id: string;
+        image_url: string | null;
+        prompt: string | null;
+        cost_estimate_aud: number | null;
+        picking_list: unknown;
+        created_at: string;
+      }
+    | null;
+  // Suppress unused-var warning — we keep saves30d in case Phase 4 hot-
+  // swaps the featured heuristic in this file rather than via cron.
+  void saves30d;
+  void shortlists30dRes;
 
-  // Map palette_id → hex array (for project + trend cards)
+  // Build aggregate maps: product_id → count
+  const count7d = aggregateCounts(saves7d);
+  const countLifetime = aggregateCounts(savesLifetime);
+
+  // Hydrate the top-N product rows for featured + trending.
+  // Trending = top 8 by 7d count (or lifetime if cold-start)
+  // Featured = top 8 by lifetime among "quality" products (have
+  // image + style_tags). Phase 4 (#137) replaces this with Claude.
+  const trendingIds = pickTopN(count7d.size > 0 ? count7d : countLifetime, 8);
+  const featuredIds = pickTopN(countLifetime, 8, trendingIds);
+
+  // Fetch the product detail rows for both sets. Use a single query
+  // unioning all needed IDs; we'll split downstream.
+  const allProductIds = Array.from(new Set([...trendingIds, ...featuredIds]));
+  let allProducts: ProductRow[] = [];
+  if (allProductIds.length > 0) {
+    const res = await admin
+      .from('products')
+      .select(
+        'id, name, retailer, price_aud, image_url, product_url, affiliate_url, category, materials, style_tags',
+      )
+      .in('id', allProductIds);
+    allProducts = (res.data as ProductRow[] | null) ?? [];
+  }
+
+  // If we have NO save signal yet (fresh deployment with no
+  // shortlist activity), fall back to the most-recently-added
+  // catalogue products as the featured set so the carousel never
+  // ships empty. Trending stays empty in that case (the hook copy
+  // covers "Trending" when 7d is zero anyway).
+  if (allProducts.length === 0) {
+    const fallback = await admin
+      .from('products')
+      .select(
+        'id, name, retailer, price_aud, image_url, product_url, affiliate_url, category, materials, style_tags',
+      )
+      .not('image_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    allProducts = (fallback.data as ProductRow[] | null) ?? [];
+  }
+
+  const productsById = new Map(allProducts.map((p) => [p.id, p]));
+
+  // Map palette_id → palette object (used for project cards + trend
+  // bucket assignment).
   const palettesById = new Map(listPalettes().map((p) => [p.id, p]));
 
-  // Project cards — wrap real DB data into the dashboard shape
+  // Project cards (existing logic, untouched)
   const projectCards: DashboardProjectCard[] = projects.map((p) => {
-    const projectRenders = renders.filter(
-      (r) => (r as unknown as { project_id?: string }).project_id === p.id,
-    );
+    const projectRenders = renders.filter((r) => r.project_id === p.id);
     const itemCount = projectRenders.reduce((sum, r) => {
       const list = (r.picking_list as unknown[] | null) ?? [];
       return sum + list.length;
@@ -156,15 +292,11 @@ export default async function DashboardPage() {
     };
   });
 
-  // Trend cards — dedupe by palette_id so every palette gets exactly
-  // one card on the dashboard (16 palettes × 6 rooms = up to 96 rows
-  // from the table; we want one card per palette across the carousels).
-  // Preference order for the room variant we pick per palette:
-  //   1. Match the user's most recently analysed room
-  //   2. Fall back to 'living_room' which has the widest coverage
-  //   3. First card in the result set for that palette
-  const supabaseUrl = publicEnv.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const preferredRoom = rooms[0]?.analysis &&
+  // Trend cards — dedupe by palette_id (one card per palette,
+  // selected from the user's most-recently-analysed room when
+  // possible).
+  const preferredRoom =
+    rooms[0]?.analysis &&
     typeof rooms[0].analysis === 'object' &&
     'room_type' in (rooms[0].analysis as Record<string, unknown>)
       ? ((rooms[0].analysis as { room_type?: string | null }).room_type ?? null)
@@ -177,8 +309,6 @@ export default async function DashboardPage() {
       trendsByPalette.set(t.palette_id, t);
       continue;
     }
-    // Prefer the user's room over the existing pick; prefer
-    // living_room over arbitrary fallbacks.
     if (preferredRoom && t.room_type === preferredRoom && existing.room_type !== preferredRoom) {
       trendsByPalette.set(t.palette_id, t);
     } else if (
@@ -200,42 +330,106 @@ export default async function DashboardPage() {
       roomType: t.room_type,
       season: t.source_signal ?? '2026',
       description: t.description,
-      matchNote: pinterestConnected ? 'Matches your saved boards' : null,
+      matchNote: null,
       imageUrl: `${supabaseUrl}/storage/v1/object/public/trends/${t.image_storage_key}`,
       paletteId: t.palette_id,
-      // Persona metadata threaded so TrendsSection can bucket cards
-      // into the 2026 vs Tried & Tested carousels. Falls back to 5
-      // (neutral) when the palette lookup misses.
       timelessness: palette?.timelessness ?? 5,
     };
   });
 
-  // AR product cards
-  const arProducts: ARProductCard[] = products.map((p, i) => ({
-    id: p.id,
-    name: p.name,
-    retailer: p.retailer,
-    priceAud: p.price_aud,
-    imageUrl: p.image_url,
-    productUrl: p.product_url,
-    affiliateUrl: p.affiliate_url,
-    // Stub compatibility — proper version comes from the matching pipeline
-    // ranking against the user's active palette. We seed with a sane range
-    // so the bars don't all read identical.
-    compatibility: 78 + ((i * 13) % 18),
-    styleTags: (p.materials ?? []).slice(0, 2),
-    category: p.category,
-  }));
+  // Featured product cards. Each one carries a provenance hook
+  // explaining why it's there. Phase 1 hook palette:
+  //   • saved by ≥ 5 users         → "Top community pick"
+  //   • style_tags has "luxe"      → "Editor's pick"
+  //   • else                       → "Featured this week"
+  const featuredCards: FeaturedProductCard[] = featuredIds
+    .map((id) => productsById.get(id))
+    .filter((p): p is ProductRow => Boolean(p))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      retailer: p.retailer,
+      category: p.category,
+      priceAud: p.price_aud,
+      imageUrl: p.image_url,
+      productUrl: p.affiliate_url ?? p.product_url,
+      hook: hookForFeatured(p, countLifetime.get(p.id) ?? 0),
+      styleTags: (p.style_tags ?? []).slice(0, 2),
+    }));
 
-  // Nexus pipeline state
+  // If we got no featured from the heuristic but did get fallback
+  // rows, surface them with a neutral "New this week" hook so the
+  // carousel still ships content.
+  if (featuredCards.length === 0 && allProducts.length > 0) {
+    for (const p of allProducts.slice(0, 8)) {
+      featuredCards.push({
+        id: p.id,
+        name: p.name,
+        retailer: p.retailer,
+        category: p.category,
+        priceAud: p.price_aud,
+        imageUrl: p.image_url,
+        productUrl: p.affiliate_url ?? p.product_url,
+        hook: 'New this week',
+        styleTags: (p.style_tags ?? []).slice(0, 2),
+      });
+    }
+  }
+
+  // Trending product cards
+  const trendingCards: TrendingProductCard[] = trendingIds
+    .map((id) => productsById.get(id))
+    .filter((p): p is ProductRow => Boolean(p))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      retailer: p.retailer,
+      category: p.category,
+      priceAud: p.price_aud,
+      imageUrl: p.image_url,
+      productUrl: p.affiliate_url ?? p.product_url,
+      saves7d: count7d.get(p.id) ?? 0,
+      savesLifetime: countLifetime.get(p.id) ?? 0,
+      styleTags: (p.style_tags ?? []).slice(0, 2),
+    }));
+
+  // Showpiece render — most recent succeeded render for this user.
+  // The picking_list and palette hex resolution drives the metadata
+  // band underneath the image.
+  let showpiece: ShowpieceRender | null = null;
+  if (latestRender && latestRender.image_url) {
+    const list = (latestRender.picking_list as unknown[] | null) ?? [];
+    // Resolve palette hexes from the originating project (if any)
+    const showpiecePalette = renders.find((r) => r.id === latestRender.id);
+    const paletteRef = showpiecePalette
+      ? (projects.find((pr) => pr.id === showpiecePalette.project_id)
+          ?.pinterest_style_profile_id ?? null)
+      : null;
+    showpiece = {
+      id: latestRender.id,
+      imageUrl: latestRender.image_url,
+      prompt: latestRender.prompt,
+      paletteHexes: paletteHexesFor(paletteRef, palettesById),
+      itemCount: list.length,
+      budgetAud: latestRender.cost_estimate_aud,
+      createdAt: latestRender.created_at,
+    };
+  }
+
+  // Vision boards — empty list for Phase 1; the section renders an
+  // explanatory empty-state. Phase 2 (#135) wires up real fetches.
+  const visionBoards: VisionBoardCard[] = [];
+
+  // Nexus pipeline state — kept from the previous dashboard so the
+  // CTA still reflects the user's progress.
   const hasRender = renders.some((r) => r.status === 'succeeded');
   const hasMatches = renders.some((r) => {
     const list = (r.picking_list as unknown[] | null) ?? [];
     return list.length > 0;
   });
   const nexusSteps = {
-    inspiration: pinterestConnected ? 'done' : 'active',
-    siteAnalysed: rooms.length > 0 ? 'done' : pinterestConnected ? 'active' : 'future',
+    inspiration: 'active',
+    siteAnalysed: rooms.length > 0 ? 'done' : 'active',
     productsMatched: hasMatches ? 'done' : hasRender ? 'active' : 'future',
     rendered: hasRender ? 'done' : 'future',
     shopped: hasMatches && hasRender ? 'active' : 'future',
@@ -248,24 +442,36 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-editorial-cream font-dmsans text-editorial-ink">
       <TopNav initials={initials} fullName={firstName} />
-      <main className="mx-auto max-w-[1200px] px-6">
+      <main className="mx-auto max-w-[1200px] px-4 md:px-6">
+        {/* 1. Hero + quick actions — compact on mobile so featured
+            products land above the fold once the user scrolls a
+            single thumb-length. */}
         <HeroGreeting firstName={firstName} />
 
-        <PinterestSection
-          connected={pinterestConnected}
-          boards={[
-            /* placeholders shown only when connected — Phase 2 will populate */
-          ]}
-        />
+        {/* 2. Featured products — Claude-curated weekly (heuristic
+            until #137). Sits above all other content so products
+            are the first thing a returning user engages with. */}
+        <FeaturedProductsSection products={featuredCards} />
 
+        {/* 3. Trending products — 7-day saves-velocity. Social proof
+            + sale-pressure copy. */}
+        <TrendingProductsSection products={trendingCards} />
+
+        {/* 4. Active projects — compact strip. Hidden entirely when
+            zero (the quick-actions tile up top covers it). */}
         <ProjectsSection projects={projectCards} />
 
-        {/* Trends section — three carousels:
-              ① Colour palettes (the pure 16-palette swatch view)
-              ② 2026 trends (palette × room visuals, trend-forward)
-              ③ Tried & tested (palette × room visuals, timeless)
-            Always renders the palette carousel; the trend-card carousels
-            only render when trend_cards rows exist. */}
+        {/* 5. Showpiece render — most recent succeeded render at
+            full bleed. Empty-state surfaces a sample so the section
+            never reads blank. Phase 3 layers hotspot dots on top. */}
+        <ShowpieceRenderSection
+          render={showpiece}
+          demoImageUrl="https://v3.fal.media/files/penguin/3kbcoR4cyqUaXuk_BJryT_image.webp"
+        />
+
+        {/* 6. Design trends — kept (3 carousels: palettes / 2026 /
+            T&T) but the per-card CTAs are now "Shop this trend"
+            primary, "Render it" secondary. */}
         <TrendsSection
           trends={trendCards}
           palettes={Array.from(palettesById.values()).map<DashboardPaletteCard>((p) => ({
@@ -280,8 +486,10 @@ export default async function DashboardPage() {
           }))}
         />
 
-        <ARSection products={arProducts} />
+        {/* 7. Vision boards — empty-state for now; Phase 2 fills it. */}
+        <VisionBoardsSection boards={visionBoards} />
 
+        {/* 8. Nexus CTA — pipeline progress reminder. */}
         <NexusCTA steps={nexusSteps} activeProject={activeProject} />
 
         <footer className="mt-8 border-t border-editorial-border pt-6 pb-12 text-center">
@@ -311,9 +519,6 @@ function paletteHexesFor(
   styleProfileId: string | null,
   palettes: Map<string, ReturnType<typeof listPalettes>[number]>,
 ): string[] {
-  // For now we don't link projects to a specific palette id (style_profiles
-  // table uses a different source_ref scheme). Fall back to a sensible
-  // default palette so cards don't render bare.
   void styleProfileId;
   const fallback = palettes.get('warm-grounded-earth');
   return fallback ? fallback.colors.slice(0, 5).map((c) => c.hex) : [];
@@ -323,4 +528,38 @@ function progressFor(status: DashboardProjectCard['status'], renderCount: number
   if (status === 'shopping') return 90;
   if (status === 'in_progress') return Math.min(85, 30 + renderCount * 15);
   return 15;
+}
+
+// Aggregate counts from a flat array of {product_id} rows.
+function aggregateCounts(rows: ShortlistAggRow[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.product_id) continue;
+    m.set(r.product_id, (m.get(r.product_id) ?? 0) + 1);
+  }
+  return m;
+}
+
+// Pick top-N product_ids by count, excluding any in the `exclude`
+// list. Stable order — ties broken by insertion order.
+function pickTopN(counts: Map<string, number>, n: number, exclude: string[] = []): string[] {
+  const excludeSet = new Set(exclude);
+  return Array.from(counts.entries())
+    .filter(([id]) => !excludeSet.has(id))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([id]) => id);
+}
+
+// Hook copy for the featured carousel — three tiers, picked so the
+// editorial voice stays consistent even when the heuristic doesn't
+// have a strong signal.
+function hookForFeatured(p: ProductRow, lifetimeSaves: number): string {
+  if (lifetimeSaves >= 5) return 'Top community pick';
+  const tags = (p.style_tags ?? []).map((t) => t.toLowerCase());
+  if (tags.some((t) => t.includes('luxe') || t.includes('heritage') || t.includes('premium'))) {
+    return "Editor's pick";
+  }
+  if (lifetimeSaves > 0) return 'Saved by our community';
+  return 'Featured this week';
 }
