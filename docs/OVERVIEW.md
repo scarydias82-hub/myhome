@@ -25,6 +25,12 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — iOS PWA status bar flipped to `black-translucent`
+  (was `default`). Content now extends edge-to-edge under the status
+  bar. Status bar icons render white over our cream background —
+  trialling raw without a dark scrim to see how unreadable it
+  actually feels on device before deciding next step. Single
+  metadata change in `apps/web/app/layout.tsx`; trivially revertible.
 - `2026-05-22` — **PWA enablement for iOS Add-to-Home-Screen testing.**
   Added `apps/web/app/manifest.ts` (standalone display, cream theme,
   start_url `/dashboard`), `apps/web/app/apple-icon.tsx` (180x180 PNG
