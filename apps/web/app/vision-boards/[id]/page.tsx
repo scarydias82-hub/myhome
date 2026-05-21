@@ -13,6 +13,7 @@ import { isSupabaseConfigured, publicEnv } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { listPalettes, paletteSwatch } from '@/lib/palettes';
 import { VisionBoardDetail } from '@/components/vision-boards/vision-board-detail';
+import { VisionBoardAnalysisCard } from '@/components/vision-boards/vision-board-analysis-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -146,6 +147,16 @@ export default async function VisionBoardDetailPage({
             {board.item_count} item{board.item_count === 1 ? '' : 's'} ·{' '}
             Updated {formatDate(board.updated_at)}
           </p>
+        </div>
+
+        {/* Designer's read — Claude analysis surface. Lives above the
+            item grid so users see the editorial take before they
+            scroll into the components. */}
+        <div className="mb-6 md:mb-8">
+          <VisionBoardAnalysisCard
+            boardId={board.id}
+            currentItemCount={board.item_count}
+          />
         </div>
 
         <VisionBoardDetail
