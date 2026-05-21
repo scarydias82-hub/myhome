@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Playfair_Display, DM_Sans, DM_Mono } from 'next/font/google';
 import './globals.css';
 import { PostHogProvider } from '@/components/posthog-provider';
+import { PWARegister } from '@/components/pwa-register';
 
 // Editorial brand fonts — Playfair Display (display), DM Sans (body),
 // DM Mono (metadata + caps). The legacy Saltbush font vars
@@ -33,6 +34,15 @@ export const metadata: Metadata = {
   description:
     'From inspiration to a fully shopped room — in minutes. myMaison is an Australian design studio in your browser: take a photo of your room, choose a direction, and see every piece rendered as a real, buyable product from an AU retailer.',
   applicationName: 'myMaison',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'myMaison',
+    statusBarStyle: 'default',
+  },
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -40,6 +50,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   themeColor: '#FAF7F2',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -51,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="min-h-screen bg-editorial-cream bg-grain font-dmsans text-editorial-ink antialiased">
         <PostHogProvider>{children}</PostHogProvider>
+        <PWARegister />
       </body>
     </html>
   );

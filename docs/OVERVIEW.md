@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-20 · most recent material commit: `499fab2` (will
+**Last verified:** 2026-05-22 · most recent material commit: `499fab2` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,20 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **PWA enablement for iOS Add-to-Home-Screen testing.**
+  Added `apps/web/app/manifest.ts` (standalone display, cream theme,
+  start_url `/dashboard`), `apps/web/app/apple-icon.tsx` (180x180 PNG
+  monogram via `next/og` ImageResponse), `apps/web/public/icon.svg`
+  (brand mM lockup — italic taupe `m` + roman ink `M`),
+  `apps/web/public/sw.js` (intentionally cache-less so beta deploys
+  are never masked), and `apps/web/components/pwa-register.tsx`
+  (client-side SW registrar). Layout's metadata export now declares
+  `manifest`, `appleWebApp`, `icons`, and `viewport.viewportFit:
+  cover`. Goal: open the deployed Vercel URL on iPhone, tap Share →
+  Add to Home Screen, and review the mobile-first IA from #134 in a
+  standalone shell that matches what TestFlight would look like — no
+  Capacitor rewrite yet. Future option: same code wraps into
+  Capacitor for App Store distribution when beta opens.
 - `2026-05-20` — **Render pivot to fal-ai/flux-pro/kontext/multi**
   shipped to production (tasks #94 + #95 closed). After 15 prompt-
   engineering rounds against fal-ai/flux-general with canny + IP-
@@ -1060,6 +1074,11 @@ Stage 1 is live; the rest is sequenced.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
+- PWA enablement — manifest + service worker + apple-touch-icon
+  shipped so the deployed app installs as a standalone shell from
+  iOS Safari (Share → Add to Home Screen). No Capacitor / native
+  build yet; this is the lightest path to evaluate the mobile-first
+  IA on a real device.
 - SKU fidelity (#73) — staging now composites the actual product
   pixels into the room rather than asking Flux to invent something
   matching a text description. Birefnet cutout → sharp composite →
