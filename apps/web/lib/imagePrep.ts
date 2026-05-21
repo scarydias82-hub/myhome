@@ -58,3 +58,43 @@ export async function trimBlackBorders(buf: Buffer): Promise<TrimResult> {
     return { buf, trimmed: false, before };
   }
 }
+
+export interface ResizeResult {
+  buf: Buffer;
+  width: number;
+  height: number;
+}
+
+// Resize a room photo to Flux/Kontext's natural working resolution
+// (~1MP, long edge 1024) BEFORE uploading to fal. The client-side
+// upload form already caps at 1600 long-edge, but both flux-general
+// and kontext-multi internally downsample to ~1024 anyway — so the
+// extra pixels are pure upload/fetch bandwidth waste. Snapping to
+// multiples of 32 matches Flux's accepted dim grid and lets us pass
+// width/height directly without surprise rounding on fal's side.
+//
+// Returns the resized buffer + the dims it was resized to. Min 512
+// per axis (Flux refuses smaller). JPEG q88 mirrors the eval+upload
+// quality used elsewhere in the pipeline.
+export async function resizeForFlux(buf: Buffer, longEdge = 1024): Promise<ResizeResult> {
+  const meta = await sharp(buf).metadata();
+  const srcW = meta.width ?? longEdge;
+  const srcH = meta.height ?? longEdge;
+  const ratio = srcW / srcH;
+  let w: number;
+  let h: number;
+  if (ratio >= 1) {
+    w = longEdge;
+    h = Math.round(longEdge / ratio);
+  } else {
+    h = longEdge;
+    w = Math.round(longEdge * ratio);
+  }
+  w = Math.max(512, Math.round(w / 32) * 32);
+  h = Math.max(512, Math.round(h / 32) * 32);
+  const resized = await sharp(buf)
+    .resize({ width: w, height: h, fit: 'fill' })
+    .jpeg({ quality: 88 })
+    .toBuffer();
+  return { buf: resized, width: w, height: h };
+}

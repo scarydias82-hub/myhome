@@ -23,7 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPalette, listPalettes, type Palette } from '@/lib/palettes';
-import { analyseRoom, type RoomAnalysis } from '@/lib/vision';
+import { analyseRoom, type RoomAnalysis, type VisionMediaType } from '@/lib/vision';
 import { getDesignerAdvice } from '@/lib/designer';
 import type { DesignerAdvice } from '@/components/renders/designer-read';
 
@@ -118,12 +118,16 @@ export async function POST(request: NextRequest) {
 
   let roomAnalysis = room.analysis;
   if (!roomAnalysis) {
-    const signed = await admin.storage.from('rooms').createSignedUrl(room.photo_url, 60 * 5);
-    if (signed.error || !signed.data?.signedUrl) {
-      return NextResponse.json({ error: 'Could not sign room photo URL.' }, { status: 500 });
+    // Download the photo bytes and pass inline to analyseRoom (base64)
+    // — avoids an Anthropic server-side URL fetch (~1-2s).
+    const dl = await admin.storage.from('rooms').download(room.photo_url);
+    if (dl.error || !dl.data) {
+      return NextResponse.json({ error: 'Could not load room photo.' }, { status: 500 });
     }
+    const buffer = Buffer.from(await dl.data.arrayBuffer());
+    const mediaType = (dl.data.type || 'image/jpeg') as VisionMediaType;
     try {
-      roomAnalysis = await analyseRoom(signed.data.signedUrl);
+      roomAnalysis = await analyseRoom({ buffer, mediaType });
       await admin.from('rooms').update({ analysis: roomAnalysis }).eq('id', room.id);
     } catch (err) {
       console.error('vision analysis failed', err);

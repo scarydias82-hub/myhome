@@ -26,7 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { analyseRoom, type RoomAnalysis } from '@/lib/vision';
+import { analyseRoom, type RoomAnalysis, type VisionMediaType } from '@/lib/vision';
 import { synthesiseBrief, type BriefSynthesis } from '@/lib/brief/synthesiser';
 
 export const runtime = 'nodejs';
@@ -101,16 +101,19 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
 
   // 4a. Room analysis — re-run only if not already cached. Cached
   // analysis avoids paying a Claude call when the user revisits Step 3.
+  // Downloads the photo bytes directly from Supabase Storage and passes
+  // them inline to analyseRoom (base64) instead of having Anthropic do
+  // a server-side URL fetch — same image, ~1-2s faster per call.
   let roomAnalysis: RoomAnalysis | null = room.analysis;
   if (!roomAnalysis) {
-    const signed = await admin.storage
-      .from('rooms')
-      .createSignedUrl(room.photo_url, 60 * 5);
-    if (!signed.data?.signedUrl) {
-      return NextResponse.json({ error: 'Could not sign room photo URL.' }, { status: 500 });
+    const dl = await admin.storage.from('rooms').download(room.photo_url);
+    if (dl.error || !dl.data) {
+      return NextResponse.json({ error: 'Could not load room photo.' }, { status: 500 });
     }
+    const buffer = Buffer.from(await dl.data.arrayBuffer());
+    const mediaType = (dl.data.type || 'image/jpeg') as VisionMediaType;
     try {
-      roomAnalysis = await analyseRoom(signed.data.signedUrl);
+      roomAnalysis = await analyseRoom({ buffer, mediaType });
       await admin.from('rooms').update({ analysis: roomAnalysis }).eq('id', room.id);
     } catch (err) {
       console.error('[analyse] analyseRoom failed', err);

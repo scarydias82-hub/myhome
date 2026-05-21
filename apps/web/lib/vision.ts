@@ -81,9 +81,18 @@ When you spot any of these, name them in \`architectural_features\` — e.g. "ve
 
 Output ONLY the JSON, no markdown fences, no commentary.`;
 
-export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
-  // Claude Sonnet vision accepts either a URL or base64. We pass URL since the
-  // signed Supabase URL is already short-lived but publicly fetchable.
+export type VisionMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+export interface AnalyseRoomInput {
+  buffer: Buffer;
+  mediaType: VisionMediaType;
+}
+
+export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis> {
+  // Inline base64 instead of passing a signed URL. With a URL, Anthropic
+  // has to perform a server-side fetch back to Supabase (~1-2s of pure
+  // latency on top of inference); with base64 we hand the bytes over
+  // directly. Same image, same model, same prompt — no quality delta.
   const anthropic = getAnthropic();
   // Haiku is ~3× faster than Sonnet for this structured-extraction task and
   // handles vision more than well enough. Sonnet was occasionally taking
@@ -103,7 +112,14 @@ export async function analyseRoom(imageUrl: string): Promise<RoomAnalysis> {
           {
             role: 'user',
             content: [
-              { type: 'image', source: { type: 'url', url: imageUrl } },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: input.mediaType,
+                  data: input.buffer.toString('base64'),
+                },
+              },
               { type: 'text', text: 'Analyse this room photo and return the JSON described in your system prompt.' },
             ],
           },

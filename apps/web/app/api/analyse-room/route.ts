@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { analyseRoom } from '@/lib/vision';
+import { analyseRoom, type VisionMediaType } from '@/lib/vision';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -85,19 +85,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not create room record.' }, { status: 500 });
   }
 
-  // Sign the photo for Claude vision.
-  const signed = await admin.storage.from('rooms').createSignedUrl(photoKey, 60 * 5);
-  if (signed.error || !signed.data?.signedUrl) {
-    return NextResponse.json({ error: 'Could not sign photo URL.' }, { status: 500 });
-  }
-
   console.log(`[analyse-room] start roomId=${room.id}`);
   const startedAt = Date.now();
 
   // Run vision. Cache on rooms.analysis so /api/advise + /api/render can read
-  // it directly without re-analysing.
+  // it directly without re-analysing. Pass the photo bytes we already have
+  // in memory as base64 instead of a signed URL — avoids a ~1-2s round-trip
+  // where Anthropic would otherwise have to fetch Supabase server-side.
   try {
-    const analysis = await analyseRoom(signed.data.signedUrl);
+    const analysis = await analyseRoom({
+      buffer: Buffer.from(photoBytes),
+      mediaType: photo.type as VisionMediaType,
+    });
     const visionMs = Date.now() - startedAt;
     console.log(`[analyse-room] vision done in ${visionMs}ms`);
     await admin.from('rooms').update({ analysis }).eq('id', room.id);

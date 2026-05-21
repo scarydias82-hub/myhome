@@ -37,7 +37,7 @@ import {
 } from '../../lib/fal';
 import { generatePaletteSwatch } from '../../lib/paletteSwatch';
 import { autoFeatureForPalette } from '../../lib/featuring';
-import { trimBlackBorders } from '../../lib/imagePrep';
+import { trimBlackBorders, resizeForFlux } from '../../lib/imagePrep';
 import { buildKontextPrompt } from '../../lib/kontextPrompt';
 import { buildPrompt, getStyle } from '../../lib/styles';
 import { getPalette } from '../../lib/palettes';
@@ -98,6 +98,18 @@ if (toRun.length === 0) {
 interface IterationResult {
   fixture: Fixture;
   durationMs: number;
+  // Wall-clock breakdown for the fal portion of the pipeline. Added
+  // 2026-05-22 so we can A/B the effect of pre-resizing input to 1024
+  // (Flux's working resolution) on fal-fetch time. submitMs is the
+  // queue.submit call (includes fal pulling our URL); inferenceMs is
+  // requestId-issued → completed; fetchMs is downloading the rendered
+  // image from fal's CDN back to the eval host.
+  timings: {
+    submitMs: number;
+    inferenceMs: number;
+    fetchMs: number;
+    falInputBytes: number;
+  };
   outputs: {
     originalSignedUrl: string;
     renderedFalUrl: string;
@@ -177,7 +189,9 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
     );
   }
   // Re-encode to JPEG just to normalise (HEIC etc.) — at the same
-  // ~1600px resize the upload form uses client-side.
+  // ~1600px resize the upload form uses client-side. This is what
+  // Claude vision will see; the fal endpoint gets a separate, smaller
+  // copy below.
   const normalised = await sharp(trim.buf)
     .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 88 })
@@ -193,8 +207,24 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   const originalSignedUrl = signed.data?.signedUrl;
   if (!originalSignedUrl) throw new Error('could not sign room photo URL');
 
-  // 2. Vision analysis.
-  const analysis = await analyseRoom(originalSignedUrl);
+  // Resize to Flux's working resolution (1024 long-edge) and upload to
+  // fal storage — mirrors /api/render. The Supabase URL above (1600
+  // long-edge) stays in use for vision + the markdown link to the
+  // original; fal gets a tighter, fast-fetch copy.
+  const fluxInput = await resizeForFlux(trim.buf);
+  const fluxControlImageUrl = await uploadImageBuffer(
+    fluxInput.buf,
+    `eval-${stamp}-${fixture.id}-flux.jpg`,
+    'image/jpeg',
+  );
+  console.log(
+    `  flux input: ${fluxInput.width}×${fluxInput.height} (${(fluxInput.buf.length / 1024).toFixed(0)} KB) → fal storage`,
+  );
+
+  // 2. Vision analysis. Pass the normalised 1600-edge JPEG buffer
+  //    directly — same image Supabase has at originalSignedUrl, just
+  //    delivered inline so Anthropic doesn't need a server-side fetch.
+  const analysis = await analyseRoom({ buffer: normalised, mediaType: 'image/jpeg' });
   const analysisPath = path.join(out, 'room-analysis.json');
   await writeFile(analysisPath, JSON.stringify(analysis, null, 2));
 
@@ -242,7 +272,7 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   //     'kontext-multi' (round 14 broke the 5.0 average ceiling).
   //     Set FLUX_PROVIDER=flux-general to roll back.
   const provider = getActiveProvider();
-  let result: { imageUrl: string };
+  let result: { imageUrl: string; submitMs: number; inferenceMs: number };
   if (provider === 'kontext-multi' && paletteSwatchUrl) {
     console.log(`  provider: kontext-multi (fal-ai/flux-pro/kontext/multi)`);
     const kontextPrompt = buildKontextPrompt({
@@ -253,23 +283,30 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
     console.log(`  kontext prompt (${kontextPrompt.length} chars):\n${kontextPrompt.split('\n').slice(0, 12).map((l) => '    ' + l).join('\n')}\n    ...`);
     result = await runKontext({
       prompt: kontextPrompt,
-      controlImageUrl: originalSignedUrl,
+      controlImageUrl: fluxControlImageUrl,
       paletteSwatchUrl,
     });
   } else {
     console.log(`  provider: flux-general (canny + optional IP-Adapter)`);
     result = await renderWithIpAdapterFallback({
       prompt,
-      controlImageUrl: originalSignedUrl,
+      controlImageUrl: fluxControlImageUrl,
       paletteSwatchUrl,
+      width: fluxInput.width,
+      height: fluxInput.height,
     });
   }
 
-  // 6. Save rendered image locally.
+  // 6. Save rendered image locally (timed for the fetchMs metric).
+  const fetchStart = Date.now();
   const renderedBytes = new Uint8Array(await (await fetch(result.imageUrl)).arrayBuffer());
+  const fetchMs = Date.now() - fetchStart;
   const renderedLocalPath = path.join(out, 'rendered.jpg');
   const renderedJpeg = await sharp(Buffer.from(renderedBytes)).jpeg({ quality: 88 }).toBuffer();
   await writeFile(renderedLocalPath, renderedJpeg);
+  console.log(
+    `  fal timings: submit ${(result.submitMs / 1000).toFixed(1)}s · inference ${(result.inferenceMs / 1000).toFixed(1)}s · fetch ${(fetchMs / 1000).toFixed(1)}s`,
+  );
 
   // 7. Picking list.
   const paletteHexes = palette?.colors.map((c) => c.hex) ?? style.palette;
@@ -301,6 +338,12 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   return {
     fixture,
     durationMs: Date.now() - started,
+    timings: {
+      submitMs: result.submitMs,
+      inferenceMs: result.inferenceMs,
+      fetchMs,
+      falInputBytes: fluxInput.buf.length,
+    },
     outputs: {
       originalSignedUrl,
       renderedFalUrl: result.imageUrl,
@@ -317,13 +360,19 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
 
 // Poll fal queue until completion. ~2s interval, give up at 3 minutes.
 // On 'failed' status, surfaces fal's inference logs so we can see why.
-async function pollFal(requestId: string): Promise<{ imageUrl: string }> {
+// Returns inferenceMs alongside the URL so the harness can report the
+// wall-clock breakdown.
+async function pollFal(requestId: string): Promise<{ imageUrl: string; inferenceMs: number }> {
   const startedAt = Date.now();
   let lastLogs: string[] = [];
   while (Date.now() - startedAt < 180000) {
     const status = await checkRenderStatus(requestId);
     if (status.logs && status.logs.length) lastLogs = status.logs;
-    if (status.status === 'completed') return fetchRenderResult(requestId);
+    if (status.status === 'completed') {
+      const inferenceMs = Date.now() - startedAt;
+      const r = await fetchRenderResult(requestId);
+      return { imageUrl: r.imageUrl, inferenceMs };
+    }
     if (status.status === 'failed') {
       const tail = lastLogs.slice(-20).join('\n  | ');
       throw new Error(`fal reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
@@ -337,13 +386,17 @@ async function pollFal(requestId: string): Promise<{ imageUrl: string }> {
 // lib/kontextPrompt.ts so /api/render and the eval share one builder.
 // Round 15 lives in that file.
 
-async function pollKontext(requestId: string): Promise<{ imageUrl: string }> {
+async function pollKontext(requestId: string): Promise<{ imageUrl: string; inferenceMs: number }> {
   const startedAt = Date.now();
   let lastLogs: string[] = [];
   while (Date.now() - startedAt < 180000) {
     const status = await checkKontextStatus(requestId);
     if (status.logs && status.logs.length) lastLogs = status.logs;
-    if (status.status === 'completed') return fetchKontextResult(requestId);
+    if (status.status === 'completed') {
+      const inferenceMs = Date.now() - startedAt;
+      const r = await fetchKontextResult(requestId);
+      return { imageUrl: r.imageUrl, inferenceMs };
+    }
     if (status.status === 'failed') {
       const tail = lastLogs.slice(-20).join('\n  | ');
       throw new Error(`kontext reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
@@ -357,9 +410,12 @@ async function runKontext(input: {
   prompt: string;
   controlImageUrl: string;
   paletteSwatchUrl: string;
-}): Promise<{ imageUrl: string }> {
+}): Promise<{ imageUrl: string; submitMs: number; inferenceMs: number }> {
+  const submitStart = Date.now();
   const { requestId } = await submitKontextRender(input);
-  return pollKontext(requestId);
+  const submitMs = Date.now() - submitStart;
+  const polled = await pollKontext(requestId);
+  return { imageUrl: polled.imageUrl, submitMs, inferenceMs: polled.inferenceMs };
 }
 
 // Submit + poll, retrying text-only if the IP-Adapter version fails
@@ -372,14 +428,21 @@ async function renderWithIpAdapterFallback(input: {
   prompt: string;
   controlImageUrl: string;
   paletteSwatchUrl: string | null;
-}): Promise<{ imageUrl: string }> {
+  width?: number;
+  height?: number;
+}): Promise<{ imageUrl: string; submitMs: number; inferenceMs: number }> {
   const tryOnce = async (paletteSwatchUrl: string | null) => {
+    const submitStart = Date.now();
     const { requestId } = await submitDepthRender({
       prompt: input.prompt,
       controlImageUrl: input.controlImageUrl,
       paletteSwatchUrl,
+      width: input.width,
+      height: input.height,
     });
-    return pollFal(requestId);
+    const submitMs = Date.now() - submitStart;
+    const polled = await pollFal(requestId);
+    return { imageUrl: polled.imageUrl, submitMs, inferenceMs: polled.inferenceMs };
   };
 
   if (!input.paletteSwatchUrl) {
@@ -403,6 +466,7 @@ async function writeSummary(results: IterationResult[], dir: string): Promise<vo
     style: r.fixture.style,
     paletteId: r.fixture.paletteId,
     durationMs: r.durationMs,
+    timings: r.timings,
     pickingListSize: r.pickingListSize,
     scorecard: r.scorecard,
     outputs: r.outputs,
@@ -426,6 +490,28 @@ async function writeSummary(results: IterationResult[], dir: string): Promise<vo
   lines.push('');
   lines.push(`Fixtures: ${results.length} · Scored: ${scored.length}`);
   lines.push('');
+
+  // Wall-clock timing aggregate. Added 2026-05-22 to track the effect
+  // of pre-resizing input to Flux's 1024-edge working res on fal-fetch
+  // time. submitMs is the most sensitive to input-size changes (it
+  // includes fal pulling our URL); inferenceMs is mostly fixed per
+  // provider; fetchMs is our local download of the rendered output.
+  if (results.length > 0) {
+    const avg = (xs: number[]) => (xs.reduce((a, b) => a + b, 0) / xs.length) | 0;
+    const submitMs = avg(results.map((r) => r.timings.submitMs));
+    const inferenceMs = avg(results.map((r) => r.timings.inferenceMs));
+    const fetchMs = avg(results.map((r) => r.timings.fetchMs));
+    const inputBytes = avg(results.map((r) => r.timings.falInputBytes));
+    lines.push('## Wall-clock timings (mean across fixtures)');
+    lines.push('');
+    lines.push('| Phase | Mean |');
+    lines.push('|-------|------|');
+    lines.push(`| Submit (queue.submit, incl. fal-fetch) | ${(submitMs / 1000).toFixed(1)}s |`);
+    lines.push(`| Inference (requestId → completed) | ${(inferenceMs / 1000).toFixed(1)}s |`);
+    lines.push(`| Fetch rendered (fal CDN → host) | ${(fetchMs / 1000).toFixed(1)}s |`);
+    lines.push(`| Fal input size | ${(inputBytes / 1024).toFixed(0)} KB |`);
+    lines.push('');
+  }
   if (scored.length > 0) {
     lines.push('## Aggregate scores (1-10, higher is better)');
     lines.push('');
@@ -464,6 +550,10 @@ async function writeSummary(results: IterationResult[], dir: string): Promise<vo
     lines.push(`*${r.fixture.description}*`);
     lines.push('');
     lines.push(`Style: \`${r.fixture.style}\` · Palette: \`${r.fixture.paletteId}\` · Duration: ${(r.durationMs / 1000).toFixed(1)}s · Picking list: ${r.pickingListSize} items`);
+    lines.push('');
+    lines.push(
+      `Fal timings — submit ${(r.timings.submitMs / 1000).toFixed(1)}s · inference ${(r.timings.inferenceMs / 1000).toFixed(1)}s · fetch ${(r.timings.fetchMs / 1000).toFixed(1)}s · input ${(r.timings.falInputBytes / 1024).toFixed(0)} KB`,
+    );
     lines.push('');
     lines.push(`- Original: \`${r.fixture.id}/original.jpg\``);
     lines.push(`- Rendered: \`${r.fixture.id}/rendered.jpg\``);

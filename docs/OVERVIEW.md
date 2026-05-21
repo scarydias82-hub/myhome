@@ -25,6 +25,30 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Render-path performance pass.** Two compounding
+  wins to cut wall-clock without touching scores. (1) Fal input
+  resize: the client-side upload form already caps at 1600 long-edge,
+  but both flux-general and kontext-multi resample to ~1MP (1024 long-
+  edge) internally — so ~60% of the bytes we hand fal are pure
+  bandwidth waste on the fal-fetch step. Added resizeForFlux() in
+  lib/imagePrep.ts; /api/render now ALWAYS resizes to 1024 (snapped
+  to /32) and ALWAYS re-uploads to fal storage so the endpoint pulls
+  from fal's own CDN instead of a Supabase signed URL across regions.
+  Replaces the previous computeFluxDimensions+conditional-trim-only
+  upload flow. (2) Vision base64 inline: analyseRoom() flipped from
+  `source: { type: 'url' }` to `{ type: 'base64' }`. The Anthropic
+  API used to fetch the Supabase signed URL server-side from US
+  infrastructure to Sydney storage (~1-2s of pure latency on top of
+  inference); now the buffer goes inline. All four callers updated —
+  /api/analyse-room passes the in-memory photoBytes directly,
+  /api/advise + /api/projects/[id]/analyse download from Supabase
+  Storage (closer geographically than Anthropic), eval passes its
+  normalised buffer. New VisionMediaType export. Eval pipeline
+  mirrors prod: separate 1024-edge fal-storage upload alongside the
+  1600-edge Supabase upload, plus new per-iteration timing breakdown
+  (submitMs / inferenceMs / fetchMs / falInputBytes) so future
+  perf changes are measurable. Wall-clock timings section added to
+  summary.md.
 - `2026-05-22` — iOS PWA status bar flipped to `black-translucent`
   (was `default`). Content now extends edge-to-edge under the status
   bar. Status bar icons render white over our cream background —

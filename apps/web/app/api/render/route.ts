@@ -11,7 +11,6 @@
 // fal's queue, finalises the render (download + storage + picking list) once
 // fal reports completed, and updates the renders row.
 
-import sharp from 'sharp';
 import { NextResponse, type NextRequest, after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
@@ -33,37 +32,8 @@ import { getDesignerAdvice } from '@/lib/designer';
 import { autoFeatureForPalette, autoFeatureClaude } from '@/lib/featuring';
 import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import { buildKontextPrompt } from '@/lib/kontextPrompt';
-import { trimBlackBorders } from '@/lib/imagePrep';
+import { trimBlackBorders, resizeForFlux } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
-
-// Compute Flux-compatible output dimensions that preserve the source
-// photo's aspect ratio. Without this, /api/render never passes dims to
-// submitDepthRender and the fal endpoint falls back to landscape_4_3 —
-// so a portrait phone shot comes back squashed into a landscape canvas.
-//
-// Flux dev wants dimensions divisible by 32 and (for quality) the long
-// edge near 1024. We compute the longest edge as 1024 and round each
-// axis to the nearest multiple of 32 within that bound.
-async function computeFluxDimensions(buf: Buffer): Promise<{ width: number; height: number }> {
-  const meta = await sharp(buf).metadata();
-  const srcW = meta.width ?? 1024;
-  const srcH = meta.height ?? 768;
-  const ratio = srcW / srcH;
-  const long = 1024;
-  let w: number;
-  let h: number;
-  if (ratio >= 1) {
-    w = long;
-    h = Math.round(long / ratio);
-  } else {
-    h = long;
-    w = Math.round(long * ratio);
-  }
-  // Snap to multiples of 32. Flux refuses anything else.
-  w = Math.max(512, Math.round(w / 32) * 32);
-  h = Math.max(512, Math.round(h / 32) * 32);
-  return { width: w, height: h };
-}
 
 export const runtime = 'nodejs';
 // Submit itself is fast (~5-8s) but we now kick off the designer LLM
@@ -319,12 +289,19 @@ export async function POST(request: NextRequest) {
       heroProducts.length > 0 ? heroProducts : null,
       palette,
     );
-    // Read the source photo's dimensions so Flux outputs at the same
-    // aspect — portrait stays portrait, landscape stays landscape.
-    // Also trim phone-screenshot letterbox bars (see lib/imagePrep.ts)
-    // — if any are detected, re-upload the trimmed version to fal
-    // storage and use THAT as the canny / init image so we don't lock
-    // the black borders into the render.
+    // Pre-process the source photo before handing it to fal:
+    //   1. trimBlackBorders   — strip phone-screenshot letterbox bars
+    //      (see lib/imagePrep.ts). Canny ControlNet treats the black
+    //      edge as a hard wall boundary if left in.
+    //   2. resizeForFlux      — downsize to 1024 long-edge (~1MP) at
+    //      multiples of 32. Both flux-general and kontext-multi
+    //      resample internally to ~1MP anyway, so the upload-form's
+    //      1600-edge buffer is ~60% wasted bytes on the fal-fetch.
+    //      Sending 1:1 with the model's working res cuts fal-fetch
+    //      overhead with zero quality impact (model never sees the
+    //      extra pixels regardless).
+    // Always re-upload to fal storage — gives the fal endpoint a
+    // small, fast-fetch URL instead of the larger Supabase-signed one.
     let dims: { width: number; height: number } | undefined;
     let controlImageUrl = signed.data.signedUrl;
     try {
@@ -336,19 +313,21 @@ export async function POST(request: NextRequest) {
           console.log(
             `[render] trimmed letterbox: ${trim.before.width}×${trim.before.height} → ${trim.after.width}×${trim.after.height}`,
           );
-          // Re-upload the trimmed photo to fal storage so the URL we
-          // give Flux points at clean room pixels, not bordered ones.
-          try {
-            controlImageUrl = await uploadImageBuffer(
-              trim.buf,
-              `room-${render.id}-trimmed.jpg`,
-              'image/jpeg',
-            );
-          } catch (err) {
-            console.warn('[render] trimmed re-upload failed, using original URL', err);
-          }
         }
-        dims = await computeFluxDimensions(trim.buf);
+        const resized = await resizeForFlux(trim.buf);
+        dims = { width: resized.width, height: resized.height };
+        console.log(
+          `[render] resized for fal: ${resized.width}×${resized.height} (${(resized.buf.length / 1024).toFixed(0)} KB)`,
+        );
+        try {
+          controlImageUrl = await uploadImageBuffer(
+            resized.buf,
+            `room-${render.id}-flux.jpg`,
+            'image/jpeg',
+          );
+        } catch (err) {
+          console.warn('[render] resized re-upload failed, using Supabase URL', err);
+        }
       }
     } catch (err) {
       console.warn('[render] could not read photo dimensions, using default', err);
