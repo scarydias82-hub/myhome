@@ -558,17 +558,63 @@ async function fetchCandidates({
   return (data as ProductRow[]) ?? [];
 }
 
+// Anthropic vision accepts only these image MIME types. Anything else
+// gets coerced to 'image/jpeg' as the safest fallback — the SDK will
+// reject unknown types outright.
+type ClaudeImageType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+function normaliseImageMediaType(raw: string | null | undefined): ClaudeImageType {
+  const m = ((raw ?? '').toLowerCase().split(';')[0] ?? '').trim();
+  if (m === 'image/png' || m === 'image/webp' || m === 'image/gif') return m;
+  return 'image/jpeg';
+}
+
+interface FetchedCandidate {
+  product: ProductRow;
+  buffer: Buffer;
+  mediaType: ClaudeImageType;
+}
+
+// Fetch a candidate's image server-side so we can hand bytes to Claude
+// rather than asking Anthropic to download a retailer URL. Two wins:
+// (1) ~1-2s saved per candidate because our Sydney Vercel function is
+// geographically closer to AU retailer CDNs than Anthropic's US edge;
+// (2) bad URLs (404, slow CDN, redirect chain) no longer poison the
+// whole matching call — Anthropic returns 400 "Unable to download the
+// file" for the entire request on a single bad URL, silently dropping
+// the picking-list item. Here we skip the dud and rank the rest.
+async function fetchCandidate(p: ProductRow): Promise<FetchedCandidate | null> {
+  try {
+    const res = await fetch(p.image_url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length === 0) return null;
+    return { product: p, buffer, mediaType: normaliseImageMediaType(res.headers.get('content-type')) };
+  } catch {
+    return null;
+  }
+}
+
 async function rankWithClaude(
   cropBuf: Buffer,
   candidates: ProductRow[],
 ): Promise<PickingMatch[]> {
   if (candidates.length === 0) return [];
 
+  // Hydrate candidates to bytes in parallel; drop the ones we can't reach.
+  const fetched = await Promise.all(candidates.map(fetchCandidate));
+  const usable = fetched.filter((x): x is FetchedCandidate => x !== null);
+  if (usable.length === 0) return [];
+  if (usable.length < candidates.length) {
+    console.log(
+      `[matching] skipped ${candidates.length - usable.length}/${candidates.length} unreachable candidate images`,
+    );
+  }
+
   const client = getAnthropic();
   const cropBase64 = cropBuf.toString('base64');
 
-  const candidateList = candidates
-    .map((p, i) => `${i + 1}. ${p.name} — ${p.retailer}`)
+  const candidateList = usable
+    .map((u, i) => `${i + 1}. ${u.product.name} — ${u.product.retailer}`)
     .join('\n');
 
   // We send the target crop + the candidate images, and ask for an ordered
@@ -590,9 +636,13 @@ async function rankWithClaude(
             source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
           },
           { type: 'text', text: `CANDIDATES:\n${candidateList}\n\nTheir images follow in order:` },
-          ...candidates.map((p) => ({
+          ...usable.map((u) => ({
             type: 'image' as const,
-            source: { type: 'url' as const, url: p.image_url },
+            source: {
+              type: 'base64' as const,
+              media_type: u.mediaType,
+              data: u.buffer.toString('base64'),
+            },
           })),
           {
             type: 'text',
@@ -609,9 +659,9 @@ async function rankWithClaude(
     .join(' ')
     .trim();
 
-  const ranked = parseRanking(raw, candidates.length);
+  const ranked = parseRanking(raw, usable.length);
   return ranked.slice(0, MATCHES_PER_ITEM).map((idx, position) => {
-    const p = candidates[idx];
+    const p = usable[idx]?.product;
     if (!p) throw new Error(`Index ${idx} out of bounds`);
     return {
       productId: p.id,

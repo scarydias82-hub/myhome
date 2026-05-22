@@ -25,6 +25,22 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Matching pipeline: candidate images inline base64.**
+  Same playbook as the vision perf pass, applied to
+  `rankWithClaude` in lib/matching.ts. The 2026-05-22T00-22-19 eval
+  surfaced two silent failure modes on the picking-list build: a 400
+  "Unable to download the file" when Anthropic couldn't reach one
+  candidate's retailer-CDN image URL (which aborts the WHOLE call,
+  not just that candidate), and a 429 rate-limit pressure from many
+  parallel matching calls. The fix: hydrate each ProductRow's
+  image_url to bytes via fetch() with a 5s timeout, filter unreachable
+  candidates out of the list, and pass survivors to Claude as
+  `source.type: 'base64'`. Two wins: Sydney→AU-retailer-CDN fetches
+  are faster than US-edge→AU fetches, and one bad URL no longer
+  poisons the whole call. The eval run silently dropped 2 picking-
+  list items from 12 → 10 from this exact error class — base64 fixes
+  it. Doesn't address the 429 rate-limit (that's the parallelism
+  story, separate ticket).
 - `2026-05-22` — **Render-path performance pass.** Two compounding
   wins to cut wall-clock without touching scores. (1) Fal input
   resize: the client-side upload form already caps at 1600 long-edge,
