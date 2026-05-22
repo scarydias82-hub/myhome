@@ -25,6 +25,19 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Eval mirrors prod warmup + poll cadence.** The
+  2026-05-22T00-39-18 eval surfaced a 42.7s Kontext inference time
+  vs 24.7s the run before — same code, same fixture. Root cause was
+  the eval was never firing /api/warm-equivalent pings, so it
+  systematically measured cold-start latency real users don't see
+  (prod fires warmup on /rooms/new mount and again on palette pick).
+  Fix: new fireWarmup() helper at the top of runIteration replicates
+  /api/warm's three pings (warmEmbeddings + fal florence-2 + fal
+  flux-control-lora-canny) fire-and-forget, so by the time the
+  iteration submits its real Kontext call the worker is hot. Also
+  drops the eval's pollFal/pollKontext interval from 2000ms → 1000ms
+  to match (and slightly beat) the prod render-poll 1500ms. Together
+  these align eval wall-clock with what prod actually experiences.
 - `2026-05-22` — **Render-path UX latency pass.** Two cheap wins on
   perceived render time. (1) RenderPoll interval 3000ms → 1500ms in
   components/renders/render-poll.tsx (MAX_POLLS bumped 80 → 160 to

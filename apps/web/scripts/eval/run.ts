@@ -34,7 +34,9 @@ import {
   checkKontextStatus,
   fetchKontextResult,
   getActiveProvider,
+  getFal,
 } from '../../lib/fal';
+import { warmEmbeddings } from '../../lib/embeddings';
 import { generatePaletteSwatch } from '../../lib/paletteSwatch';
 import { autoFeatureForPalette } from '../../lib/featuring';
 import { trimBlackBorders, resizeForFlux } from '../../lib/imagePrep';
@@ -167,10 +169,56 @@ main().catch((err) => {
 
 // --- iteration --------------------------------------------------------
 
+// Tiny 1x1 transparent PNG — same payload /api/warm uses. Just enough to
+// make fal accept the request and spin up its worker; the model warmup
+// is a side-effect of accepting the call.
+const TINY_PNG_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+// Mirror /api/warm's ping pattern. Fire-and-forget — failures are
+// expected and ignored. 8s per-endpoint timeout so a slow warmup
+// doesn't stall the iteration.
+function fireWarmup(): void {
+  const client = getFal();
+  const pings: Array<Promise<unknown>> = [
+    warmEmbeddings(),
+    Promise.race([
+      client.queue.submit('fal-ai/florence-2-large/object-detection', {
+        input: { image_url: TINY_PNG_URL },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('warm timeout')), 8000)),
+    ]),
+    Promise.race([
+      client.queue.submit('fal-ai/flux-control-lora-canny/image-to-image', {
+        input: {
+          prompt: 'warmup',
+          image_url: TINY_PNG_URL,
+          control_lora_image_url: TINY_PNG_URL,
+          strength: 0.5,
+          num_inference_steps: 1,
+          image_size: { width: 64, height: 64 },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('warm timeout')), 8000)),
+    ]),
+  ];
+  // Swallow rejections silently — Promise.allSettled would await; we
+  // want true fire-and-forget so the iteration's other prep work runs
+  // in parallel.
+  void Promise.allSettled(pings);
+}
+
 async function runIteration(fixture: Fixture): Promise<IterationResult> {
   const started = Date.now();
   const out = path.join(runDir, fixture.id);
   await mkdir(out, { recursive: true });
+
+  // Fire the same warmup pings /api/warm fires on /rooms/new mount.
+  // Without this the eval was systematically measuring cold-start
+  // latency that real users never see, inflating inferenceMs vs prod.
+  fireWarmup();
 
   // 1. Upload the fixture image to the rooms bucket so the rest of
   //    the pipeline can fetch it via signed URLs.
@@ -358,7 +406,8 @@ async function runIteration(fixture: Fixture): Promise<IterationResult> {
   };
 }
 
-// Poll fal queue until completion. ~2s interval, give up at 3 minutes.
+// Poll fal queue until completion. 1s interval (matches prod render-poll
+// at 1.5s, slightly tighter), give up at 3 minutes.
 // On 'failed' status, surfaces fal's inference logs so we can see why.
 // Returns inferenceMs alongside the URL so the harness can report the
 // wall-clock breakdown.
@@ -377,7 +426,7 @@ async function pollFal(requestId: string): Promise<{ imageUrl: string; inference
       const tail = lastLogs.slice(-20).join('\n  | ');
       throw new Error(`fal reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error('fal poll timed out after 3 min');
 }
@@ -401,7 +450,7 @@ async function pollKontext(requestId: string): Promise<{ imageUrl: string; infer
       const tail = lastLogs.slice(-20).join('\n  | ');
       throw new Error(`kontext reported failed.\nlast logs:\n  | ${tail || '(no logs returned)'}`);
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error('kontext poll timed out after 3 min');
 }
