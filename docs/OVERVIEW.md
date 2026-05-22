@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `a59ae10` (will
+**Last verified:** 2026-05-22 · most recent material commit: `b994b42` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,26 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#153 market-segment plumbing shipped + Freedom
+  catalogue extended (catalogue expansion budget-tier groundwork).**
+  Every product now carries a `market_segment` tag so a global user
+  preference ("show me budget options") can filter the catalogue
+  contextually. Six tiers anchored to the AU furniture market:
+  `ultra-budget`, `budget`, `budget-mid`, `mid`, `upper-mid`,
+  `premium`. New util `apps/scraper/utils/retailerSegment.js` is the
+  source of truth — every scraper imports `segmentFor(RETAILER)` and
+  writes the tag on each product record; `scripts/ingest.js` passes
+  it through into the new `products.market_segment` column (migration
+  `20260522190000_products_market_segment.sql`). Constraint allows
+  NULL for catalogues where the concept doesn't apply (Dulux paint).
+  Freedom scraper extended from 3 → 9 canonical categories: kept
+  Sofas + Rugs + Mirrors, added Chairs (dining + armchairs), Stools,
+  Lamps (table + floor), Wall Lights, Beds, Desks. Per-landing cap
+  bumped from 30 → 50 with split caps on multi-URL canonicals so each
+  canonical category lands in the 30–50 range. Sets up §6.11 for the
+  budget-retailer rollout (Fantastic, Amart, IKEA, Brosa-if-live,
+  Kmart accent line — one PR each) and the cross-segment
+  similar-products substitution feature.
 - `2026-05-22` — **#148 vision-grounded tag re-derivation shipped
   (catalogue intelligence Phase 4).** Now that vision_profile coverage
   hit 99.1% on imageable rows (1,387 of 1,400), the §6.9 sequencing
@@ -1850,6 +1870,63 @@ already shipped is the right hook for whichever option wins.
   and conversion mechanics — not before. Memoed now so the option
   stays visible while we're prioritising the catalogue-intelligence
   work (§6.9).
+
+### 6.11 Market segment + cross-segment substitution
+
+Catalogue intelligence track for budget context. The premise: a single
+flat catalogue treats every user identically, but a first-home-buyer
+shopping a $800 sofa and an interior-design client shopping a $4,000
+sofa do not want the same picking list. A global user preference for
+budget tier filters the catalogue contextually so renders surface
+products the user can plausibly afford.
+
+The plumbing landed in #153 (above). Remaining work, in priority order:
+
+- **#154 — Fantastic Furniture scraper.** Budget tier ($400–$1,200
+  sofas). Salesforce Commerce Cloud likely. Target 30–50 products
+  per canonical category across the nine (Sofas, Chairs, Stools, Rugs,
+  Lamps, Wall Lights, Beds, Desks; Mirrors optional). First budget
+  retailer — validates the segment filter end-to-end with real budget
+  data.
+- **#155 — Amart Furniture scraper.** Budget-mid tier ($700–$1,500
+  sofas). Similar shape to Fantastic.
+- **#156 — IKEA AU scraper.** Budget tier ($500–$1,200). Expect
+  aggressive bot protection — likely needs the Koala-style Cloudflare
+  warm-up (homepage visit → cookie capture → API requests through
+  Playwright's browser context).
+- **#157 — Brosa scraper.** Mid tier ($700–$1,500 designer-inspired).
+  Brosa entered voluntary administration in late 2024 and was acquired
+  by Kogan (KGN.AX) — brosa.com.au is back online under Kogan
+  ownership. Catalogue platform unknown; likely shares infrastructure
+  with kogan.com (which is a Magento / custom hybrid) but the storefront
+  is still branded as Brosa with its own URL space. Worth probing
+  shopify-style `/products.json` first and falling back to Playwright
+  if not.
+- **#158 — Kmart / Target accent scraper.** Ultra-budget tier.
+  No serious sofa catalogue — scope to stools, lamps, small rugs,
+  bedside tables. Different product mix to the rest of the segment
+  rollout. Confirm scope with owner before building.
+
+Once two or more retailers exist per category, the substitution
+feature becomes possible:
+
+- **#159 — Cross-segment similar-products substitution.** Two surfaces:
+  (a) catalogue browse — on a product detail page, surface "similar
+  at a different price point" cards drawing from neighbouring segments
+  (Freedom sofa shows IKEA + Brosa alternatives below); (b) render
+  picking-list — on a rendered scene's picking list, every product
+  card carries a "swap to cheaper / pricier" toggle that re-runs the
+  matcher with a forced segment filter and re-composites the affected
+  region using the SKU-fidelity pipeline (#73). Implementation
+  prerequisites: the matcher RPCs (#147) need a `market_segment`
+  filter parameter; the picking list UI needs a per-item segment
+  badge + swap affordance.
+
+  **Why this matters.** Memory [[platform_purpose_products_first]]
+  says the picking list is the deliverable. The substitution feature
+  is the lever that turns a single render into multiple shopping lists
+  at multiple price points — increasing the chance the user actually
+  buys something rather than bouncing off "too expensive" pricing.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live

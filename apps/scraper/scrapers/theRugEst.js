@@ -16,6 +16,7 @@ import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.therugest.com';
 const RETAILER = 'The Rug Est';
@@ -170,6 +171,7 @@ export async function scrapeTheRugEst() {
           },
           product_url: url,
           description: raw.ogDescription?.slice(0, 600) ?? null,
+          market_segment: segmentFor(RETAILER),
           scraped_at: new Date().toISOString(),
         });
         if ((i + 1) % 20 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);

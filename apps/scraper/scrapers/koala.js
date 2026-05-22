@@ -14,6 +14,7 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 // au.koala.com is the Australian Shopify store. koala.com.au doesn't
 // exist (SERVFAIL on DNS); koala.com is the US/global brand site
@@ -159,6 +160,7 @@ export async function scrapeKoala() {
         images: { hero, downloaded: hero != null, source: heroSrc, all: hero ? [hero] : [] },
         product_url: productUrl,
         description,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       });
     }

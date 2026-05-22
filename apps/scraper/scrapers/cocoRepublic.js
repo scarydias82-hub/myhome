@@ -11,6 +11,7 @@ import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.cocorepublic.com.au';
 const RETAILER = 'Coco Republic';
@@ -192,6 +193,7 @@ export async function scrapeCocoRepublic() {
         },
         product_url: url,
         description: description?.slice(0, 600) ?? null,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       });
       if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${targetUrls.length} scraped`);

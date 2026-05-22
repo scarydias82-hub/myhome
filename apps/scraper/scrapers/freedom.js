@@ -19,16 +19,28 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.freedom.com.au';
 const RETAILER = 'Freedom';
 const RETAILER_SLUG = 'freedom';
-const PER_CATEGORY_MAX = 30;
+const DEFAULT_PER_LANDING_MAX = 50;
 
+// Multi-URL canonical categories (Chairs, Lamps) split their cap across
+// landings so the total per canonical category stays in the 30–50
+// range the catalogue targets. Single-URL categories use the default.
 const CATEGORY_LANDINGS = [
   { url: `${ORIGIN}/sofas-and-armchairs/c/all-sofas`, category: 'Sofas' },
   { url: `${ORIGIN}/rugs/c/all-rugs`, category: 'Rugs' },
   { url: `${ORIGIN}/wall-art-mirrors-and-lighting/wall-decor-and-mirrors/c/mirrors`, category: 'Mirrors' },
+  { url: `${ORIGIN}/living-and-dining/dining-furniture/c/dining-chairs`, category: 'Chairs', max: 25 },
+  { url: `${ORIGIN}/sofas-and-armchairs/all-sofas/c/all-armchairs`, category: 'Chairs', max: 25 },
+  { url: `${ORIGIN}/living-and-dining/dining-furniture/c/bar-stools`, category: 'Stools' },
+  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/lights/c/table-lamps`, category: 'Lamps', max: 25 },
+  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/lights/c/floor-lamps`, category: 'Lamps', max: 25 },
+  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/c/wall-lights`, category: 'Wall Lights' },
+  { url: `${ORIGIN}/bedroom/c/beds`, category: 'Beds' },
+  { url: `${ORIGIN}/storage/office/c/desks`, category: 'Desks' },
 ];
 
 // Try several selectors — Freedom's Angular components don't expose a
@@ -201,11 +213,11 @@ export async function scrapeFreedom() {
     const page = await ctx.newPage();
 
     const all = [];
-    for (const { url, category } of CATEGORY_LANDINGS) {
+    for (const { url, category, max } of CATEGORY_LANDINGS) {
       console.log(`[${RETAILER}] ${category}: loading ${url}`);
       const urls = await collectProductUrls(page, url);
       console.log(`[${RETAILER}] ${category}: ${urls.length} product urls`);
-      const slice = urls.slice(0, PER_CATEGORY_MAX);
+      const slice = urls.slice(0, max ?? DEFAULT_PER_LANDING_MAX);
       for (const u of slice) all.push({ url: u, category });
       await delay();
     }
@@ -243,6 +255,7 @@ export async function scrapeFreedom() {
           images: { hero, downloaded: hero != null, source: heroSrc ?? null, all: hero ? [hero] : [] },
           product_url: url,
           description,
+          market_segment: segmentFor(RETAILER),
           scraped_at: new Date().toISOString(),
         });
         if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${all.length}`);
