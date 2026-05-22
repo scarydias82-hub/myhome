@@ -21,6 +21,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PickingMatch } from '@/components/renders/picking-list-panel';
+import { rankCandidatesByPrefs, type VisionProfile } from '@/lib/prefs-vision-fit';
 
 // ROOM_CATEGORY_MANIFEST — which catalog categories belong to which
 // room type. Each entry maps to a `Category Family` that
@@ -110,6 +111,10 @@ function expandCategory(displayCategory: string): string[] {
 export interface CompleteTheLookCategory {
   displayLabel: string; // e.g. "Cushions"
   products: PickingMatch[];
+  /** Provenance for the products in this category. Helps the UI
+   *  optionally label fallback origins ("From your saved items" /
+   *  "From your taste profile") and is useful in logs. */
+  source: 'palette' | 'mixed' | 'user_signal' | 'empty';
 }
 
 interface FetchOptions {
@@ -125,6 +130,16 @@ interface FetchOptions {
   /** Cap products per category — default 3. The UI shows a 3-up grid
    *  per category by default. */
   perCategory?: number;
+  /** Authenticated user id — enables the user-signal fallback tier
+   *  (wishlist + prefs match) when the palette/room/style match returns
+   *  thin or empty results. When null, behaviour matches the legacy
+   *  3-tier filter only. */
+  userId?: string | null;
+  /** Brief tags resolved by the same priority chain /api/render uses
+   *  (override → project brief → users.preferences → []). Drives the
+   *  prefs-vision-fit ranker inside the user-signal fallback. When
+   *  empty, only the wishlist half of the fallback fires. */
+  briefTags?: string[];
 }
 
 interface ProductRow {
@@ -146,12 +161,24 @@ interface ProductRow {
     | null;
 }
 
+// Extended row shape used by the user-signal fallback tier — needs the
+// vision_profile column for prefs-vision-fit scoring. Kept separate so
+// the existing 3-tier filter SELECTs stay small.
+interface ProductRowWithVP extends ProductRow {
+  vision_profile: VisionProfile | null;
+}
+
+const SELECT_COLS_WITH_VP =
+  'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions, vision_profile';
+
 export async function fetchCompleteTheLook({
   admin,
   roomType,
   paletteId,
   styleTags,
   perCategory = 3,
+  userId,
+  briefTags,
 }: FetchOptions): Promise<CompleteTheLookCategory[]> {
   // Normalise room_type to manifest keys (sometimes Claude returns
   // "lounge" instead of "lounge_room" etc).
@@ -162,11 +189,21 @@ export async function fetchCompleteTheLook({
   // so room-agnostic products (paint with room_tags=['any']) surface.
   const roomFilter = normalisedRoom ? [normalisedRoom, 'any'] : ['any'];
 
+  // Pre-fetch the user's full wishlist once. The fallback tier filters
+  // these per category in-memory rather than running N category-bounded
+  // wishlist queries. Wishlists are small (typically < 50 items per
+  // user), so the whole-pull is cheap.
+  const wishlistByCategory = await loadWishlistByCategory(admin, userId ?? null);
+
   // Fire all category queries in parallel — they're independent and
   // each query is small (3 rows). Promise.allSettled lets a single
   // empty category gracefully degrade without taking down the section.
   const results = await Promise.allSettled(
-    categories.map(async (displayLabel) => {
+    categories.map(async (displayLabel): Promise<{
+      displayLabel: string;
+      rows: ProductRow[];
+      source: CompleteTheLookCategory['source'];
+    }> => {
       const cats = expandCategory(displayLabel);
       const selectCols =
         'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
@@ -184,8 +221,8 @@ export async function fetchCompleteTheLook({
           .order('price_aud', { ascending: false, nullsFirst: false })
           .limit(perCategory);
         const tier1 = await q;
-        if (!tier1.error && tier1.data && tier1.data.length > 0) {
-          return { displayLabel, rows: tier1.data as ProductRow[] };
+        if (!tier1.error && tier1.data && tier1.data.length >= perCategory) {
+          return { displayLabel, rows: tier1.data as ProductRow[], source: 'palette' };
         }
       }
 
@@ -201,13 +238,15 @@ export async function fetchCompleteTheLook({
           .order('price_aud', { ascending: false, nullsFirst: false })
           .limit(perCategory);
         const tier2 = await q;
-        if (!tier2.error && tier2.data && tier2.data.length > 0) {
-          return { displayLabel, rows: tier2.data as ProductRow[] };
+        if (!tier2.error && tier2.data && tier2.data.length >= perCategory) {
+          return { displayLabel, rows: tier2.data as ProductRow[], source: 'palette' };
         }
       }
 
-      // Tier 3: category + room only. Last resort so categories
-      // without strong palette coverage still surface something.
+      // Tier 3: category + room only. Last resort that still hits the
+      // palette-blind catalogue. Held to a softer threshold (>=1) so a
+      // genuinely thin category still gets supplemented by user signals
+      // below rather than going empty.
       const q3 = admin
         .from('products')
         .select(selectCols)
@@ -217,27 +256,207 @@ export async function fetchCompleteTheLook({
         .order('price_aud', { ascending: false, nullsFirst: false })
         .limit(perCategory);
       const tier3 = await q3;
-      if (!tier3.error && tier3.data && tier3.data.length > 0) {
-        return { displayLabel, rows: tier3.data as ProductRow[] };
+      const palettePool: ProductRow[] = !tier3.error && tier3.data ? (tier3.data as ProductRow[]) : [];
+
+      if (palettePool.length >= perCategory) {
+        return { displayLabel, rows: palettePool, source: 'palette' };
       }
 
-      // Empty — category genuinely uncovered in the catalog.
-      return { displayLabel, rows: [] as ProductRow[] };
+      // Tier 4 — user-signal fallback. Combines: (a) products the user
+      // has wishlisted in this category (most personal), (b) products
+      // that score well against the user's preference tags via the
+      // prefs-vision-fit ranker (#156). Always runs when the palette
+      // tiers are thin and we have ANY user signal to lean on.
+      const needed = perCategory - palettePool.length;
+      const excludeIds = new Set(palettePool.map((p) => p.id));
+      const supplement = await fetchUserSignalProducts({
+        admin,
+        cats,
+        userId: userId ?? null,
+        wishlistByCategory,
+        briefTags: briefTags ?? [],
+        roomFilter,
+        excludeIds,
+        limit: needed,
+      });
+
+      const merged = [...palettePool, ...supplement];
+      const source: CompleteTheLookCategory['source'] =
+        merged.length === 0
+          ? 'empty'
+          : palettePool.length > 0 && supplement.length > 0
+            ? 'mixed'
+            : palettePool.length > 0
+              ? 'palette'
+              : 'user_signal';
+
+      return { displayLabel, rows: merged, source };
     }),
   );
 
-  return results
-    .map((r, idx) => {
-      const displayLabel = categories[idx] ?? 'Other';
-      if (r.status === 'rejected') {
-        return { displayLabel, products: [] };
+  // Per the post-render "every category has a story" contract (#163):
+  // we do NOT filter empty categories out. The UI can render an
+  // empty-state card per category if it wants ("No matches yet for
+  // <category>"), but the carousel grid stays at a stable count so
+  // users know which categories exist for their room type.
+  return results.map((r, idx) => {
+    const displayLabel = categories[idx] ?? 'Other';
+    if (r.status === 'rejected') {
+      return { displayLabel, products: [], source: 'empty' as const };
+    }
+    return {
+      displayLabel: r.value.displayLabel,
+      products: r.value.rows.map((p, position) => productRowToMatch(p, position)),
+      source: r.value.source,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------
+// User-signal fallback (#163)
+// ---------------------------------------------------------------------
+//
+// Used by tier 4 of fetchCompleteTheLook to supplement thin or empty
+// palette-matched results. Two ingredients:
+//   1. The user's wishlist intersected with the target category — the
+//      products they've explicitly saved are the strongest personal
+//      signal we have.
+//   2. Catalogue rows in the category, scored by prefs-vision-fit and
+//      sorted desc. Rows without a vision_profile yet score neutral
+//      and rank alongside un-preferred candidates (same graceful
+//      degradation as #156).
+//
+// Wishlist is loaded once per render via loadWishlistByCategory() and
+// passed in here — saves N round-trips when many categories are thin.
+
+interface WishlistMap {
+  /** category (case-preserved as stored on products) → product rows */
+  byCategory: Map<string, ProductRow[]>;
+  /** every wishlisted product id (across all categories) — used for
+   *  excludes when the prefs ranker pulls a fresh slice from products
+   *  so the same row doesn't appear twice in one carousel. */
+  ids: Set<string>;
+}
+
+async function loadWishlistByCategory(
+  admin: SupabaseClient,
+  userId: string | null,
+): Promise<WishlistMap> {
+  const empty: WishlistMap = { byCategory: new Map(), ids: new Set() };
+  if (!userId) return empty;
+  // Single join via Supabase's foreign-table embed syntax — keeps it
+  // to one round-trip even when the user has 50+ saved items.
+  const res = await admin
+    .from('user_wishlist')
+    .select(
+      'products(id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions)',
+    )
+    .eq('user_id', userId);
+  if (res.error || !res.data) return empty;
+
+  const byCategory = new Map<string, ProductRow[]>();
+  const ids = new Set<string>();
+  // Supabase JS types the foreign-table embed as T[] regardless of
+  // FK cardinality. `user_wishlist.product_id → products.id` is
+  // many-to-one so each row's `products` always has exactly one
+  // element (or zero if the FK target is missing). Normalise both
+  // shapes here so callers see flat ProductRow values.
+  const rows = res.data as unknown as Array<{ products: ProductRow | ProductRow[] | null }>;
+  for (const row of rows) {
+    const candidates = Array.isArray(row.products)
+      ? row.products
+      : row.products
+        ? [row.products]
+        : [];
+    for (const p of candidates) {
+      if (!p || !p.image_url) continue;
+      ids.add(p.id);
+      const bucket = byCategory.get(p.category);
+      if (bucket) bucket.push(p);
+      else byCategory.set(p.category, [p]);
+    }
+  }
+  return { byCategory, ids };
+}
+
+interface FetchUserSignalOptions {
+  admin: SupabaseClient;
+  cats: string[];
+  userId: string | null;
+  wishlistByCategory: WishlistMap;
+  briefTags: string[];
+  roomFilter: string[];
+  /** Product ids already included from the palette tiers — never
+   *  re-emit one of these. */
+  excludeIds: Set<string>;
+  limit: number;
+}
+
+async function fetchUserSignalProducts({
+  admin,
+  cats,
+  userId,
+  wishlistByCategory,
+  briefTags,
+  roomFilter,
+  excludeIds,
+  limit,
+}: FetchUserSignalOptions): Promise<ProductRow[]> {
+  if (limit <= 0) return [];
+  if (!userId && briefTags.length === 0) return [];
+
+  const out: ProductRow[] = [];
+
+  // (a) Wishlist intersect category — strongest personal signal.
+  if (userId) {
+    for (const c of cats) {
+      const bucket = wishlistByCategory.byCategory.get(c);
+      if (!bucket) continue;
+      for (const p of bucket) {
+        if (excludeIds.has(p.id)) continue;
+        excludeIds.add(p.id);
+        out.push(p);
+        if (out.length >= limit) return out;
       }
-      return {
-        displayLabel: r.value.displayLabel,
-        products: r.value.rows.map((p, position) => productRowToMatch(p, position)),
-      };
-    })
-    .filter((c) => c.products.length > 0);
+    }
+  }
+
+  // (b) Prefs-vision ranker. Pull a wider pool from the catalogue
+  // (~5× limit) so the ranker has options to filter. Threshold on
+  // image_url so we only surface visible products, and exclude
+  // anything already collected. roomFilter biases toward
+  // contextually-appropriate products even without palette match.
+  if (briefTags.length > 0 && out.length < limit) {
+    const need = limit - out.length;
+    const pool = await admin
+      .from('products')
+      .select(SELECT_COLS_WITH_VP)
+      .in('category', cats)
+      .not('image_url', 'is', null)
+      .overlaps('room_tags', roomFilter)
+      .order('price_aud', { ascending: false, nullsFirst: false })
+      .limit(Math.max(need * 5, 15));
+    if (!pool.error && pool.data) {
+      const candidates = (pool.data as ProductRowWithVP[]).filter(
+        (p) => !excludeIds.has(p.id),
+      );
+      // rankCandidatesByPrefs handles the empty-vision_profile case
+      // gracefully (neutral score). dropThreshold=-2 matches #156.
+      const ranked = rankCandidatesByPrefs(candidates, briefTags).ranked;
+      for (const p of ranked) {
+        if (excludeIds.has(p.id)) continue;
+        excludeIds.add(p.id);
+        // Strip vision_profile back off when handing to the UI —
+        // PickingMatch doesn't carry it and the bytes wasted on the
+        // page payload would be meaningful.
+        const { vision_profile: _vp, ...rest } = p;
+        out.push(rest as ProductRow);
+        if (out.length >= limit) break;
+      }
+    }
+  }
+
+  return out;
 }
 
 // Extended-set fetch for a single category. Used by the "See more"

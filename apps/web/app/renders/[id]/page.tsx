@@ -221,12 +221,30 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   const ctlStyleTags = profile?.source_ref
     ? [...(getStyle(profile.source_ref)?.mood ?? []), profile.source_ref]
     : [];
+
+  // #163 — feed the user-signal fallback (wishlist + prefs-vision-fit)
+  // with the user's current canonical preference tags so categories
+  // with thin palette+room+style coverage still fill from the user's
+  // taste universe rather than going empty. Live prefs over snapshot —
+  // the fallback is a "what would they want now" surface, and the
+  // canonical prefs are the live source of truth.
+  const prefsRes = await admin
+    .from('users')
+    .select('preferences')
+    .eq('id', user.id)
+    .maybeSingle();
+  const ctlBriefTags =
+    ((prefsRes.data as { preferences: { tags?: string[] } | null } | null)?.preferences
+      ?.tags) ?? [];
+
   const completeTheLookCategories = isDone
     ? await fetchCompleteTheLook({
         admin,
         roomType: room?.room_type ?? null,
         paletteId: ctlPaletteId,
         styleTags: ctlStyleTags,
+        userId: user.id,
+        briefTags: ctlBriefTags,
       })
     : [];
 
