@@ -18,6 +18,7 @@ import sharp from 'sharp';
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { detectObjects, dedupeBoxes, categoryForLabel, type Bbox } from '@/lib/detection';
+import { withAnthropicRetry } from '@/lib/anthropic-retry';
 
 export interface PickingMatch {
   productId: string;
@@ -78,6 +79,45 @@ const MIN_BOX_AREA_RATIO = 0.002;
 // pushed past 60s and trapped renders in "running" forever.
 const MAX_ITEMS = 12;
 const CLAUDE_MODEL = 'claude-haiku-4-5';
+// Concurrency caps for the Claude fan-outs. The 2026-05-22 eval surfaced
+// silent 429 rate-limit failures when validate (12+ boxes) and rank
+// (8 candidates × 12+ boxes ≈ 80K input tokens) both went fully parallel
+// past Haiku's 50K input-tokens/minute ceiling. Capping concurrency keeps
+// the steady-state under budget; withAnthropicRetry catches the residual
+// bursts that still land on 429 and backs off cleanly.
+//
+// Validate is cheap (1 image, ~600 tokens) so we let it run wider.
+// Rank is expensive (9 images, ~5400 tokens) so it stays narrower.
+const VALIDATE_CONCURRENCY = 8;
+const RANK_CONCURRENCY = 4;
+
+// Small concurrency-bounded Promise.allSettled. Same return shape as the
+// native helper so callers don't change their result-handling code.
+// Workers pop indices off a shared counter — naturally balances when
+// individual tasks finish at different times.
+async function settledWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        const value = await fn(items[i] as T, i);
+        results[i] = { status: 'fulfilled', value };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
 
 interface ProductRow {
   id: string;
@@ -157,10 +197,8 @@ export async function buildPickingList({
       .join(', ')})`,
   );
 
-  const settled = await Promise.allSettled(
-    boxes.map((box) =>
-      buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box, paletteId, roomType }),
-    ),
+  const settled = await settledWithConcurrency(boxes, RANK_CONCURRENCY, (box) =>
+    buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box, paletteId, roomType }),
   );
 
   const items: PickingListItem[] = [];
@@ -621,37 +659,41 @@ async function rankWithClaude(
   // list of the top MATCHES_PER_ITEM ids by visual similarity. Constraints:
   // - keep tokens tight (Haiku is cheap but adds up across boxes)
   // - structured response is just a comma-separated list of 1-based indices
-  const message = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 60,
-    system:
-      'You rank interior product photos by visual similarity to a target image. Respond with only a comma-separated list of the candidate numbers ranked from most to least similar. Maximum 5 numbers. No explanation, no markdown, no other text.',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'TARGET image (the item to match):' },
+  const message = await withAnthropicRetry(
+    () =>
+      client.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 60,
+        system:
+          'You rank interior product photos by visual similarity to a target image. Respond with only a comma-separated list of the candidate numbers ranked from most to least similar. Maximum 5 numbers. No explanation, no markdown, no other text.',
+        messages: [
           {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
-          },
-          { type: 'text', text: `CANDIDATES:\n${candidateList}\n\nTheir images follow in order:` },
-          ...usable.map((u) => ({
-            type: 'image' as const,
-            source: {
-              type: 'base64' as const,
-              media_type: u.mediaType,
-              data: u.buffer.toString('base64'),
-            },
-          })),
-          {
-            type: 'text',
-            text: `Rank the candidates by visual similarity to the TARGET. Reply with only ${MATCHES_PER_ITEM} comma-separated numbers in order, e.g. "3,1,7,2,5".`,
+            role: 'user',
+            content: [
+              { type: 'text', text: 'TARGET image (the item to match):' },
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
+              },
+              { type: 'text', text: `CANDIDATES:\n${candidateList}\n\nTheir images follow in order:` },
+              ...usable.map((u) => ({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: u.mediaType,
+                  data: u.buffer.toString('base64'),
+                },
+              })),
+              {
+                type: 'text',
+                text: `Rank the candidates by visual similarity to the TARGET. Reply with only ${MATCHES_PER_ITEM} comma-separated numbers in order, e.g. "3,1,7,2,5".`,
+              },
+            ],
           },
         ],
-      },
-    ],
-  });
+      }),
+    { label: 'matcher-rank' },
+  );
 
   const raw = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')
@@ -773,21 +815,19 @@ async function validateBoxesWithClaude(
 ): Promise<Bbox[]> {
   if (boxes.length === 0) return [];
 
-  const settled = await Promise.allSettled(
-    boxes.map(async (box) => {
-      const cropBuf = await sharp(imgBuf)
-        .extract({
-          left: clamp(Math.round(box.x), 0, imageWidth - 1),
-          top: clamp(Math.round(box.y), 0, imageHeight - 1),
-          width: clamp(Math.round(box.w), 1, imageWidth - Math.round(box.x)),
-          height: clamp(Math.round(box.h), 1, imageHeight - Math.round(box.y)),
-        })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-      const verdict = await classifyCropWithClaude(cropBuf, box.label);
-      return { box, verdict };
-    }),
-  );
+  const settled = await settledWithConcurrency(boxes, VALIDATE_CONCURRENCY, async (box) => {
+    const cropBuf = await sharp(imgBuf)
+      .extract({
+        left: clamp(Math.round(box.x), 0, imageWidth - 1),
+        top: clamp(Math.round(box.y), 0, imageHeight - 1),
+        width: clamp(Math.round(box.w), 1, imageWidth - Math.round(box.x)),
+        height: clamp(Math.round(box.h), 1, imageHeight - Math.round(box.y)),
+      })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    const verdict = await classifyCropWithClaude(cropBuf, box.label);
+    return { box, verdict };
+  });
 
   const out: Bbox[] = [];
   for (const r of settled) {
@@ -808,32 +848,36 @@ async function classifyCropWithClaude(cropBuf: Buffer, _hint: string): Promise<V
     const client = getAnthropic();
     const cropBase64 = cropBuf.toString('base64');
     const allowed = [...VALID_LABELS].join(', ');
-    const message = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 30,
-      system: `You classify a cropped region of an interior photo. Reply with EXACTLY ONE token from this list, no other words:
+    const message = await withAnthropicRetry(
+      () =>
+        client.messages.create({
+          model: CLAUDE_MODEL,
+          max_tokens: 30,
+          system: `You classify a cropped region of an interior photo. Reply with EXACTLY ONE token from this list, no other words:
 ${allowed}, architecture, other
 
 Use "architecture" if the region is a doorway, an opening into another room, a wall section, a window, a ceiling, or any structural element — NOT a piece of furniture or decor. A reflection visible through an open doorway is NOT a mirror; reply "architecture".
 Use "other" for anything that isn't furniture, decor, or architecture (a person, an animal, etc.).
 Otherwise pick the closest match from the list — but pick it from what YOU see in the image, not from any prior label. Be especially careful with chair-vs-bedside-table and sofa-vs-bed — short pieces with cushions tend to read as armchairs even when they're actually bedside tables or stools.`,
-      messages: [
-        {
-          // Deliberately do NOT pass the Florence-2 hint here. The
-          // previous prompt anchored Claude to whatever Florence-2 had
-          // guessed, which made the validator a rubber stamp on
-          // labels like "armchair" that were actually bedside tables.
-          role: 'user',
-          content: [
-            { type: 'text', text: 'What is this cropped region of an interior photo?' },
+          messages: [
             {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
+              // Deliberately do NOT pass the Florence-2 hint here. The
+              // previous prompt anchored Claude to whatever Florence-2 had
+              // guessed, which made the validator a rubber stamp on
+              // labels like "armchair" that were actually bedside tables.
+              role: 'user',
+              content: [
+                { type: 'text', text: 'What is this cropped region of an interior photo?' },
+                {
+                  type: 'image',
+                  source: { type: 'base64', media_type: 'image/jpeg', data: cropBase64 },
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        }),
+      { label: 'matcher-validate' },
+    );
     const raw = message.content
       .filter((c): c is Anthropic.TextBlock => c.type === 'text')
       .map((c) => c.text)

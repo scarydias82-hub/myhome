@@ -25,6 +25,21 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Matching pipeline: concurrency cap + retry on 429.**
+  Pairs with the base64-candidates fix to fully close the matching
+  failure modes the 2026-05-22T00-22-19 eval surfaced. Two structural
+  changes in lib/matching.ts: (1) added settledWithConcurrency helper
+  with Promise.allSettled semantics + a fixed concurrency cap, and
+  swapped both fan-outs to use it — validate at 8 (cheap, ~600 tokens
+  per call), rank at 4 (expensive, ~5400 tokens per call). Keeps
+  steady-state under Haiku's 50K input-tokens/minute ceiling without
+  serialising. (2) Wrapped both client.messages.create() calls in
+  withAnthropicRetry (label 'matcher-validate' / 'matcher-rank') so
+  the residual bursts that still bump the ceiling get backed off
+  through the existing 0/3s/8s/15s schedule rather than silently
+  dropping picking-list items. Net effect: predictable matching
+  wall-clock (~15-25s instead of "happy path 8s, sad path 60s+
+  timeout") and zero silent drops from 429s.
 - `2026-05-22` — **Matching pipeline: candidate images inline base64.**
   Same playbook as the vision perf pass, applied to
   `rankWithClaude` in lib/matching.ts. The 2026-05-22T00-22-19 eval
