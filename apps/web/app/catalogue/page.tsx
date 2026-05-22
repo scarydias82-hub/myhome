@@ -239,7 +239,7 @@ export default async function CataloguePage({
                   <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-ink/[0.06] p-3">
                     <AddToProjectButton productId={p.id} variant="compact" />
                     <AddToVisionBoardButton
-                      ref={{ itemType: 'product', productId: p.id }}
+                      itemRef={{ itemType: 'product', productId: p.id }}
                       variant="compact"
                     />
                   </div>

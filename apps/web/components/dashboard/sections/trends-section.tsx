@@ -191,7 +191,7 @@ function PaletteSwatchCard({ palette: p }: { palette: DashboardPaletteCard }) {
             Start a project
           </Link>
           <AddToVisionBoardButton
-            ref={{ itemType: 'palette', paletteId: p.id }}
+            itemRef={{ itemType: 'palette', paletteId: p.id }}
             variant="compact"
           />
         </div>
@@ -299,7 +299,7 @@ function TrendCardArticle({ card: t }: { card: DashboardTrendCard }) {
             Render it
           </Link>
           <AddToVisionBoardButton
-            ref={{ itemType: 'trend', trendCardId: t.id }}
+            itemRef={{ itemType: 'trend', trendCardId: t.id }}
             variant="compact"
           />
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 // AddToVisionBoardButton — the universal "save this to a moodboard"
-// CTA. Polymorphic across the three ref item types (palette, trend
+// CTA. Polymorphic across the three itemRef types (palette, trend
 // card, product); the note item type is created via the AddNoteForm
 // inside the board detail view instead.
 //
@@ -30,7 +30,11 @@ type RefArgs =
   | { itemType: 'product'; productId: string };
 
 interface AddToVisionBoardButtonProps {
-  ref: RefArgs;
+  // NOTE: do NOT rename this to `ref` — in React 18 `ref` is a
+  // reserved prop on function components, so passing it from a parent
+  // would be filtered out before reaching this component, breaking
+  // every save.
+  itemRef: RefArgs;
   /** Optional — compact variant for tight spaces. Defaults to
    *  "comfortable". */
   variant?: 'comfortable' | 'compact';
@@ -39,7 +43,7 @@ interface AddToVisionBoardButtonProps {
 type Status = 'idle' | 'adding' | 'added' | 'picker';
 
 export function AddToVisionBoardButton({
-  ref: ref_,
+  itemRef,
   variant = 'comfortable',
 }: AddToVisionBoardButtonProps) {
   const [status, setStatus] = useState<Status>('idle');
@@ -69,7 +73,7 @@ export function AddToVisionBoardButton({
       const res = await fetch(`/api/vision-boards/${boardId}/items`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(ref_),
+        body: JSON.stringify(itemRef),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };

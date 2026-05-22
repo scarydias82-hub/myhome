@@ -135,7 +135,7 @@ function FeaturedCard({ product: p }: { product: FeaturedProductCard }) {
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
           <AddToProjectButton productId={p.id} variant="compact" />
           <AddToVisionBoardButton
-            ref={{ itemType: 'product', productId: p.id }}
+            itemRef={{ itemType: 'product', productId: p.id }}
             variant="compact"
           />
         </div>

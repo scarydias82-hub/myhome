@@ -179,6 +179,20 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — **Fix: "Add to vision board" was silently broken
+  on every product / palette / trend card.** The
+  `<AddToVisionBoardButton>` prop was named `ref`, which is a
+  reserved prop name on function components in React 18 — React
+  intercepted it and filtered it out before the component received
+  props, so the destructured `ref_` was always `undefined` and the
+  POST body to `/api/vision-boards/[id]/items` shipped as the
+  string `"undefined"`. Renamed the prop to `itemRef` across the
+  component definition + all 6 call sites (`catalogue/page.tsx`,
+  `featured-products-section.tsx`, `trends-section.tsx` ×2,
+  `trending-products-section.tsx`, `showpiece-render-section.tsx`).
+  Added an in-file note on the prop interface warning future-me
+  off the reserved name. Net effect: every "+ Add to board" CTA
+  now actually saves.
 - `2026-05-22` — **Perceived-snappiness pass on mobile navigation.**
   Two compounding fixes for the "I tapped Shop and nothing happened
   so I tapped it three more times" UX. (1) Added `loading.tsx`

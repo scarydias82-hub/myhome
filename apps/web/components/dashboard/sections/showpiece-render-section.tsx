@@ -292,7 +292,7 @@ function HotspotDrawer({
           </Link>
           <AddToProjectButton productId={m.productId} variant="compact" />
           <AddToVisionBoardButton
-            ref={{ itemType: 'product', productId: m.productId }}
+            itemRef={{ itemType: 'product', productId: m.productId }}
             variant="compact"
           />
         </div>
