@@ -13,6 +13,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { analyseRoom, type VisionMediaType } from '@/lib/vision';
+import { synthesiseBrief } from '@/lib/brief/synthesiser';
+import { listPalettes } from '@/lib/palettes';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -101,7 +103,74 @@ export async function POST(request: NextRequest) {
     console.log(`[analyse-room] vision done in ${visionMs}ms`);
     await admin.from('rooms').update({ analysis }).eq('id', room.id);
     console.log(`[analyse-room] cached analysis on rooms.${room.id}`);
-    return NextResponse.json({ roomId: room.id, analysis });
+
+    // After vision: run a room-grounded recommendation through the
+    // brief synthesiser. This produces palette + style picks that
+    // consider the ACTUAL photo's light, flooring, and architecture,
+    // not just the brief tags. The upload form pre-selects these in
+    // the carousels so the user sees a confident designer's pick
+    // before they tap into the chooser.
+    //
+    // When projectId is set we pass the project's brief tags too so
+    // the recommendation respects what the user said they wanted
+    // (e.g., "calm, neutral, child-friendly") in addition to what
+    // Claude sees. When projectId is null we pass an empty array —
+    // the synthesiser falls back to pure room-facts reasoning.
+    //
+    // Failures don't block the response: if synth times out or
+    // Claude returns junk JSON, we just omit `recommendation` and
+    // the UI defers to its existing default palette selection.
+    let recommendation: {
+      paletteId: string;
+      paletteName: string;
+      styleSlug: string;
+      direction: '2026' | 'timeless' | null;
+      reasoning: string;
+    } | null = null;
+    try {
+      let briefTags: string[] = [];
+      if (verifiedProjectId) {
+        const briefRes = await admin
+          .from('projects')
+          .select('brief')
+          .eq('id', verifiedProjectId)
+          .maybeSingle();
+        const brief = (briefRes.data as { brief?: { tags?: string[] } } | null)?.brief;
+        if (brief?.tags && Array.isArray(brief.tags)) briefTags = brief.tags;
+      }
+
+      const synthStart = Date.now();
+      const synth = await synthesiseBrief(briefTags, analysis);
+      console.log(`[analyse-room] synth done in ${Date.now() - synthStart}ms`);
+
+      // Direction is derived from the recommended palette's
+      // timelessness — < 7 = trend-forward (2026 carousel),
+      // >= 7 = heritage/classic (Tried & tested carousel),
+      // missing palette = no direction (just shows palette pick).
+      const palette = listPalettes().find((p) => p.id === synth.recommendation.palette_id);
+      const direction: '2026' | 'timeless' | null = palette
+        ? palette.timelessness < 7
+          ? '2026'
+          : 'timeless'
+        : null;
+
+      recommendation = {
+        paletteId: synth.recommendation.palette_id,
+        paletteName: palette?.name ?? synth.recommendation.palette_id,
+        styleSlug: synth.recommendation.style_slug,
+        direction,
+        reasoning: synth.recommendation.reasoning,
+      };
+    } catch (err) {
+      // Synth is best-effort. Log and move on — the carousels still
+      // work without a pre-selection.
+      console.warn(
+        '[analyse-room] recommendation synth failed, returning analysis only:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    return NextResponse.json({ roomId: room.id, analysis, recommendation });
   } catch (err) {
     const elapsed = Date.now() - startedAt;
     console.error(`[analyse-room] failed after ${elapsed}ms`, err);

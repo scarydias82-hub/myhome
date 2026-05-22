@@ -40,6 +40,16 @@ const ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 interface AnalyseResponse {
   roomId: string;
   analysis: RoomAnalysis | null;
+  // Room-grounded recommendation from #142 — Claude's palette + style
+  // pick after seeing the actual photo (plus any brief tags from the
+  // project). Pre-fills the carousels.
+  recommendation?: {
+    paletteId: string;
+    paletteName: string;
+    styleSlug: string;
+    direction: '2026' | 'timeless' | null;
+    reasoning: string;
+  } | null;
   error?: string;
 }
 
@@ -80,6 +90,10 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   // in carousel ② sets direction='2026', picking in ③ sets
   // direction='timeless'. Mutex: choosing one clears the other.
   const [direction, setDirection] = useState<'2026' | 'timeless' | null>(null);
+  // Reasoning string from Claude's room-grounded recommendation (#142).
+  // Surfaced on the DesignerSummaryCard so the user sees WHY this
+  // palette/direction was picked, not just THAT it was.
+  const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Hero products are an optional Step 5 — user selects up to 3 specific
@@ -255,6 +269,23 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
             'Vision analysis was unavailable, but you can still proceed. The restyle will be less precise.',
         );
       }
+      // #142 — apply the room-grounded recommendation if Claude
+      // produced one. Overrides the brief-pre-fill from the useEffect
+      // above because this recommendation has SEEN the photo (light,
+      // flooring, architecture) and the brief one only had the
+      // tags. The user can still override either by picking a
+      // different palette / direction in the carousels.
+      if (json.recommendation) {
+        const rec = json.recommendation;
+        setPaletteId(rec.paletteId);
+        if (rec.styleSlug) setStyle(rec.styleSlug as StyleSlug);
+        setDirection(rec.direction);
+        setRecommendationReasoning(rec.reasoning);
+        // Flip the "we have a designer's pick" flag so the summary
+        // card shows the recommendation block even when there's no
+        // project brief in the picture.
+        setBriefPreFilled(true);
+      }
       setAnalysisConfirmed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error. Try again.');
@@ -424,6 +455,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
             briefPreFilled={briefPreFilled}
             paletteId={paletteId}
             direction={direction}
+            reasoning={recommendationReasoning}
           />
           <Step3Style
             paletteId={paletteId}
@@ -626,11 +658,16 @@ function DesignerSummaryCard({
   briefPreFilled,
   paletteId,
   direction,
+  reasoning,
 }: {
   analysis: RoomAnalysis | null;
   briefPreFilled: boolean;
   paletteId: string;
   direction: '2026' | 'timeless' | null;
+  /** Optional 1-2 sentence "why" from Claude's room-grounded
+   *  recommendation. Surfaced under the palette name so the user
+   *  sees what drove the pick. */
+  reasoning?: string | null;
 }) {
   const palette = listPalettes().find((p) => p.id === paletteId) ?? null;
 
@@ -692,6 +729,14 @@ function DesignerSummaryCard({
                 </>
               ) : null}
             </p>
+            {/* Designer's reasoning — Claude's 1-2 sentence "why this
+                palette for this room." Only when present (room-
+                grounded recommendation #142). */}
+            {reasoning ? (
+              <p className="mt-2 italic font-dmsans text-[12px] leading-relaxed text-ink-soft/85 md:text-[13px]">
+                &ldquo;{reasoning}&rdquo;
+              </p>
+            ) : null}
           </div>
           {/* Swatch chip — visual anchor for the recommendation so
               the user maps "name" to "actual colours" instantly. */}
