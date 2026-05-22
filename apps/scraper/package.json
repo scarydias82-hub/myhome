@@ -22,6 +22,7 @@
     "scrape:tilecloud": "node scrapers/tileCloud.js",
     "scrape:fantastic": "node scrapers/fantastic.js",
     "scrape:brosa": "node scrapers/brosa.js",
+    "scrape:kmart": "node scrapers/kmart.js",
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",

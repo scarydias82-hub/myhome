@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-23 · most recent material commit: `cc1db7a` (will
+**Last verified:** 2026-05-23 · most recent material commit: `dd0564f` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,20 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-23` — **#158 Kmart scraper shipped — ultra-budget accent
+  line, stools only (scope per owner).** Site is Next.js SSR fronted
+  by Akamai's edge bot wall — homepage returns 200 but category pages
+  return 403 until a session has computed the `_abck` sensor cookie
+  (real-browser JS only). Vanilla Playwright + homepage warm-up
+  passes the wall reliably. Scraper is lean: single category landing
+  (`/category/home-and-living/stools/`), listing-only data extraction
+  (skip per-product detail visits) since sub-$100 stools don't need
+  precise dimensions for the picking list. One Playwright page visit
+  total = minimal Akamai pressure. Target 30–50 products. Out of
+  the §6.11 backlog the only remaining item is #156 IKEA, which the
+  owner deferred (aggressive bot defence + lower ROI given Fantastic
+  already covers the same budget price band). The catalogue now has
+  representation in every tier from ultra-budget to premium.
 - `2026-05-23` — **#157 Brosa scraper shipped — best-effort, DataDome-
   gated (mid tier).** brosa.com.au is fronted by DataDome bot
   protection — curl + Chrome UA returns the JS-challenge interstitial
@@ -1928,20 +1942,26 @@ The plumbing landed in #153 (above). Remaining work, in priority order:
   2026-05-22. Budget-mid is currently uncovered (no scraped retailer
   lands there); revisit if the picking-list builder shows a gap for
   users at the $700–$1,500 sofa price point.
-- **#156 — IKEA AU scraper.** Budget tier ($500–$1,200). Expect
-  aggressive bot protection — likely needs the Koala-style Cloudflare
-  warm-up (homepage visit → cookie capture → API requests through
-  Playwright's browser context).
+- **#156 — IKEA AU scraper. DEFERRED.** Owner skipped on 2026-05-23
+  given Fantastic Furniture already covers the same $500–$1,200
+  budget price band and IKEA's bot defence would require non-trivial
+  stealth tooling. Revisit if the picking list needs Scandinavian-
+  styled budget pieces specifically (IKEA's MARKERAD line, the
+  Billy/Kallax storage staples, or the LACK occasional tables — none
+  of which Fantastic covers).
 - **#157 — Brosa scraper. SHIPPED (best-effort, DataDome-gated).**
   Mid tier ($700–$1,500 designer-inspired). Site is fronted by
   DataDome bot protection. Scraper uses vanilla Playwright + homepage
   warm-up + JS-challenge detection (aborts cleanly if challenge
   persists). First live run will confirm whether DataDome lets us
   through. See changelog for the fallback ladder.
-- **#158 — Kmart / Target accent scraper.** Ultra-budget tier.
-  No serious sofa catalogue — scope to stools, lamps, small rugs,
-  bedside tables. Different product mix to the rest of the segment
-  rollout. Confirm scope with owner before building.
+- **#158 — Kmart accent scraper. SHIPPED (stools only).** Ultra-
+  budget tier. Owner narrowed scope on 2026-05-23 to stools only
+  (declined the lamps / small rugs / bedside tables expansion).
+  Target dropped from the build at the same time — Wesfarmers
+  collapsed most of Target's furniture range into Kmart so the
+  duplicate scraper wasn't worth the maintenance. See changelog
+  for the Akamai-bypass implementation detail.
 
 Once two or more retailers exist per category, the substitution
 feature becomes possible:

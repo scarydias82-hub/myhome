@@ -39,7 +39,8 @@ export const SEGMENTS = /** @type {const} */ ([
 // its product records (i.e. the `RETAILER` constant in each scraper
 // file). Keep in sync when adding a new retailer.
 const RETAILER_SEGMENT = {
-  // ultra-budget — none scraped yet
+  // ultra-budget
+  'Kmart': 'ultra-budget',
 
   // budget
   'Fantastic Furniture': 'budget',
