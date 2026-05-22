@@ -9,7 +9,8 @@
 // /signup, or the marketing root.
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState, useTransition } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Tab {
@@ -61,7 +62,20 @@ const TABS: Tab[] = [
 const HIDDEN_PREFIXES = ['/login', '/signup', '/auth'];
 
 export function BottomNav() {
+  const router = useRouter();
   const pathname = usePathname() ?? '';
+  // Optimistic active state — set immediately on tap so the tapped tab
+  // lights up before the next page's RSC payload arrives. Server-
+  // rendered pages take 300-800ms even on a warm function; without
+  // this feedback users tap repeatedly thinking nothing happened.
+  const [pendingMatch, setPendingMatch] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  // Clear the optimistic state once the URL has caught up — at that
+  // point `pathname` will derive the same active tab anyway.
+  useEffect(() => {
+    setPendingMatch(null);
+  }, [pathname]);
 
   // Root marketing page (`/`) — also hide. Don't hide on every other
   // path; checking exact equality.
@@ -85,12 +99,28 @@ export function BottomNav() {
     >
       <ul className="mx-auto flex max-w-md items-stretch justify-between px-2 pt-1.5">
         {TABS.map((tab) => {
-          const active = pathname === tab.match || pathname.startsWith(`${tab.match}/`);
+          const onPath = pathname === tab.match || pathname.startsWith(`${tab.match}/`);
+          // Pending wins over path-derived state so the tap lights up
+          // immediately. Once a navigation finishes, the useEffect
+          // clears pending and `onPath` takes over.
+          const active = pendingMatch ? pendingMatch === tab.match : onPath;
           return (
             <li key={tab.href} className="flex-1">
               <Link
                 href={tab.href}
                 aria-current={active ? 'page' : undefined}
+                onClick={(e) => {
+                  // Let modifier-clicks / non-primary buttons go through
+                  // to the browser (open in new tab, etc.).
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                  // Tapping the current tab is a no-op — don't set a
+                  // pending state, otherwise tapping Home from /dashboard
+                  // briefly "re-activates" Home for nothing.
+                  if (onPath) return;
+                  e.preventDefault();
+                  setPendingMatch(tab.match);
+                  startTransition(() => router.push(tab.href));
+                }}
                 className={cn(
                   // 56px target = comfortable thumb tap. The raised
                   // Photo tab gets a circular treatment that sits

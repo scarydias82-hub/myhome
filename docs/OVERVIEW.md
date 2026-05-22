@@ -141,6 +141,22 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — **Perceived-snappiness pass on mobile navigation.**
+  Two compounding fixes for the "I tapped Shop and nothing happened
+  so I tapped it three more times" UX. (1) Added `loading.tsx`
+  skeletons at the four high-traffic dynamic routes
+  (`/dashboard`, `/catalogue`, `/projects`, `/vision-boards`) —
+  Next streams the skeleton instantly on click so the page-load
+  RTT to Vercel + Supabase queries no longer reads as
+  unresponsiveness. Skeletons mirror each page's header band +
+  hero rhythm + content grid so the layout doesn't jolt when real
+  content streams in. (2) Refactored `BottomNav` to track an
+  optimistic `pendingMatch` state on tap via `useTransition` +
+  `router.push` — the tapped tab lights up the millisecond your
+  thumb releases, before any RSC payload arrives. Pending state
+  clears via `useEffect([pathname])` once the URL catches up.
+  Modifier-clicks fall through to browser default; tapping the
+  current tab is a no-op (no spurious re-activation).
 - `2026-05-22` — Removed dead `/retailers` link from the desktop
   TopNav (route never existed; would 404 on click). Catalogue
   page already surfaces retailer filtering via its chip row, so a
