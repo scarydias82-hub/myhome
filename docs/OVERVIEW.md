@@ -4,8 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `9ff4516` (will
-be bumped on the commit that lands this revision).
+**Last verified:** 2026-05-22 · most recent material commit: `38ebeb8`.
 
 > **Living-doc protocol.** Every commit that materially changes the
 > product, the system, or the business updates the relevant section of this
@@ -179,6 +178,20 @@ product, the system, or the business. Cross-reference SHAs with
   UX on the first impression. Frontend is forward-compatible: page
   loads cleanly pre-migration (picking_list_status fetched in a
   separate maybeSingle() query that tolerates missing column).
+- `2026-05-22` — **Palette likes — aggregate-popular carousel + like toggle.**
+  Users can now heart any palette on the dashboard carousel or /palettes
+  page. Likes are persisted in a new `palette_likes` table (user_id,
+  palette_id, RLS: authenticated read / insert-delete own). The dashboard
+  carousel is now composed server-side from the top-18 most-liked palettes
+  (aggregate across all users) ∪ the current user's liked palettes, ordered
+  lightest→darkest by perceptual wall-colour luminance (paletteBrightness()
+  IEC 61966-2-1). Cold-start fallback: when the table is empty the
+  editorial `popular` tag seeds the carousel. /palettes page gains a
+  dynamic "Your likes" filter chip (hidden when 0) and a DB-driven
+  "Popular" chip. New API route: POST /api/palettes/[paletteId]/like.
+  New component: PaletteLikeButton (compact/comfortable variants,
+  optimistic UI with server reconciliation). Casts via (supabase as any)
+  until next gen-types run.
 - `2026-05-22` — **Palette catalogue expansion + featured/all split.**
   Grew the palette set from 16 to 56 — 40 new entries covering the
   modern-neutral / natural-light / popular-tone gaps the original
@@ -1175,6 +1188,7 @@ making sure each user has a great first render — concierge-style if needed.
 | `products`         | Shared catalogue. Read for all authed users; service role writes.    |
 | `shortlist_items`  | Per-project picks promoted from a render or a staged image.          |
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
+| `palette_likes`    | Per-user palette hearts. `palette_id` is a text slug (no FK — palettes are compile-time JSON). Unique on `(user_id, palette_id)`. RLS: authenticated read (aggregate counts), insert/delete own rows. |
 | `design_knowledge` | Curated AU design corpus + CLIP-text embeddings for RAG.             |
 
 ### 4.4 Storage buckets
@@ -1297,16 +1311,21 @@ The editorial dashboard at `/dashboard` is built from small primitives in
 - **HeroGreeting** — name + four quick-action cards.
 - **PinterestSection** — placeholder card; OAuth flow is on the roadmap (#55).
 - **ProjectsSection** — current projects grouped by status.
-- **TrendsSection** — three carousels: (1) Colour palettes — filtered to
-  the ~18 popular-tagged subset; "See all →" deep-links to `/palettes`
-  for the full 56-palette catalogue. (2) 2026 design trends — trend
-  cards keyed by (palette × room), timelessness < 9. (3) Tried &
-  tested directions — timelessness ≥ 9. Only renders if `trend_cards`
-  rows exist.
-- **`/palettes`** (separate page) — full browse with filter chips
-  (popular / neutral / modern / natural / light / warm / cool / bold /
-  heritage). Each card has shop / start-project / save-to-board CTAs
-  matching the dashboard carousel.
+- **TrendsSection** — three carousels: (1) Colour palettes — server-
+  composed from top-18 most-liked palettes (aggregate across all users
+  from `palette_likes`) ∪ the current user's liked palettes, ordered
+  lightest→darkest by wall-colour perceptual luminance. Cold-start
+  fallback: editorial `popular` tag when the likes table is empty. Each
+  card has a PaletteLikeButton (heart fills optimistically, reconciles
+  with server). "See all →" deep-links to `/palettes`. (2) 2026 design
+  trends — trend cards keyed by (palette × room), timelessness < 9.
+  (3) Tried & tested directions — timelessness ≥ 9. Only renders if
+  `trend_cards` rows exist.
+- **`/palettes`** (separate page) — full browse with filter chips:
+  dynamic "Your likes" (hidden when 0) + DB-driven "Popular" + static
+  tag chips (neutral / modern / natural / light / warm / cool / bold /
+  heritage). All views sorted lightest→darkest by paletteBrightness().
+  Each card has shop / start-project / like / save-to-board CTAs.
 - **ARSection** — catalogue cards with compat scoring (compat scoring is
   placeholder today; #56 lands the real version).
 - **NexusCTA** — dark editorial section linking to `/rooms/new`.
@@ -1461,6 +1480,13 @@ Stage 1 is live; the rest is sequenced.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
+- Palette likes — aggregate-popular carousel + like toggle. `palette_likes`
+  table (RLS), POST /api/palettes/[paletteId]/like, PaletteLikeButton
+  (optimistic). Dashboard carousel is now top-18 by aggregate likes ∪
+  user's liked, sorted lightest→darkest. /palettes gains "Your likes"
+  and "Popular" dynamic chips. Run `supabase db push` (or apply migration
+  via the Supabase dashboard) to activate — the editorial popular tag
+  seeds the carousel on cold-start until real likes accumulate.
 - Palette catalogue 16 → 56 + popular/all split. New `/palettes`
   browse page with filter chips. Dashboard carousel filtered to the
   18 popular-tagged palettes. Wizard carousel ① defaults to popular
