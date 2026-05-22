@@ -25,6 +25,41 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#156 prefs ↔ vision_profile pre-filter shipped.**
+  Closes the architectural gap where `users.preferences.tags` only
+  shaped the *Claude designer's prompt* (recommend + curation) but
+  never narrowed the *candidate product pool*. The fallback metadata
+  path (`autoFeatureForPalette`) was completely prefs-blind, and even
+  the Claude-curated path sent a candidate set ordered by price only
+  — meaning a user who picked "avoid:cool-metals" could still see a
+  chrome floor lamp in the prompt if the palette happened to match.
+  - New module `apps/web/lib/prefs-vision-fit.ts` with a deterministic
+    slug → vision_profile signal map (positives + negatives) built
+    against the exact `BRIEF_TAG_GROUPS` taxonomy and the exact
+    `materials` / `color_family` / `visual_tone` / `quality_tier`
+    enum vocabularies the scraper's `visionProfile.js` writes.
+    Weights: materials direct hit +2, mood→tone +1, colour/tier +1,
+    avoid axis hit −3. Threshold: score < −2 → drop (one unmitigated
+    avoid).
+  - `lib/featuring.ts` — both `autoFeatureClaude` (per-bucket re-rank
+    before the Claude prompt) and `autoFeatureForPalette` (re-rank
+    before the per-category dedupe) now run the new ranker. SQL
+    selects pull `vision_profile` alongside the existing columns. A
+    log line surfaces the dropped / top-score numbers per render so
+    we can verify the filter is biting.
+  - `app/api/render/route.ts` — when no project context exists, the
+    render route now falls back to `users.preferences.tags` for the
+    brief tags (closes the latent #155 gap where outside-project
+    uploads silently shipped with empty briefTags even when the user
+    had set canonical preferences). Snapshot semantics intact —
+    read-only on `users.preferences`.
+  Net: products with explicit avoid-conflict materials/tone/colour
+  get dropped from the candidate pool *before* Claude ever sees them;
+  preferred materials float to the top of each bucket; the no-Claude
+  fallback also respects preferences for the first time. Catalogue
+  rows without a `vision_profile` yet (pre-#145 backfill or new
+  arrivals) score neutral and rank alongside un-preferred candidates
+  — graceful degradation rather than a hard dependency.
 - `2026-05-22` — **#149 step 1 shipped — drop cardinal direction
   from vision schema.** The c6f8137 hot-fix scrubbed cardinal
   direction from the render-side prompts but `lib/vision.ts` was

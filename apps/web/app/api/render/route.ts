@@ -208,7 +208,12 @@ export async function POST(request: NextRequest) {
     const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
     const roomFacts = (room.analysis as RoomAnalysis | null) ?? null;
 
-    // Fetch brief (best-effort — falls through to null on any error)
+    // Fetch brief (best-effort — falls through to null on any error).
+    // Tag priority chain mirrors /api/recommend (§6.11 Phase C, #155):
+    //   project brief tags → canonical `users.preferences.tags` → []
+    // Outside-project uploads previously fell through to [] here even
+    // when the user had set canonical preferences — closed by #156 so
+    // the auto-feature path always sees taste signal when one exists.
     let briefResponse: import('@/lib/brief/synthesiser').BriefSynthesis | null = null;
     let briefTags: string[] = [];
     if (verifiedProjectId) {
@@ -222,6 +227,21 @@ export async function POST(request: NextRequest) {
         | null)?.brief;
       briefResponse = brief?.response ?? null;
       briefTags = Array.isArray(brief?.tags) ? brief!.tags! : [];
+    }
+    if (briefTags.length === 0) {
+      // Canonical user prefs fallback. Outside-project uploads, and
+      // projects whose brief.tags happens to be empty, both pick up the
+      // dashboard chip picker's value. Snapshot semantics: this only
+      // READS users.preferences — never writes back.
+      const prefsRes = await admin
+        .from('users')
+        .select('preferences')
+        .eq('id', user.id)
+        .maybeSingle();
+      const prefs = (prefsRes.data as { preferences: { tags?: string[] } | null } | null)?.preferences;
+      if (prefs && Array.isArray(prefs.tags) && prefs.tags.length > 0) {
+        briefTags = prefs.tags;
+      }
     }
 
     // Try the Claude-curated path first. autoFeatureClaude returns []
@@ -249,6 +269,9 @@ export async function POST(request: NextRequest) {
         admin,
         paletteId: palette.id,
         roomType,
+        // #156 — fallback path is now prefs-aware too, so the user's
+        // avoid signals still bite when Claude curation has failed.
+        briefTags,
         limit: 3,
       });
       if (heroProducts.length > 0) {
