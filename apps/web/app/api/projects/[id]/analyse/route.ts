@@ -99,6 +99,15 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
     );
   }
 
+  // Wall-clock instrumentation. The route has a 60s Vercel budget and
+  // chains two Claude calls; when it times out we want the logs to
+  // tell us which call ate the budget (vision / synthesiser / storage
+  // download).
+  const t0 = Date.now();
+  console.log(
+    `[project-analyse] start projectId=${id} roomId=${room.id} cached=${!!room.analysis}`,
+  );
+
   // 4a. Room analysis — re-run only if not already cached. Cached
   // analysis avoids paying a Claude call when the user revisits Step 3.
   // Downloads the photo bytes directly from Supabase Storage and passes
@@ -112,11 +121,19 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
     }
     const buffer = Buffer.from(await dl.data.arrayBuffer());
     const mediaType = (dl.data.type || 'image/jpeg') as VisionMediaType;
+    const tDownload = Date.now();
+    console.log(
+      `[project-analyse] photo downloaded in ${tDownload - t0}ms (${buffer.length} bytes)`,
+    );
     try {
       roomAnalysis = await analyseRoom({ buffer, mediaType });
+      console.log(`[project-analyse] analyseRoom done in ${Date.now() - tDownload}ms`);
       await admin.from('rooms').update({ analysis: roomAnalysis }).eq('id', room.id);
     } catch (err) {
-      console.error('[analyse] analyseRoom failed', err);
+      console.error(
+        `[project-analyse] analyseRoom failed after ${Date.now() - tDownload}ms`,
+        err,
+      );
       return NextResponse.json(
         { error: err instanceof Error ? err.message : 'Room analysis failed.' },
         { status: 502 },
@@ -127,11 +144,16 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
   // 4b. Brief synthesis — always re-runs because the room context
   // makes the reasoning specific. If a previous response exists for
   // an older photo or older tags, it's stale by definition.
+  const tBeforeSynth = Date.now();
   let briefResponse: BriefSynthesis;
   try {
     briefResponse = await synthesiseBrief(tags, roomAnalysis);
+    console.log(`[project-analyse] synthesiseBrief done in ${Date.now() - tBeforeSynth}ms`);
   } catch (err) {
-    console.error('[analyse] synthesiseBrief failed', err);
+    console.error(
+      `[project-analyse] synthesiseBrief failed after ${Date.now() - tBeforeSynth}ms`,
+      err,
+    );
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Designer call failed.' },
       { status: 502 },
@@ -153,6 +175,8 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
     // Still return — user gets the value, log will diagnose persistence
     // breakage separately.
   }
+
+  console.log(`[project-analyse] complete in ${Date.now() - t0}ms total`);
 
   return NextResponse.json({
     roomId: room.id,

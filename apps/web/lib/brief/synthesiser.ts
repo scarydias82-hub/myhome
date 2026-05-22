@@ -270,16 +270,24 @@ export async function synthesiseBrief(
   roomFacts: RoomAnalysis | null = null,
 ): Promise<BriefSynthesis> {
   const anthropic = getAnthropic();
+  // Per-call SDK timeout (30s) prevents a hung Sonnet call from burning
+  // the entire 60s Vercel function budget — the analyse route runs
+  // analyseRoom + synthesiseBrief sequentially, so two unbounded calls
+  // can easily compound past 60s on a slow Anthropic moment. Tight retry
+  // [0, 2s, 5s] keeps total backoff at ~7s (was 26s).
   const message = await withAnthropicRetry(
     () =>
-      anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
-        temperature: 0.6,
-        system: buildSystemPrompt(),
-        messages: [{ role: 'user', content: buildUserMessage(tags, roomFacts) }],
-      }),
-    { label: 'brief-synth' },
+      anthropic.messages.create(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1500,
+          temperature: 0.6,
+          system: buildSystemPrompt(),
+          messages: [{ role: 'user', content: buildUserMessage(tags, roomFacts) }],
+        },
+        { timeout: 30_000 },
+      ),
+    { label: 'brief-synth', delaysMs: [0, 2000, 5000] },
   );
 
   const raw = message.content

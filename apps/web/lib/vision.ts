@@ -120,32 +120,38 @@ export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis
   //
   // Wrapped in retry-with-backoff because Anthropic returns 529 overloaded
   // intermittently — a single transient failure shouldn't break the user's
-  // first impression of the product. 3 attempts at 0/2s/5s recovers the
-  // overwhelming majority of overloads silently.
+  // first impression of the product. Tight schedule [0, 2s, 5s] (3 attempts,
+  // 7s of backoff budget) — overloads usually clear within a few seconds
+  // and longer waits compound user-perceived latency. Per-call SDK timeout
+  // of 25s prevents a single hung call from burning the entire 60s Vercel
+  // function budget (SDK default is 600s).
   const message = await withAnthropicRetry(
     () =>
-      anthropic.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1500,
-        system: SYSTEM,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: input.mediaType,
-                  data: input.buffer.toString('base64'),
+      anthropic.messages.create(
+        {
+          model: 'claude-haiku-4-5',
+          max_tokens: 1500,
+          system: SYSTEM,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: input.mediaType,
+                    data: input.buffer.toString('base64'),
+                  },
                 },
-              },
-              { type: 'text', text: 'Analyse this room photo and return the JSON described in your system prompt.' },
-            ],
-          },
-        ],
-      }),
-    { label: 'vision' },
+                { type: 'text', text: 'Analyse this room photo and return the JSON described in your system prompt.' },
+              ],
+            },
+          ],
+        },
+        { timeout: 25_000 },
+      ),
+    { label: 'vision', delaysMs: [0, 2000, 5000] },
   );
 
   const text = message.content
