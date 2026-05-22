@@ -25,6 +25,22 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Single native-picker upload UI for /rooms/new
+  Step 01.** The room-photo upload affordance went from a two-button
+  "Browse files / Use camera" split + a desktop `getUserMedia`
+  live-viewfinder modal to a single tap target that opens the OS
+  file sheet (Take Photo + Photo Library + Choose File on iOS /
+  Android, Finder on desktop). Dropped the `capture="environment"`
+  second input plus the `videoRef` / `streamRef` / `cameraOpen`
+  bespoke camera UI — the native sheet is faster, more accessible,
+  and respects the user's default camera/photos apps. Drag-and-drop
+  on desktop preserved; preview replaces in-place with a "Replace
+  photo" pill in the corner; HEIC pipeline (`prepareImageForUpload`)
+  + 15 MB cap untouched. Net −56 lines in
+  `components/rooms/upload-form.tsx`. Vision-board upload
+  (`board-image-upload.tsx`) already uses the native-picker pattern
+  via a button trigger; visual parity with the new graphic-tile
+  pattern is a separate decision.
 - `2026-05-22` — **#155 §6.11 Phase C shipped: outside-project uploads
   inherit user preferences + per-render override.** Closes the
   cold-start gap that started the whole §6.11 conversation. Three

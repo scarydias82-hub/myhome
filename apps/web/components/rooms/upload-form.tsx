@@ -79,15 +79,11 @@ interface FeaturedProduct {
 export function UploadForm({ projectId }: { projectId?: string | null }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
 
   const [roomId, setRoomId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RoomAnalysis | null>(null);
@@ -203,13 +199,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       cancelled = true;
     };
   }, [analysisConfirmed, analysis?.room_type]);
-
-  const isMobile =
-    typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-
-  useEffect(() => {
-    return () => streamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
 
   // Warmup keepalive. Fires on mount (paletteId has a default value)
   // and again whenever the user lands on a different palette. Keeps
@@ -389,61 +378,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     void recommendForRoom(roomId, null);
   }
 
-  async function openCamera() {
-    setError(null);
-    if (isMobile) {
-      cameraInput.current?.click();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      setCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      });
-    } catch (err) {
-      setError(
-        err instanceof Error && err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Allow camera access or upload a photo instead.'
-          : 'Could not open the camera. Try uploading a photo instead.',
-      );
-    }
-  }
-
-  function closeCamera() {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    setCameraOpen(false);
-  }
-
-  function capturePhoto() {
-    const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const captured = new File([blob], `room-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        void handleFile(captured);
-        closeCamera();
-      },
-      'image/jpeg',
-      0.92,
-    );
-  }
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!roomId) {
@@ -483,21 +417,17 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         converting={converting}
         analysing={analysing}
         onPick={handleFile}
-        onOpenCamera={openCamera}
         onBrowseFiles={() => fileInput.current?.click()}
       />
+      {/* Single hidden file input. No `capture` attribute so iOS/Android
+          surface the full native sheet (Take Photo + Photo Library +
+          Choose File) rather than forcing the camera. Desktop opens the
+          OS file chooser. The visible affordance in Step1Upload is the
+          tappable surface — this input is just plumbing. */}
       <input
         ref={fileInput}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-        className="sr-only"
-        onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-      />
-      <input
-        ref={cameraInput}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-        capture="environment"
         className="sr-only"
         onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
       />
@@ -638,29 +568,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         </p>
       </div>
 
-      {cameraOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/80 p-4">
-          <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-cream">
-            <div className="relative aspect-[4/3] w-full bg-ink">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 p-5">
-              <Button type="button" variant="secondary" onClick={closeCamera}>
-                Cancel
-              </Button>
-              <Button type="button" variant="cta" size="lg" onClick={capturePhoto}>
-                Capture photo
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {/* §6.11 Phase C (#155) override modal. Renders only when the
           user clicks "Customise for this image" — saves the chosen
           tags into local state + re-fires recommendForRoom with them.
@@ -769,13 +676,20 @@ function RecommendationSourceBanner({
   );
 }
 
+// Step 01 — single tap target. On mobile, tapping the empty tile opens
+// the OS-native file sheet which surfaces "Take Photo", "Photo Library"
+// and "Choose File" together; we don't ship a custom action sheet or a
+// `getUserMedia` viewfinder because the native UI is faster, more
+// accessible, and respects the user's default camera/photos apps. On
+// desktop, the same tile also accepts drag-and-drop. After a file is
+// chosen the tile becomes the preview — re-tapping (or dropping a new
+// file on) the preview replaces it in place.
 function Step1Upload({
   file,
   preview,
   converting,
   analysing,
   onPick,
-  onOpenCamera,
   onBrowseFiles,
 }: {
   file: File | null;
@@ -783,9 +697,13 @@ function Step1Upload({
   converting: boolean;
   analysing: boolean;
   onPick: (f: File | null) => void;
-  onOpenCamera: () => void;
   onBrowseFiles: () => void;
 }) {
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    onPick(e.dataTransfer.files?.[0] ?? null);
+  }
+
   return (
     <section>
       <Eyebrow>Step 01 · Your room</Eyebrow>
@@ -795,44 +713,19 @@ function Step1Upload({
         HEIC up to 15 MB.
       </p>
 
-      <div className={cn('mt-6 grid gap-6 md:grid-cols-2', file || converting ? '' : 'md:grid-cols-1')}>
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            onPick(e.dataTransfer.files?.[0] ?? null);
-          }}
-          className={cn(
-            'flex min-h-[260px] flex-col items-center justify-center gap-4',
-            'rounded-xl border-2 border-dashed border-ink/15 bg-paper-warm bg-grain p-8 text-center',
-            'transition hover:border-clay/40 hover:bg-paper-warm/80',
-          )}
-        >
-          <p className="font-display text-h4 text-ink">Drop a photo here</p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button type="button" variant="secondary" onClick={onBrowseFiles}>
-              Browse files
-            </Button>
-            <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">or</span>
-            <Button type="button" variant="cta" onClick={onOpenCamera}>
-              Use camera
-            </Button>
-          </div>
-          {file ? (
-            <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-              {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
-            </p>
-          ) : null}
-        </div>
-
+      <div className="mt-6">
         {preview ? (
-          <div className="relative overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            className="relative overflow-hidden rounded-2xl border border-ink/[0.06] bg-cream"
+          >
             <Image
               src={preview}
               alt="Your room"
-              width={800}
-              height={600}
-              className="h-full w-full object-cover"
+              width={1600}
+              height={1200}
+              className="block h-auto max-h-[600px] w-full object-contain bg-ink/5"
               unoptimized
             />
             {/* Analysing overlay — sits ON the photo so the Claude
@@ -855,20 +748,70 @@ function Step1Upload({
                   <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
                 </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onBrowseFiles}
+                className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-ink/15 bg-cream/95 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft shadow-sm backdrop-blur transition hover:border-clay/40 hover:text-clay"
+              >
+                Replace photo
+              </button>
+            )}
+            {file && !analysing ? (
+              <p className="absolute bottom-3 left-3 inline-flex items-center rounded-pill bg-ink/55 px-3 py-1 font-mono text-meta uppercase tracking-eyebrow text-cream backdrop-blur">
+                {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
+              </p>
             ) : null}
           </div>
         ) : converting ? (
-          <div className="grid min-h-[260px] place-items-center rounded-xl border border-ink/[0.06] bg-cream p-8 text-center">
+          <div className="grid min-h-[280px] place-items-center rounded-2xl border border-ink/[0.06] bg-cream p-8 text-center">
             <div>
               <div className="mx-auto h-3 w-40 overflow-hidden rounded-full bg-ink/10">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
               </div>
               <p className="mt-4 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                Converting HEIC → JPEG
+                Preparing photo
               </p>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={onBrowseFiles}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            className={cn(
+              'group flex w-full min-h-[280px] flex-col items-center justify-center gap-4',
+              'rounded-2xl border-2 border-dashed border-ink/15 bg-paper-warm bg-grain p-8 text-center',
+              'transition hover:border-clay/40 hover:bg-paper-warm/80',
+              'focus-visible:border-clay/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/20',
+            )}
+            aria-label="Add a room photo"
+          >
+            <span className="grid h-16 w-16 place-items-center rounded-full border border-ink/10 bg-cream text-ink-soft transition group-hover:border-clay/40 group-hover:text-clay">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="3.25" />
+              </svg>
+            </span>
+            <div>
+              <p className="font-display text-h4 text-ink">Tap to add a room photo</p>
+              <p className="mt-2 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                Camera or photo library · or drag a file here
+              </p>
+            </div>
+          </button>
+        )}
       </div>
     </section>
   );
