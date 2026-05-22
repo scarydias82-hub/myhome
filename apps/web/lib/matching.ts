@@ -1,25 +1,32 @@
 // End-to-end product matching pipeline.
 //
-// Flow (post-#146):
+// Flow (post-#147):
 //   1. Detect bounding boxes in the rendered image (Florence-2 via fal.ai)
 //   2. For each box, embed the cropped region via CLIP (HF Inference on
 //      Vercel via @/lib/embeddings; falls through to LOCAL onnxruntime in
-//      dev where the native binary loads) and call match_products_filtered
-//      RPC — palette_tags + room_tags pre-filter, HNSW cosine pre-rank,
-//      returns the top CANDIDATES_PER_ITEM visually-similar candidates.
-//      If embedding fails (no HF_TOKEN, transient outage), gracefully
-//      falls back to the legacy palette_tags + price-desc query.
-//   3. Ask Claude Haiku to rank those CLIP-pre-narrowed candidates by
-//      visual similarity to the cropped item from the render
-//   4. Return the picking list
+//      dev where the native binary loads).
+//   3. Three-tier candidate fetch in fetchCandidates():
+//      a. match_products_by_vision_profile — narrows by what Claude saw
+//         in the product image during the #145 vision_profile pre-pass
+//         (palette_fit + room_fit >= 0.6). Most discerning; empty until
+//         visionProfile.js has been run in production.
+//      b. match_products_filtered (#146) — narrows by rule-based
+//         palette_tags + room_tags. The pre-#147 contract.
+//      c. Legacy non-RPC path — palette+room+category filter, price-desc
+//         sort. Last-resort when CLIP / RPC paths are all unavailable.
+//      Each tier falls through to the next on empty / error so the matcher
+//      never starves on flaky upstreams or sparse data.
+//   4. Ask Claude Haiku to rank those CLIP-pre-narrowed candidates by
+//      visual similarity to the crop.
+//   5. Return the picking list.
 //
 // History: this file originally replaced a pure CLIP+pgvector matcher with
 // Claude-vision ranking because HF Inference cold-started for >10s and
-// onnxruntime wouldn't load on Vercel. #146 brings CLIP back as a pre-rank
+// onnxruntime wouldn't load on Vercel. #146 brought CLIP back as a pre-rank
 // filter (not as the final ranker), getting the candidate-quality win
-// without the cold-start tax — embedding the crop is one HF call, the
-// catalogue embeddings are pre-computed offline by apps/scraper/scripts/
-// embed.js, and the pgvector HNSW index does the cosine sort in-DB.
+// without the cold-start tax. #147 layers vision_profile on top so the
+// pre-filter is grounded in what Claude actually sees in each product
+// image, not in tags inherited from palette definitions.
 
 import sharp from 'sharp';
 import Anthropic from '@anthropic-ai/sdk';
@@ -579,32 +586,63 @@ async function fetchCandidates({
   // ones every time. Embedding lives behind @/lib/embeddings; on Vercel
   // it hits HF Inference (REMOTE), in dev it loads the local onnxruntime
   // CLIP model. Both produce the same 512-dim ViT-B/32 vector that the
-  // catalogue rows were embedded with offline by embed.js. On any
-  // failure (no HF_TOKEN, HF outage, embedding error, RPC empty),
-  // gracefully falls through to the legacy filter path below so the
-  // matcher never starves on a flaky upstream.
+  // catalogue rows were embedded with offline by embed.js.
+  //
+  // Three-tier fallback (added in #147):
+  //   1. match_products_by_vision_profile — filters by what Claude saw
+  //      in the product image during the #145 vision_profile pre-pass
+  //      (palette_fit + room_fit >= 0.6). Most discerning; empty until
+  //      the visionProfile.js backfill runs in production.
+  //   2. match_products_filtered (#146) — filters by inherited
+  //      palette_tags + room_tags. Active filter for the rule-based
+  //      tag world; what shipped before vision_profile.
+  //   3. Legacy non-RPC path — bypasses CLIP entirely, sorts by
+  //      price desc. Last-resort when both RPCs are unreachable.
+  //
+  // Each tier falls through to the next on empty / error so the matcher
+  // never starves on a flaky upstream or sparse data.
   if (cropBuf) {
     try {
       const startedAt = Date.now();
       const queryEmbedding = await embedImage(new Uint8Array(cropBuf));
       const embedMs = Date.now() - startedAt;
-      const { data, error } = await admin.rpc('match_products_filtered', {
+
+      // Tier 1: vision_profile (post-#145 backfill).
+      const vp = await admin.rpc('match_products_by_vision_profile', {
         query_embedding: queryEmbedding,
         category_list: cats,
         palette_id: paletteId ?? null,
         room_type: roomType ?? null,
         match_count: CANDIDATES_PER_ITEM,
       });
-      if (error) {
-        console.error('[matching] CLIP pre-rank RPC failed', error);
-      } else if (data && data.length > 0) {
+      if (vp.error) {
+        console.error('[matching] vision_profile RPC failed', vp.error);
+      } else if (vp.data && vp.data.length > 0) {
         console.log(
-          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${data.length} candidates in ${embedMs}ms embed`,
+          `[matching] vision_profile pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${vp.data.length} candidates in ${embedMs}ms embed`,
         );
-        return data as ProductRow[];
+        return vp.data as ProductRow[];
+      }
+
+      // Tier 2: palette_tags + room_tags (#146 contract). Reusing the
+      // already-computed embedding — no second HF call.
+      const tagged = await admin.rpc('match_products_filtered', {
+        query_embedding: queryEmbedding,
+        category_list: cats,
+        palette_id: paletteId ?? null,
+        room_type: roomType ?? null,
+        match_count: CANDIDATES_PER_ITEM,
+      });
+      if (tagged.error) {
+        console.error('[matching] CLIP pre-rank RPC failed', tagged.error);
+      } else if (tagged.data && tagged.data.length > 0) {
+        console.log(
+          `[matching] palette_tags pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${tagged.data.length} candidates`,
+        );
+        return tagged.data as ProductRow[];
       } else {
         console.log(
-          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): 0 — falling back to legacy filter`,
+          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): 0 across both tiers — falling back to non-RPC filter`,
         );
       }
     } catch (err) {

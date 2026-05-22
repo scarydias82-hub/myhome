@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `60d3f13` (will
+**Last verified:** 2026-05-22 · most recent material commit: `33b9f2e` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,26 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#147 vision_profile-aware matcher (catalogue
+  intelligence Phase 3).** Closes the catalogue intelligence bundle.
+  `fetchCandidates()` now has a three-tier fall-through: (1) new
+  `match_products_by_vision_profile` RPC narrows by what Claude saw in
+  the #145 pre-pass (palette_fit + room_fit >= 0.6) and pgvector
+  cosine-sorts; (2) `match_products_filtered` from #146 (palette_tags
+  + room_tags filter) takes over when vision_profile coverage is thin;
+  (3) legacy non-RPC palette+room+price-desc filter as the last resort.
+  Both RPC tiers reuse the same crop embedding — one CLIP call per
+  box, two cheap pgvector queries. The deploy is inert on vision_profile
+  until the visionProfile.js backfill runs (#145) — Tier 1 returns 0
+  rows from `WHERE vision_profile IS NOT NULL` and Tier 2 takes over,
+  preserving #146 behaviour. Once the backfill is run, Tier 1 starts
+  surfacing rows and the matcher's pre-filter becomes grounded in
+  per-image Claude judgement rather than inherited tags.
+  *Deferred follow-ups from the §6.9 spec:* (a) drop CANDIDATES_PER_ITEM
+  from 5 → 3 — kept at 5 because the spec gates this on an A/B eval and
+  the existing UX shows 5 cards per box; (b) run the formal A/B eval vs
+  the pre-#146 matcher — separate ticket once vision_profile coverage
+  is non-trivial in production.
 - `2026-05-22` — **#146 CLIP pre-rank in matcher (catalogue intelligence
   Phase 2).** Brings CLIP back into the matcher as a pre-rank filter
   (not as the final ranker, which is where it lost us last time).
@@ -1567,16 +1587,27 @@ end-state: ~3–5s with visibly more on-brief picks.
   win compounds with #147 when the Claude ranker shrinks.
 
 - **#147 — Matcher refactor: consume `vision_profile`, drop ranker
-  candidate count.** Rewrite `fetchCandidates()` to score against
-  `vision_profile` (palette_fit > 0.6 + room_fit > 0.6 as thresholds)
-  instead of the rule-based `palette_tags @>` filter. Drop
-  `CANDIDATES_PER_ITEM` from 5 → 3, or to 0 if the CLIP rank from
-  #146 is good enough on its own. Run an A/B eval against the current
-  matcher before shipping — the goal is faster *and* more on-brief,
-  not just faster. Depends on #145 + #146. Re-evaluate the deferred
-  vision Haiku → Sonnet upgrade memo here — Sonnet's reasoning
-  headroom pays off more on `vision_profile` generation than on
-  per-render room reads.
+  candidate count.** *Foundation shipped — eval-gated tuning pending.*
+  Migration `20260522180000_match_products_by_vision_profile_rpc.sql`
+  adds `match_products_by_vision_profile` which filters by
+  `vision_profile.palette_fit[$palette] >= 0.6` and
+  `vision_profile.room_fit[$room] >= 0.6`, then HNSW cosine-sorts.
+  `fetchCandidates()` in `lib/matching.ts` now tries this RPC first,
+  falls through to the #146 `match_products_filtered` (palette_tags
+  + room_tags) when vision_profile coverage is thin, then to the
+  legacy non-RPC path. The deploy is inert on the new tier until the
+  #145 visionProfile.js backfill runs in production — Tier 1 returns
+  0 rows and Tier 2 (#146 behaviour) takes over. Once the backfill
+  populates the column, Tier 1 begins surfacing visually + semantically
+  appropriate candidates and the matcher's pre-filter is grounded in
+  Claude's per-image judgement, not in inherited palette_tags.
+  *Deferred:* (a) drop CANDIDATES_PER_ITEM from 5 → 3 — gated on an
+  A/B eval per the spec; the current UX shows 5 cards per box.
+  (b) Formal A/B eval vs the pre-#146 matcher — a separate ticket
+  once vision_profile coverage is non-trivial in production.
+  (c) Re-evaluate the deferred vision Haiku → Sonnet upgrade memo —
+  Sonnet's reasoning headroom pays off more on `vision_profile`
+  generation than on per-render room reads.
 
 **Cross-references:**
 - The deferred room-side **vision→matcher bundle** memo (purchase_
