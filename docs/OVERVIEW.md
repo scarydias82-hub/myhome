@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `c6f8137` (will
+**Last verified:** 2026-05-22 · most recent material commit: `a59ae10` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,35 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#148 vision-grounded tag re-derivation shipped
+  (catalogue intelligence Phase 4).** Now that vision_profile coverage
+  hit 99.1% on imageable rows (1,387 of 1,400), the §6.9 sequencing
+  gate is open and the four tag columns flip from ΔE76-derived to
+  vision-derived for any row that has a vision_profile.
+  - New shared util `apps/scraper/utils/visionTags.js` —
+    `tagsFromVisionProfile(profile, category)` returns
+    `{ palette_tags, room_tags, style_tags, mood_tags }`.
+    `palette_tags` = palette_fit keys ≥ 0.4; `room_tags` = room_fit
+    keys ≥ 0.4 (vision-grounded, not the palette-union shortcut
+    deriveTags would give); `style_tags` + `mood_tags` come from
+    `productTags.deriveTags()` with the vision-grounded palette set
+    (palette-union is correct for style/mood — those are properties
+    of the palette family, not the individual product).
+  - New one-shot script `apps/scraper/scripts/redeRiveTagsFromVisionProfile.js`
+    iterates products WHERE `vision_profile IS NOT NULL`, applies the
+    derivation, writes the four columns. Idempotent (skips rows where
+    the derived shape already matches). Standard `--dry`, `--limit`,
+    `--retailer` flags. Invoke via
+    `pnpm --filter @myhome/scraper run redrive-tags`.
+  - `visionProfile.js` extended so the same UPDATE that writes
+    `vision_profile` for new rows also writes the four derived tag
+    columns — the catalogue stays in lock-step going forward.
+  - `ingest.js` deliberately unchanged: paint products and any other
+    imageless rows keep their ingest-derived ΔE76 tags (vision wins
+    where it can, ΔE76 stays as the floor). Soft divergence from the
+    original §6.9 #148 memo, which proposed dropping tag-writing at
+    ingest entirely — that would have left paint products with empty
+    tag arrays. Documented in the #148 entry now.
 - `2026-05-22` — **§6.10 memoed: Sensor fusion (room scan + vision)
   + tasks #149-#152.** The window-hallucination class of bugs has a
   structural cause — Claude vision is guessing 3D geometry from 2D
@@ -1664,42 +1693,48 @@ end-state: ~3–5s with visibly more on-brief picks.
   generation than on per-render room reads.
 
 - **#148 — `vision_profile` as source of truth, old tag columns
-  become projections.** Phase 4 cleanup once #145 backfill coverage
-  is >~95% in production. Flips the data ownership: instead of
-  `palette_tags` / `style_tags` / `room_tags` / `mood_tags` being
-  derived at ingest from ΔE76 colour distance + palette-membership
-  inheritance, they're derived from `vision_profile` — Claude's
-  per-image judgement of palette + room fit. Column names stay the
-  same so featured-curation (`featured-curation.ts:54-97`) and any
-  other consumer keeps reading without code change; the data
-  underneath just got smarter.
+  become projections.** *Shipped (with soft divergence on ingest).*
+  After the #145 backfill hit 99.1% coverage on imageable rows, the
+  four tag columns now flip to vision-derived for any row that has a
+  `vision_profile`. Column names unchanged — featured-curation and
+  other consumers keep reading without code change.
 
-  Mapping (all mechanical, lives in a new `redeRiveTagsFromVisionProfile.js`
-  scraper script or as a post-step in `visionProfile.js`):
+  Mapping (mechanical, in `apps/scraper/utils/visionTags.js`):
   ```
   palette_tags  ← keys of vision_profile.palette_fit where score >= 0.4
-  room_tags     ← keys of vision_profile.room_fit where score >= 0.4
+  room_tags     ← keys of vision_profile.room_fit where score >= 0.4  ← vision-grounded
   style_tags    ← union of style_tags from palettes.json for each palette
-                  where palette_fit >= 0.4  (reuses productTags.deriveTags
-                  with vision-grounded membership instead of ΔE76 membership)
+                  in palette_tags (productTags.deriveTags with
+                  vision-grounded membership)
   mood_tags     ← same union pattern, mood side
   ```
 
-  Plus three companion edits:
-  1. `apps/scraper/scripts/ingest.js` — keep ΔE76 (`classifyProduct`)
-     ONLY as the junk filter (drop rows whose dominant colour matches
-     no palette). Stop having it write tag columns. New rows have empty
-     tag arrays until the next vision_profile + tag-derivation pass.
-  2. `apps/scraper/scripts/visionProfile.js` — after writing
-     `vision_profile`, derive + write the four tag columns in the same
-     update so a single sweep populates everything.
-  3. Optional follow-up: drop `room_tags` and `mood_tags` columns
-     entirely once all consumers are reading from `vision_profile`
-     directly. Keep `palette_tags` (small, cheap, useful for quick
-     dashboards / ad-hoc filtering); rename or drop the others when
-     they're genuinely unreferenced. `style_tags` stays until
-     featured-curation is rewritten against `vision_profile.color_family`
-     + `palette_fit` directly.
+  Shipped:
+  1. `apps/scraper/utils/visionTags.js` — shared
+     `tagsFromVisionProfile(profile, category)` derivation.
+  2. `apps/scraper/scripts/redeRiveTagsFromVisionProfile.js` — one-shot
+     pass over rows with `vision_profile`. Idempotent (skips rows
+     where the derived shape already matches). Invoke via
+     `pnpm --filter @myhome/scraper run redrive-tags`.
+  3. `apps/scraper/scripts/visionProfile.js` — fold tag derivation
+     into the same UPDATE that writes `vision_profile`, so the
+     catalogue stays in lock-step going forward.
+
+  Deliberately NOT shipped (soft divergence from the original spec):
+  4. `apps/scraper/scripts/ingest.js` is **unchanged**. The original
+     memo proposed stopping tag-writing at ingest entirely, but that
+     would leave the 1,159 paint products (no `image_url`, no
+     `vision_profile`) with empty tag arrays. Better: ingest keeps
+     writing ΔE76-derived tags for imageless rows; vision overwrites
+     them for vision-profiled rows. Vision wins where it can, ΔE76
+     stays as the floor.
+
+  Optional follow-up (deferred): drop `room_tags` and `mood_tags`
+  columns entirely once all consumers read from `vision_profile`
+  directly. Keep `palette_tags` (small, cheap, useful for quick
+  dashboards / ad-hoc filtering). `style_tags` stays until
+  featured-curation is rewritten against `vision_profile.color_family`
+  + `palette_fit` directly.
 
   Sequencing rule: do NOT flip until vision_profile coverage is >~95%
   in production. The Tier-1 matcher RPC already prefers vision_profile,
