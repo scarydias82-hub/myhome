@@ -25,6 +25,22 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Vision SYSTEM prompt reframed as products-first.**
+  Owner-directive change: the platform's primary purpose is steering
+  the user toward a confident shopping list, not producing a pretty
+  render. The vision prompt was opening with *"You are a room-analysis
+  vision model… describing what is actually in the photo so a designer
+  LLM can make recommendations"* — framing vision as a descriptive
+  input to a different system. Reframed to *"You are the first step
+  in myMaison's product recommendation engine… steer the user toward
+  a confident shopping list of pieces to buy. The render that follows
+  is the visual hook; the picking list of products is the deliverable."*
+  No schema change, no downstream coupling — just a free framing
+  nudge that biases Claude's analysis toward purchase-relevant
+  observations. Connected follow-up (deferred): `purchase_opportunities`
+  + `replacement_hint` fields on RoomAnalysis with matcher consumption
+  — memo'd to memory rather than shipped piecemeal since the fields
+  are wasted tokens without matcher wiring.
 - `2026-05-22` — **Open-plan layout signal end-to-end.** Surfaced by
   a real user render: large open-plan living + dining + kitchen photo
   came back with an invented back wall behind the couch and windows
