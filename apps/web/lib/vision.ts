@@ -41,6 +41,17 @@ export interface RoomAnalysis {
   ceiling_height_m: number | null;
   challenges: string[];
   strengths: string[];
+  // 2026-05-22: open-plan layouts. When the photo shows multiple
+  // functional zones in one continuous space (e.g. living + dining,
+  // living + kitchen, hallway visible past the bed), capture each
+  // additional zone here as a short phrase that names it + roughly
+  // WHERE it is from the camera's perspective. Empty array when the
+  // room is closed-plan. The Kontext prompt builder consumes this to
+  // emit "no walls / partitions / windows where the space continues"
+  // directives — Kontext's prior otherwise defaults to a bounded box
+  // layout because closed-plan rooms dominate its training data.
+  // Optional in the type because older cached analyses won't have it.
+  open_plan_zones?: string[];
   generated_at: string;
 }
 
@@ -58,7 +69,8 @@ Be precise. Use null for any field you cannot infer confidently from the image �
   "flooring": string | null,
   "ceiling_height_m": number | null,
   "challenges": string[],
-  "strengths": string[]
+  "strengths": string[],
+  "open_plan_zones": string[]
 }
 
 CRITICAL — bias toward transformation, not preservation. The user came to myMaison to RESTYLE their room, not to be told what's already fine. When you set the \`condition\` field on existing_furniture, default to "replace" unless:
@@ -78,6 +90,14 @@ DECORATIVE WALL FEATURES — capture these explicitly in \`architectural_feature
   - Built-in joinery / shelving / bedheads
 
 When you spot any of these, name them in \`architectural_features\` — e.g. "vertical board-and-batten panelling on the bedhead wall", not just "panelling". The prompt builder uses this verbatim to tell Flux to keep the structure while applying the palette to its finish.
+
+OPEN-PLAN LAYOUTS — capture them explicitly in \`open_plan_zones\`. If the photo shows more than one functional zone continuing into the same space (a dining area visible behind a sofa, a kitchen visible past a living area, a hallway extending into the room past the bed, a stairwell, a void or mezzanine), record each additional zone as a short phrase that names WHAT it is and roughly WHERE it sits from the camera's perspective. Examples:
+  - "dining area behind the couch"
+  - "kitchen visible to the right, no wall between"
+  - "hallway extending past the foot of the bed"
+  - "mezzanine void above the living area"
+
+Use an empty array \`[]\` when the room is closed-plan (single zone, walls bound the space on all sides shown). This field is load-bearing for renders of open-plan homes: without it Kontext defaults to a bounded box layout (adds back walls, partitions, extra windows) because closed-plan rooms dominate its training data. List zones generously — over-flagging an open-plan signal is recoverable; under-flagging produces a wall where the user has none.
 
 Output ONLY the JSON, no markdown fences, no commentary.`;
 

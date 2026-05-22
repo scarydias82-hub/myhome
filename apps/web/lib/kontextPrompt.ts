@@ -64,6 +64,20 @@ export function roomFactsToArchitecturalPreserves(
     `Through any doorway or opening: show ONLY what is visible in image 1 (unfurnished hallway, wall, void). FORBIDDEN: furnished rooms, beds, art, vases behind doors.`,
   );
 
+  // Open-plan layouts. Without this, Kontext defaults to a bounded
+  // box layout — back wall behind the couch, windows on both sides
+  // of the room — because closed-plan rooms dominate its training
+  // data. Vision flags open-plan zones explicitly; we pipe them
+  // verbatim so Kontext can't reinterpret the space as a single
+  // enclosed room.
+  const openPlanZones = (facts as RoomAnalysis & { open_plan_zones?: string[] })
+    .open_plan_zones;
+  if (openPlanZones && openPlanZones.length > 0) {
+    out.push(
+      `OPEN-PLAN LAYOUT — this room is NOT a bounded box. Image 1 shows the space continuing into other zones: ${openPlanZones.join('; ')}. PRESERVE every sight line. ABSOLUTELY FORBIDDEN: adding a back wall behind the sofa/seating, adding partitions or dividers between zones, adding windows where image 1 shows the space continuing into another zone, closing off the kitchen or dining area, narrowing the room to make it feel enclosed. The far end of the visible space MUST remain open and visible exactly as shown in image 1.`,
+    );
+  }
+
   return out;
 }
 

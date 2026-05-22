@@ -25,6 +25,24 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Open-plan layout signal end-to-end.** Surfaced by
+  a real user render: large open-plan living + dining + kitchen photo
+  came back with an invented back wall behind the couch and windows
+  invented on both sides. Root cause — closed-plan rooms dominate
+  Kontext's training data, and our vision schema had no way to flag
+  "this space continues into other zones." Two changes: (1)
+  `RoomAnalysis` gains `open_plan_zones?: string[]` with the vision
+  SYSTEM prompt updated to look for + name additional functional
+  zones visible in the photo (dining behind couch, kitchen to the
+  right, hallway past the bed, mezzanine void), recording each as
+  a short phrase. Empty array for closed-plan rooms. Field is
+  optional in the type so older cached analyses still typecheck.
+  (2) `roomFactsToArchitecturalPreserves` in lib/kontextPrompt.ts
+  consumes the field — when populated it emits a hard FORBIDDEN
+  directive listing the zones verbatim and explicitly banning back
+  walls, partitions, dividers, and windows where the space
+  continues. Closed-plan renders are unaffected (empty zones skips
+  the directive entirely).
 - `2026-05-22` — **Supabase migrations automated on push to main.**
   New `.github/workflows/supabase-push.yml` runs `supabase db push
   --include-all` whenever main changes any file under
