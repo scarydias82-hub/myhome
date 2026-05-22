@@ -33,6 +33,17 @@ interface PreferencesModalProps {
   isFirstTime?: boolean;
   /** Called when the user closes the modal (save, skip, or dismiss). */
   onClose: () => void;
+  /** What "Save" writes to (§6.11 Phase C, #155):
+   *   - 'canonical' (default): PUT /api/preferences. Writes the user's
+   *     canonical taste signal — used by onboarding + dashboard edit.
+   *   - 'per-render': skip the PUT; just hand the tags back via
+   *     onSaveOverride(). Used by the analyse page's "Customise for
+   *     this image" flow — the override applies to one recommendation
+   *     and never persists. */
+  persistMode?: 'canonical' | 'per-render';
+  /** Required when persistMode === 'per-render'. Receives the chosen
+   *  tags so the caller can re-fire /api/recommend with overrideTags. */
+  onSaveOverride?: (tags: string[]) => void;
 }
 
 export function PreferencesModal({
@@ -40,7 +51,10 @@ export function PreferencesModal({
   initialTags,
   isFirstTime = false,
   onClose,
+  persistMode = 'canonical',
+  onSaveOverride,
 }: PreferencesModalProps) {
+  const isPerRender = persistMode === 'per-render';
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialTags));
   const [busy, setBusy] = useState(false);
@@ -79,6 +93,17 @@ export function PreferencesModal({
       setError('Pick at least one tag — your preferences are the foundation of every recommendation.');
       return;
     }
+
+    // Per-render override: don't touch users.preferences, just hand
+    // the tags back to the caller so they can re-fire /api/recommend
+    // with overrideTags. The override applies to one recommendation
+    // and lives nowhere persistent.
+    if (isPerRender) {
+      onSaveOverride?.([...selected]);
+      onClose();
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -125,19 +150,29 @@ export function PreferencesModal({
         className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-2xl bg-cream shadow-soft sm:max-w-3xl sm:rounded-2xl"
       >
         <header className="border-b border-ink/[0.06] px-6 py-5 md:px-8">
-          <Eyebrow>{isFirstTime ? 'Welcome to myMaison' : 'My preferences'}</Eyebrow>
+          <Eyebrow>
+            {isPerRender
+              ? 'Customise for this image'
+              : isFirstTime
+                ? 'Welcome to myMaison'
+                : 'My preferences'}
+          </Eyebrow>
           <h2
             id="prefs-title"
             className="mt-2 font-display text-h3 text-ink md:text-[28px]"
           >
-            {isFirstTime
-              ? 'Tell us how you live.'
-              : 'Update your preferences.'}
+            {isPerRender
+              ? 'Override your preferences for this image.'
+              : isFirstTime
+                ? 'Tell us how you live.'
+                : 'Update your preferences.'}
           </h2>
           <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-ink-soft md:text-[15px]">
-            {isFirstTime
-              ? 'Pick the tags that resonate. Your preferences become the foundation of every render and recommendation — you can change them anytime from the dashboard, and override them per project or per photo.'
-              : 'Your preferences are inherited by new projects and by photos uploaded outside a project. Changes here don’t touch existing projects (those keep their own brief).'}
+            {isPerRender
+              ? "Pick the tags you want the designer to read for this image only. Your saved preferences on the dashboard won't change — to update those, edit them from the dashboard."
+              : isFirstTime
+                ? 'Pick the tags that resonate. Your preferences become the foundation of every render and recommendation — you can change them anytime from the dashboard, and override them per project or per photo.'
+                : 'Your preferences are inherited by new projects and by photos uploaded outside a project. Changes here don’t touch existing projects (those keep their own brief).'}
           </p>
         </header>
 
@@ -190,7 +225,13 @@ export function PreferencesModal({
               disabled={busy || selected.size === 0}
               className="rounded-pill bg-ink px-5 py-2 font-mono text-meta uppercase tracking-eyebrow text-paper transition hover:bg-ink-soft disabled:opacity-40"
             >
-              {busy ? 'Saving…' : isFirstTime ? 'Save and continue' : 'Save'}
+              {busy
+                ? 'Saving…'
+                : isPerRender
+                  ? 'Use these for this image'
+                  : isFirstTime
+                    ? 'Save and continue'
+                    : 'Save'}
             </button>
           </div>
         </footer>

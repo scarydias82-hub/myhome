@@ -12,6 +12,8 @@ import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
 import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
+import { PreferencesModal } from '@/components/dashboard/preferences-modal';
+import { BRIEF_TAG_GROUPS } from '@/lib/brief/taxonomy';
 
 // P0-2 confidence gate. When Claude returns ALL the load-bearing
 // facts we skip the manual review step entirely — the user can still
@@ -51,6 +53,14 @@ interface RecommendResponse {
     direction: '2026' | 'timeless' | null;
     reasoning: string;
   } | null;
+  /** Where the brief tags fed to the synthesiser came from
+   *  (§6.11 Phase C, #155). Drives the "Using your X" inheritance
+   *  banner above the carousels. */
+  source?: 'override' | 'project' | 'user_prefs' | 'none';
+  /** Echo of the tags actually used for the synthesis, so the
+   *  override modal opens pre-populated with whatever the recommendation
+   *  was grounded in. */
+  appliedTags?: string[];
   error?: string;
 }
 
@@ -102,6 +112,20 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   // palette/direction was picked, not just THAT it was.
   const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // §6.11 Phase C (#155) — inheritance source + per-render override.
+  // recommendationSource tells us where the tags that fed the synth
+  // came from (project / user_prefs / override / none). When the user
+  // clicks "Customise for this image", the override modal opens with
+  // appliedTags pre-selected; saving sets overrideTags + re-fires
+  // recommend. overrideTags lives in this component only — never
+  // persisted to users.preferences or any project.
+  const [recommendationSource, setRecommendationSource] = useState<
+    'override' | 'project' | 'user_prefs' | 'none' | null
+  >(null);
+  const [appliedTags, setAppliedTags] = useState<string[]>([]);
+  const [overrideTags, setOverrideTags] = useState<string[] | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
 
   // Hero products are an optional Step 5 — user selects up to 3 specific
   // catalogue items to "feature" so the Flux prompt biases toward them.
@@ -297,15 +321,28 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     }
   }
 
-  async function recommendForRoom(rid: string) {
+  async function recommendForRoom(rid: string, overrideTagsArg?: string[] | null) {
     setRecommending(true);
     try {
       const res = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId: rid, projectId: projectId ?? null }),
+        body: JSON.stringify({
+          roomId: rid,
+          projectId: projectId ?? null,
+          // Only send the field when explicitly overriding — keeps the
+          // server log noise down and avoids ambiguity between "no
+          // override" and "override is an empty array".
+          ...(overrideTagsArg && overrideTagsArg.length > 0
+            ? { overrideTags: overrideTagsArg }
+            : {}),
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as RecommendResponse;
+      // Always capture source + appliedTags so the inheritance banner
+      // can render even when the synth itself failed (none-source).
+      setRecommendationSource(json.source ?? 'none');
+      setAppliedTags(json.appliedTags ?? []);
       if (!res.ok || !json.recommendation) {
         // Silent fallback — the carousels keep their default
         // selection. We don't surface an error because the user can
@@ -326,6 +363,30 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     } finally {
       setRecommending(false);
     }
+  }
+
+  // Build a human label list for the inheritance banner. We turn the
+  // tag slugs back into their display labels via the same BRIEF_TAG_GROUPS
+  // taxonomy used by the modal so the user sees "Modern organic"
+  // instead of "modern-organic".
+  const TAG_LABEL_BY_SLUG: Record<string, string> = (() => {
+    const map: Record<string, string> = {};
+    for (const group of BRIEF_TAG_GROUPS) {
+      for (const tag of group.tags) map[tag.slug] = tag.label;
+    }
+    return map;
+  })();
+
+  function handleOverrideSave(tags: string[]) {
+    if (!roomId) return;
+    setOverrideTags(tags);
+    void recommendForRoom(roomId, tags);
+  }
+
+  function clearOverride() {
+    if (!roomId) return;
+    setOverrideTags(null);
+    void recommendForRoom(roomId, null);
   }
 
   async function openCamera() {
@@ -496,6 +557,21 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         />
       ) : null}
 
+      {/* §6.11 Phase C (#155) — inheritance banner. Shows where the
+          recommendation's taste signal came from (project / user_prefs /
+          override) and offers the "Customise for this image" override.
+          Hidden when there's nothing to say (no recommendation yet, or
+          source is 'none' — the cold-start case we still allow). */}
+      {analysisConfirmed && roomId && recommendationSource && recommendationSource !== 'none' ? (
+        <RecommendationSourceBanner
+          source={recommendationSource}
+          appliedTags={appliedTags}
+          tagLabelBySlug={TAG_LABEL_BY_SLUG}
+          onCustomise={() => setOverrideOpen(true)}
+          onClear={recommendationSource === 'override' ? clearOverride : undefined}
+        />
+      ) : null}
+
       {/* Carousels mount as soon as analysis kicks off — not waiting
           for Phase 1 to complete. Single carousel overlay spans
           BOTH phases (analysing + recommending) so the user sees
@@ -584,7 +660,112 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           </div>
         </div>
       ) : null}
+
+      {/* §6.11 Phase C (#155) override modal. Renders only when the
+          user clicks "Customise for this image" — saves the chosen
+          tags into local state + re-fires recommendForRoom with them.
+          Saves NEVER touch users.preferences (canonical = dashboard
+          only). */}
+      <PreferencesModal
+        open={overrideOpen}
+        initialTags={overrideTags ?? appliedTags}
+        persistMode="per-render"
+        onClose={() => setOverrideOpen(false)}
+        onSaveOverride={handleOverrideSave}
+      />
     </form>
+  );
+}
+
+// §6.11 Phase C (#155) inheritance banner. Surfaces where the
+// recommendation's taste signal came from (project brief / canonical
+// user preferences / per-render override) and offers the override
+// action. Cold-start case (source='none') hides the banner entirely —
+// we don't need to tell the user "we used no preferences"; the
+// existing summary card already explains the recommendation.
+function RecommendationSourceBanner({
+  source,
+  appliedTags,
+  tagLabelBySlug,
+  onCustomise,
+  onClear,
+}: {
+  source: 'override' | 'project' | 'user_prefs';
+  appliedTags: string[];
+  tagLabelBySlug: Record<string, string>;
+  onCustomise: () => void;
+  /** Provided only when source is 'override' — clearing reverts back
+   *  to the inherited prefs/project tags by re-firing /api/recommend
+   *  with no override. */
+  onClear?: () => void;
+}) {
+  const labelByKey: Record<typeof source, { eyebrow: string; explainer: string }> = {
+    override: {
+      eyebrow: 'Customised for this image',
+      explainer:
+        "Using a per-image override — your saved preferences on the dashboard aren't changed.",
+    },
+    user_prefs: {
+      eyebrow: 'Using your preferences',
+      explainer:
+        "Pre-filled from your dashboard preferences. Override below for this image only — your saved preferences won't change.",
+    },
+    project: {
+      eyebrow: 'Using your project brief',
+      explainer:
+        "Pre-filled from the brief you set on this project. Override below for this image only — the project's brief won't change.",
+    },
+  };
+  const { eyebrow, explainer } = labelByKey[source];
+  const chips = appliedTags.slice(0, 6);
+  const overflow = appliedTags.length - chips.length;
+
+  return (
+    <section className="rounded-2xl border border-clay/30 bg-clay/[0.05] p-4 md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">{eyebrow}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
+            {explainer}
+          </p>
+          {chips.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {chips.map((slug) => (
+                <span
+                  key={slug}
+                  className="rounded-pill border border-ink/15 bg-cream px-2.5 py-1 text-[12px] text-ink"
+                >
+                  {tagLabelBySlug[slug] ?? slug}
+                </span>
+              ))}
+              {overflow > 0 ? (
+                <span className="rounded-pill px-2.5 py-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                  +{overflow} more
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-pill border border-ink/15 bg-cream px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
+            >
+              Reset
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCustomise}
+            className="rounded-pill border border-clay/40 bg-clay/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:bg-clay/25"
+          >
+            Customise →
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

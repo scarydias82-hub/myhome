@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `bb0acc3` (will
+**Last verified:** 2026-05-22 · most recent material commit: `2cfa6d2` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,34 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#155 §6.11 Phase C shipped: outside-project uploads
+  inherit user preferences + per-render override.** Closes the
+  cold-start gap that started the whole §6.11 conversation. Three
+  changes:
+  1. `apps/web/app/api/recommend/route.ts` resolves the brief tags
+     fed to `synthesiseBrief()` by strict priority: per-render
+     override (this request body) → project brief (when projectId
+     supplied) → `users.preferences.tags` → []. Returns the chosen
+     `source` ('override' | 'project' | 'user_prefs' | 'none') and
+     the `appliedTags` so the client can render the right banner
+     and pre-populate the override modal.
+  2. `apps/web/components/dashboard/preferences-modal.tsx` gains a
+     `persistMode: 'canonical' | 'per-render'` prop. In per-render
+     mode the modal skips the PUT to /api/preferences and instead
+     hands the tags back via `onSaveOverride(tags)` — the canonical
+     prefs stay untouched. Different header copy + button label
+     reinforce "this is for this image only".
+  3. `apps/web/components/rooms/upload-form.tsx` adds the
+     RecommendationSourceBanner above the carousels — eyebrow
+     ("Using your preferences" / "Using your project brief" /
+     "Customised for this image"), explainer copy, the applied tag
+     chips, and a "Customise →" CTA that opens the modal in
+     per-render mode. When the user is on an override, a "Reset"
+     button reverts back to inherited prefs/project tags by re-firing
+     `/api/recommend` without `overrideTags`.
+  Snapshot semantics strictly enforced: per-render override lives in
+  React state only, never persisted anywhere. The only way to update
+  canonical prefs is the dashboard edit surface (Phase A).
 - `2026-05-22` — **#154 §6.11 Phase B shipped: project wizard inherits
   user preferences.** New projects now snapshot `users.preferences.tags`
   into `projects.brief.tags` at create time, with an
@@ -1959,12 +1987,15 @@ reinforces "your taste is the foundation of every render".
   (palette_signal, style_signal, etc.) rather than replacing them.
 
 - **#155 — Phase C: outside-project upload inherits + per-render
-  override.** `/api/analyse-room` reads `users.preferences` as the
-  taste signal. UI banner on the analyse page: "Using your
-  preferences (warm-grounded-earth · modern-organic) · Customise for
-  this image →". Override modal saves into the render request only —
-  never persists back to `users.preferences` or any project.
-  Estimated: ~1 day, ~4 files.
+  override.** *Shipped.* `/api/recommend` resolves brief tags by
+  strict priority — override → project → user_prefs → [] — and
+  returns the source + appliedTags. UploadForm renders a
+  RecommendationSourceBanner above the carousels with the chosen
+  source's chips + a "Customise →" CTA that opens PreferencesModal
+  in `persistMode='per-render'` (no PUT to canonical prefs; tags
+  hand back via `onSaveOverride`). "Reset" on override reverts to
+  inherited tags by re-firing recommend without overrideTags. The
+  per-render override lives in React state only — never persisted.
 
 - **#156 — Phase D: edge cases + telemetry.** Closed-beta users with
   no `preferences` yet trigger the onboarding modal next login.
