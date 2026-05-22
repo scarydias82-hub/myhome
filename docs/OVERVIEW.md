@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `38ebeb8`.
+**Last verified:** 2026-05-22 · most recent material commit: `f51897a`.
 
 > **Living-doc protocol.** Every commit that materially changes the
 > product, the system, or the business updates the relevant section of this
@@ -178,6 +178,9 @@ product, the system, or the business. Cross-reference SHAs with
   UX on the first impression. Frontend is forward-compatible: page
   loads cleanly pre-migration (picking_list_status fetched in a
   separate maybeSingle() query that tolerates missing column).
+- `2026-05-22` — **Migrations run automatically on deploy.** Removed
+  manual `supabase db push` instructions from §7.4 and §6.8 recently-
+  shipped notes. Commit the migration file; deploy handles the rest.
 - `2026-05-22` — **Palette likes — aggregate-popular carousel + like toggle.**
   Users can now heart any palette on the dashboard carousel or /palettes
   page. Likes are persisted in a new `palette_likes` table (user_id,
@@ -1484,9 +1487,8 @@ Stage 1 is live; the rest is sequenced.
   table (RLS), POST /api/palettes/[paletteId]/like, PaletteLikeButton
   (optimistic). Dashboard carousel is now top-18 by aggregate likes ∪
   user's liked, sorted lightest→darkest. /palettes gains "Your likes"
-  and "Popular" dynamic chips. Run `supabase db push` (or apply migration
-  via the Supabase dashboard) to activate — the editorial popular tag
-  seeds the carousel on cold-start until real likes accumulate.
+  and "Popular" dynamic chips. Migration runs automatically on deploy;
+  editorial popular tag seeds the carousel on cold-start.
 - Palette catalogue 16 → 56 + popular/all split. New `/palettes`
   browse page with filter chips. Dashboard carousel filtered to the
   18 popular-tagged palettes. Wizard carousel ① defaults to popular
@@ -1682,16 +1684,12 @@ If you only flip one of (1) or (2), the system errs on the side of
 ```bash
 # create a file in supabase/migrations/ with timestamp prefix
 # e.g. 20260601000000_add_clients_table.sql
-
-# apply to local
-supabase db push
-
-# apply to prod
-# paste into Supabase Studio → SQL editor, or use the CLI with the
-# linked project ref
 ```
 
-After applying — **update OVERVIEW §4.3** with the new table.
+Migrations run automatically on deploy — commit the file and push.
+No manual `supabase db push` required.
+
+After the migration lands — **update OVERVIEW §4.3** with the new table.
 
 #### Re-scrape the catalogue
 
