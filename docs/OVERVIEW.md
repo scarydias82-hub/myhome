@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `c6f8137` (will
+**Last verified:** 2026-05-22 · most recent material commit: `2cfa6d2` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -41,6 +41,116 @@ product, the system, or the business. Cross-reference SHAs with
   (`board-image-upload.tsx`) already uses the native-picker pattern
   via a button trigger; visual parity with the new graphic-tile
   pattern is a separate decision.
+- `2026-05-22` — **#155 §6.11 Phase C shipped: outside-project uploads
+  inherit user preferences + per-render override.** Closes the
+  cold-start gap that started the whole §6.11 conversation. Three
+  changes:
+  1. `apps/web/app/api/recommend/route.ts` resolves the brief tags
+     fed to `synthesiseBrief()` by strict priority: per-render
+     override (this request body) → project brief (when projectId
+     supplied) → `users.preferences.tags` → []. Returns the chosen
+     `source` ('override' | 'project' | 'user_prefs' | 'none') and
+     the `appliedTags` so the client can render the right banner
+     and pre-populate the override modal.
+  2. `apps/web/components/dashboard/preferences-modal.tsx` gains a
+     `persistMode: 'canonical' | 'per-render'` prop. In per-render
+     mode the modal skips the PUT to /api/preferences and instead
+     hands the tags back via `onSaveOverride(tags)` — the canonical
+     prefs stay untouched. Different header copy + button label
+     reinforce "this is for this image only".
+  3. `apps/web/components/rooms/upload-form.tsx` adds the
+     RecommendationSourceBanner above the carousels — eyebrow
+     ("Using your preferences" / "Using your project brief" /
+     "Customised for this image"), explainer copy, the applied tag
+     chips, and a "Customise →" CTA that opens the modal in
+     per-render mode. When the user is on an override, a "Reset"
+     button reverts back to inherited prefs/project tags by re-firing
+     `/api/recommend` without `overrideTags`.
+  Snapshot semantics strictly enforced: per-render override lives in
+  React state only, never persisted anywhere. The only way to update
+  canonical prefs is the dashboard edit surface (Phase A).
+- `2026-05-22` — **#154 §6.11 Phase B shipped: project wizard inherits
+  user preferences.** New projects now snapshot `users.preferences.tags`
+  into `projects.brief.tags` at create time, with an
+  `inherited_from_user_prefs: true` marker on the brief. The wizard's
+  BriefPicker renders a "Pre-filled from your preferences — adjust if
+  this project is different" banner when that marker is present and
+  the user hasn't yet toggled anything; the banner hides as soon as
+  any chip is touched. Snapshot semantics enforced: subsequent
+  `POST /api/projects/[id]/brief` calls replace the whole brief shape
+  (existing behaviour), so the marker is naturally stripped after the
+  first save. Changes to `users.preferences` on the dashboard never
+  cascade into already-created projects — each project carries its
+  own copy from the moment it's born.
+  Files: `apps/web/app/api/projects/route.ts` (read prefs + snapshot
+  into the insert), `apps/web/app/projects/[id]/page.tsx` (read
+  the flag from `project.brief.inherited_from_user_prefs`),
+  `apps/web/components/projects/project-wizard.tsx` (pass through),
+  `apps/web/components/projects/brief-picker.tsx` (banner + edit-
+  detection). When a project is seeded from a vision board, the
+  user-pref tags overlay on the board's other signals
+  (palette_signal, style_signal, trend_signals, product_anchors)
+  rather than replacing them.
+- `2026-05-22` — **#153 §6.11 Phase A shipped: user preferences
+  storage + onboarding + dashboard editor.** Closes the cold-start
+  gap when users upload a photo outside a project — previously
+  /api/analyse-room had zero user context, so Claude's room
+  recommendation was based on the photo alone. Now there's a
+  canonical user-level taste signal at `users.preferences jsonb`,
+  inherited by project briefs and outside-project uploads via
+  strict snapshot semantics (changes never cascade upward except
+  via explicit edits on the dashboard). Three pieces shipped:
+  1. Migration `20260522190000_users_preferences.sql` — `jsonb`
+     column on `public.users`. Read/write covered by existing RLS.
+  2. API `GET/PUT /api/preferences` — only the authenticated user
+     can read/write their own row. Body is `{ tags: string[] }`;
+     server de-dups, sorts, stamps `updated_at`.
+  3. UI:
+     - `PreferencesModal` (`components/dashboard/preferences-modal.tsx`)
+       — chip-picker over `BRIEF_TAG_GROUPS` (same taxonomy as the
+       project wizard, so vocab stays consistent). Two modes: first-
+       time (forced-open, no backdrop dismiss, "Skip for now"
+       allowed) and edit (standard modal UX).
+     - `PreferencesSection`
+       (`components/dashboard/sections/preferences-section.tsx`) —
+       dashboard surface. Option A placement: visible dedicated row
+       right below `HeroGreeting`, above featured products. Shows
+       current chips with "Edit →"; auto-opens the modal on first
+       visit when `preferences IS NULL`.
+     - `dashboard/page.tsx` extends the existing `profile` query to
+       pull preferences (no extra round-trip) and renders the section.
+  Inheritance into project briefs (#154 Phase B) and outside-project
+  uploads (#155 Phase C) is the next two phases — wiring exists, the
+  reads just haven't moved over yet. Foundation only in this PR.
+- `2026-05-22` — **#148 vision-grounded tag re-derivation shipped
+  (catalogue intelligence Phase 4).** Now that vision_profile coverage
+  hit 99.1% on imageable rows (1,387 of 1,400), the §6.9 sequencing
+  gate is open and the four tag columns flip from ΔE76-derived to
+  vision-derived for any row that has a vision_profile.
+  - New shared util `apps/scraper/utils/visionTags.js` —
+    `tagsFromVisionProfile(profile, category)` returns
+    `{ palette_tags, room_tags, style_tags, mood_tags }`.
+    `palette_tags` = palette_fit keys ≥ 0.4; `room_tags` = room_fit
+    keys ≥ 0.4 (vision-grounded, not the palette-union shortcut
+    deriveTags would give); `style_tags` + `mood_tags` come from
+    `productTags.deriveTags()` with the vision-grounded palette set
+    (palette-union is correct for style/mood — those are properties
+    of the palette family, not the individual product).
+  - New one-shot script `apps/scraper/scripts/redeRiveTagsFromVisionProfile.js`
+    iterates products WHERE `vision_profile IS NOT NULL`, applies the
+    derivation, writes the four columns. Idempotent (skips rows where
+    the derived shape already matches). Standard `--dry`, `--limit`,
+    `--retailer` flags. Invoke via
+    `pnpm --filter @myhome/scraper run redrive-tags`.
+  - `visionProfile.js` extended so the same UPDATE that writes
+    `vision_profile` for new rows also writes the four derived tag
+    columns — the catalogue stays in lock-step going forward.
+  - `ingest.js` deliberately unchanged: paint products and any other
+    imageless rows keep their ingest-derived ΔE76 tags (vision wins
+    where it can, ΔE76 stays as the floor). Soft divergence from the
+    original §6.9 #148 memo, which proposed dropping tag-writing at
+    ingest entirely — that would have left paint products with empty
+    tag arrays. Documented in the #148 entry now.
 - `2026-05-22` — **§6.10 memoed: Sensor fusion (room scan + vision)
   + tasks #149-#152.** The window-hallucination class of bugs has a
   structural cause — Claude vision is guessing 3D geometry from 2D
@@ -1343,7 +1453,7 @@ making sure each user has a great first render — concierge-style if needed.
 
 | Table              | Owns                                                                 |
 |--------------------|----------------------------------------------------------------------|
-| `users`            | Mirrors `auth.users` via trigger. Profile fields go here.            |
+| `users`            | Mirrors `auth.users` via trigger. Profile fields (`first_name`) + canonical taste signal (`preferences jsonb` — `{ tags: string[], updated_at }`, see §6.11). |
 | `projects`         | Top-level grouping. Status: `in_progress` → `in_review` → `completed`. |
 | `rooms`            | Uploaded room photos + `analysis` JSONB (Claude's room read).        |
 | `style_profiles`   | Descriptor + palette + materials + mood (per render, per board).     |
@@ -1680,42 +1790,48 @@ end-state: ~3–5s with visibly more on-brief picks.
   generation than on per-render room reads.
 
 - **#148 — `vision_profile` as source of truth, old tag columns
-  become projections.** Phase 4 cleanup once #145 backfill coverage
-  is >~95% in production. Flips the data ownership: instead of
-  `palette_tags` / `style_tags` / `room_tags` / `mood_tags` being
-  derived at ingest from ΔE76 colour distance + palette-membership
-  inheritance, they're derived from `vision_profile` — Claude's
-  per-image judgement of palette + room fit. Column names stay the
-  same so featured-curation (`featured-curation.ts:54-97`) and any
-  other consumer keeps reading without code change; the data
-  underneath just got smarter.
+  become projections.** *Shipped (with soft divergence on ingest).*
+  After the #145 backfill hit 99.1% coverage on imageable rows, the
+  four tag columns now flip to vision-derived for any row that has a
+  `vision_profile`. Column names unchanged — featured-curation and
+  other consumers keep reading without code change.
 
-  Mapping (all mechanical, lives in a new `redeRiveTagsFromVisionProfile.js`
-  scraper script or as a post-step in `visionProfile.js`):
+  Mapping (mechanical, in `apps/scraper/utils/visionTags.js`):
   ```
   palette_tags  ← keys of vision_profile.palette_fit where score >= 0.4
-  room_tags     ← keys of vision_profile.room_fit where score >= 0.4
+  room_tags     ← keys of vision_profile.room_fit where score >= 0.4  ← vision-grounded
   style_tags    ← union of style_tags from palettes.json for each palette
-                  where palette_fit >= 0.4  (reuses productTags.deriveTags
-                  with vision-grounded membership instead of ΔE76 membership)
+                  in palette_tags (productTags.deriveTags with
+                  vision-grounded membership)
   mood_tags     ← same union pattern, mood side
   ```
 
-  Plus three companion edits:
-  1. `apps/scraper/scripts/ingest.js` — keep ΔE76 (`classifyProduct`)
-     ONLY as the junk filter (drop rows whose dominant colour matches
-     no palette). Stop having it write tag columns. New rows have empty
-     tag arrays until the next vision_profile + tag-derivation pass.
-  2. `apps/scraper/scripts/visionProfile.js` — after writing
-     `vision_profile`, derive + write the four tag columns in the same
-     update so a single sweep populates everything.
-  3. Optional follow-up: drop `room_tags` and `mood_tags` columns
-     entirely once all consumers are reading from `vision_profile`
-     directly. Keep `palette_tags` (small, cheap, useful for quick
-     dashboards / ad-hoc filtering); rename or drop the others when
-     they're genuinely unreferenced. `style_tags` stays until
-     featured-curation is rewritten against `vision_profile.color_family`
-     + `palette_fit` directly.
+  Shipped:
+  1. `apps/scraper/utils/visionTags.js` — shared
+     `tagsFromVisionProfile(profile, category)` derivation.
+  2. `apps/scraper/scripts/redeRiveTagsFromVisionProfile.js` — one-shot
+     pass over rows with `vision_profile`. Idempotent (skips rows
+     where the derived shape already matches). Invoke via
+     `pnpm --filter @myhome/scraper run redrive-tags`.
+  3. `apps/scraper/scripts/visionProfile.js` — fold tag derivation
+     into the same UPDATE that writes `vision_profile`, so the
+     catalogue stays in lock-step going forward.
+
+  Deliberately NOT shipped (soft divergence from the original spec):
+  4. `apps/scraper/scripts/ingest.js` is **unchanged**. The original
+     memo proposed stopping tag-writing at ingest entirely, but that
+     would leave the 1,159 paint products (no `image_url`, no
+     `vision_profile`) with empty tag arrays. Better: ingest keeps
+     writing ΔE76-derived tags for imageless rows; vision overwrites
+     them for vision-profiled rows. Vision wins where it can, ΔE76
+     stays as the floor.
+
+  Optional follow-up (deferred): drop `room_tags` and `mood_tags`
+  columns entirely once all consumers read from `vision_profile`
+  directly. Keep `palette_tags` (small, cheap, useful for quick
+  dashboards / ad-hoc filtering). `style_tags` stays until
+  featured-curation is rewritten against `vision_profile.color_family`
+  + `palette_fit` directly.
 
   Sequencing rule: do NOT flip until vision_profile coverage is >~95%
   in production. The Tier-1 matcher RPC already prefers vision_profile,
@@ -1831,6 +1947,90 @@ already shipped is the right hook for whichever option wins.
   and conversion mechanics — not before. Memoed now so the option
   stays visible while we're prioritising the catalogue-intelligence
   work (§6.9).
+
+### 6.11 User preferences (canonical brief)
+
+Closes the cold-start gap when users upload a photo outside a project.
+Today the project wizard captures a brief at project-creation time;
+outside-project uploads (/rooms/new, /api/analyse-room) have zero user
+context, so Claude's recommendation is based on the photo alone.
+
+**Three-layer model with snapshot semantics**
+
+```
+User Preferences      ← canonical, edited only on the dashboard
+       │
+       │ snapshotted on project create
+       ▼
+Project Brief         ← project-scoped, override cascades to all renders in project
+       │
+       │ snapshotted per render
+       ▼
+Per-render override   ← image-scoped, never persists back upward
+```
+
+Strict snapshot down the chain — changes to layer N don't affect
+already-snapshotted layers above. The ONLY way preferences propagate
+upward is by editing them on the dashboard. Explicit user action, never
+a side-effect of overriding a project or render.
+
+**Dashboard placement (Option A confirmed):** dedicated section between
+`HeroGreeting` and `FeaturedProductsSection`. Visible row, hard to miss,
+reinforces "your taste is the foundation of every render".
+
+**Phasing**
+
+- **#153 — Phase A: storage + onboarding + dashboard editor.**
+  *Shipped.* Migration `20260522190000_users_preferences.sql` adds the
+  `users.preferences jsonb` column. `GET/PUT /api/preferences` are the
+  only canonical-write paths. `PreferencesModal` is shared between
+  onboarding (first-time, forced-open, "Skip for now" allowed) and
+  edit (standard modal). `PreferencesSection` lives on the dashboard
+  right below `HeroGreeting` — auto-opens the modal on first visit
+  when `preferences IS NULL`. Vocabulary reuses the existing
+  `BRIEF_TAG_GROUPS` so user-level prefs and project briefs speak the
+  same chip language.
+
+- **#154 — Phase B: project wizard inherits + visible "inherited"
+  indicator.** *Shipped.* `POST /api/projects` reads
+  `users.preferences.tags` and snapshots them into `projects.brief.tags`
+  with `inherited_from_user_prefs: true`. BriefPicker shows the
+  "Pre-filled from your preferences" banner when that marker is
+  present and the user hasn't toggled anything; the banner hides on
+  first chip toggle, the marker gets stripped on first save (existing
+  POST behaviour replaces the whole brief shape). Vision-board seeds
+  carry the user-pref tags overlaid on the board's other signals
+  (palette_signal, style_signal, etc.) rather than replacing them.
+
+- **#155 — Phase C: outside-project upload inherits + per-render
+  override.** *Shipped.* `/api/recommend` resolves brief tags by
+  strict priority — override → project → user_prefs → [] — and
+  returns the source + appliedTags. UploadForm renders a
+  RecommendationSourceBanner above the carousels with the chosen
+  source's chips + a "Customise →" CTA that opens PreferencesModal
+  in `persistMode='per-render'` (no PUT to canonical prefs; tags
+  hand back via `onSaveOverride`). "Reset" on override reverts to
+  inherited tags by re-firing recommend without overrideTags. The
+  per-render override lives in React state only — never persisted.
+
+- **#156 — Phase D: edge cases + telemetry.** Closed-beta users with
+  no `preferences` yet trigger the onboarding modal next login.
+  Existing projects with existing briefs are untouched. Log frequency
+  of per-render overrides so we can see whether the default
+  inheritance is working or users are constantly overriding (signal
+  that the canonical prefs need a richer schema). Estimated: ~0.5
+  day.
+
+**Cross-references**
+- The deferred memory note on "minimal signup, onboarding wizard,
+  snapshot prefs onto rooms.analysis and inject into vision +
+  designer prompts" is this work — #153 is the first concrete piece.
+- The §6.10 sensor fusion path will eventually post scan + photo +
+  preferences as a single payload — preferences becomes a stable
+  identity layer across both vision-only and sensor-fused uploads.
+- The brief synthesiser (`lib/brief/synthesiser.ts`) consumes tags
+  today; once #155 lands it gets the same shape from outside-project
+  uploads too. No prompt change.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live

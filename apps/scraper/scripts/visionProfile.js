@@ -35,6 +35,7 @@ import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
+import { tagsFromVisionProfile } from '../utils/visionTags.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -357,13 +358,28 @@ while (true) {
   if (todo.length > 0) {
     const settled = await settledWithConcurrency(todo, CONCURRENCY, async (row) => {
       const profile = await generateProfile(row);
-      if (DRY) return { id: row.id, profile };
+      // Derive the four tag columns from the same profile so the
+      // catalogue stays in lock-step. tagsFromVisionProfile uses the
+      // shared 0.4 fit threshold and the productTags.deriveTags
+      // palette-union for style + mood. See apps/scraper/utils/
+      // visionTags.js for the rule + apps/scraper/scripts/
+      // redeRiveTagsFromVisionProfile.js for the matching one-shot
+      // pass over rows that were profiled before this extension landed.
+      const derivedTags = tagsFromVisionProfile(profile, row.category);
+      if (DRY) return { id: row.id, profile, derivedTags };
+      const update = { vision_profile: profile };
+      if (derivedTags) {
+        update.palette_tags = derivedTags.palette_tags;
+        update.room_tags = derivedTags.room_tags;
+        update.style_tags = derivedTags.style_tags;
+        update.mood_tags = derivedTags.mood_tags;
+      }
       const { error: updErr } = await supabase
         .from('products')
-        .update({ vision_profile: profile })
+        .update(update)
         .eq('id', row.id);
       if (updErr) throw updErr;
-      return { id: row.id, profile };
+      return { id: row.id, profile, derivedTags };
     });
 
     for (const result of settled) {

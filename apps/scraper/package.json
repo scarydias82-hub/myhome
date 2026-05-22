@@ -24,6 +24,7 @@
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",
     "vision-profile": "node scripts/visionProfile.js",
+    "redrive-tags": "node scripts/redeRiveTagsFromVisionProfile.js",
     "generate:trends": "node scripts/generate-trends.js"
   },
   "dependencies": {

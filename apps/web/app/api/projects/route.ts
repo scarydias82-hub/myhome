@@ -61,6 +61,21 @@ export async function POST(request: NextRequest) {
     .from('users')
     .upsert({ id: user.id, email: user.email ?? '' }, { onConflict: 'id' });
 
+  // §6.11 Phase B (#154): snapshot the user's canonical preferences
+  // into the project's brief at create time. New projects start with
+  // the user's taste signal pre-selected; subsequent edits to the
+  // brief don't touch users.preferences. Cast through `any` until
+  // gen-types includes the preferences column.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prefsRes = await (admin as any)
+    .from('users')
+    .select('preferences')
+    .eq('id', user.id)
+    .maybeSingle();
+  const userPrefTags: string[] = Array.isArray(prefsRes.data?.preferences?.tags)
+    ? prefsRes.data.preferences.tags.filter((t: unknown): t is string => typeof t === 'string')
+    : [];
+
   // If a visionBoardId is provided AND the user owns it, derive a
   // brief seed payload. We don't call Claude here — that's the job
   // of the project wizard's analyse step. We just pre-populate the
@@ -84,12 +99,37 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Compose the brief that gets written at create time. Two cases:
+  //   • Vision-board seed exists → start from briefSeed, overlay the
+  //     user preference tags on top (board signals + user taste both
+  //     present; user can refine both in the wizard).
+  //   • No board → seed brief is just the user preferences (or an
+  //     empty shape if the user hasn't onboarded yet).
+  // In both cases we set `inherited_from_user_prefs: true` when the
+  // tag list was sourced from users.preferences, so the wizard can
+  // render the "Pre-filled from your preferences" banner.
+  let projectBrief: Record<string, unknown> | null = null;
+  if (briefSeed) {
+    projectBrief = {
+      ...briefSeed,
+      tags: userPrefTags.length > 0 ? userPrefTags : (briefSeed.tags ?? []),
+      inherited_from_user_prefs: userPrefTags.length > 0,
+    };
+  } else if (userPrefTags.length > 0) {
+    projectBrief = {
+      tags: userPrefTags,
+      response: null,
+      inherited_from_user_prefs: true,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
   const insertRow: Record<string, unknown> = {
     user_id: user.id,
     name,
     source_board_id: sourceBoardId,
   };
-  if (briefSeed) insertRow.brief = briefSeed;
+  if (projectBrief) insertRow.brief = projectBrief;
 
   const res = await admin
     .from('projects')
