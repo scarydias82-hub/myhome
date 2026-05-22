@@ -28,6 +28,18 @@ const aud = new Intl.NumberFormat('en-AU', {
   maximumFractionDigits: 0,
 });
 
+// Slug for the id="cat-{slug}" anchor on each carousel. ShoppableRender
+// uses the same slugifier when a hotspot is clicked so the page can
+// scroll to the matching carousel. Keep both call-sites in sync — the
+// helper is exported.
+export function slugifyCategory(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function formatDimensions(
   d: PickingMatch['dimensions'] | null | undefined,
 ): string | null {
@@ -78,19 +90,18 @@ export function CompleteTheLook({
 
   return (
     <section className="mt-12 rounded-2xl border border-ink/[0.06] bg-paper-warm bg-grain p-6 md:p-10">
-      <Eyebrow>Complete the look</Eyebrow>
+      <Eyebrow>Shop by category</Eyebrow>
       <p className="mt-2 font-display text-h3 text-ink">
-        Everything else you'd shop for this room.
+        Picks for every <em>category</em>, palette-matched.
       </p>
       <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-ink-soft">
-        Picks that aren't in the rendered frame but match the same palette and style.
-        Bank ones you like with the heart — they save to your wishlist independent of
-        the project.
+        Curated go-to's across the categories this room calls for. Swipe each
+        row — the heart saves to your wishlist for later.
       </p>
 
       <div className="mt-8 space-y-10">
         {categories.map((cat) => (
-          <CategoryBlock
+          <CategoryCarousel
             key={cat.displayLabel}
             label={cat.displayLabel}
             products={cat.products}
@@ -103,7 +114,12 @@ export function CompleteTheLook({
   );
 }
 
-function CategoryBlock({
+// Carousel-style horizontal scroll per category. Each card is a fixed
+// width (~64-72 of viewport on mobile, ~280px on desktop) and the row
+// scrolls horizontally with native momentum. Cards beyond the viewport
+// are visible by swipe/scroll — no pagination dots, no nav arrows for
+// v1 (those can land in Phase 3 alongside the extended-set expansion).
+function CategoryCarousel({
   label,
   products,
   savedIds,
@@ -114,20 +130,29 @@ function CategoryBlock({
   savedIds: Set<string>;
   onToggleSaved: (productId: string) => void;
 }) {
+  if (products.length === 0) return null;
   return (
-    <div>
+    <div id={`cat-${slugifyCategory(label)}`} className="scroll-mt-24">
       <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">{label}</p>
-      <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {products.map((p) => (
-          <li key={p.productId}>
-            <CompactMatchCard
-              match={p}
-              saved={savedIds.has(p.productId)}
-              onToggleSaved={() => onToggleSaved(p.productId)}
-            />
-          </li>
-        ))}
-      </ul>
+      <div className="relative mt-3 -mx-6 md:-mx-10">
+        <ul
+          className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-3 md:px-10 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          role="list"
+        >
+          {products.map((p) => (
+            <li
+              key={p.productId}
+              className="w-[70vw] max-w-[280px] shrink-0 snap-start sm:w-[44vw] md:w-[280px]"
+            >
+              <CompactMatchCard
+                match={p}
+                saved={savedIds.has(p.productId)}
+                onToggleSaved={() => onToggleSaved(p.productId)}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

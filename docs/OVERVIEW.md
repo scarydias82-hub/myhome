@@ -25,6 +25,27 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Render page IA — carousels-first + hotspot scroll
+  linkage (Phase 2 of 3).** `<CompleteTheLook>` converted from a
+  3-col grid to horizontal-scroll carousels per category — each
+  card is fixed-width, the row scrolls with native momentum, mobile-
+  first. Section heading retoned to "Shop by category" from
+  "Complete the look" since carousels are now the primary shopping
+  surface rather than supplementary picks. Every carousel gets an
+  `id="cat-{slug}"` anchor via the new exported `slugifyCategory`
+  helper. `<ShoppableRender>` now accepts a `categories` prop and
+  renders the carousels INSIDE itself — between the designer
+  commentary slot and the legacy `<PickingListPanel>` — so the order
+  on /renders/[id] is now: image+hotspots → designer commentary →
+  shop-by-category carousels → hotspot picking list (secondary).
+  Hotspot click handler updated to scroll to the matching carousel
+  first (slugifies the hotspot's category and seeks `#cat-{slug}`),
+  falling back to the legacy `pl-item-${idx}` element when no
+  matching carousel exists. The standalone `<CompleteTheLook>`
+  section that used to live below `<RevisionStrip>` on the page is
+  removed — same component, just rendered inside ShoppableRender
+  now. Phase 3 (extended-set inline expansion per carousel) ships
+  next.
 - `2026-05-22` — **Designer tone rewrite — products-first, no critique
   (Phase 1 of 3 for the render-page IA rework).** Per the owner
   directive that vision/designer/Kontext output should all serve the

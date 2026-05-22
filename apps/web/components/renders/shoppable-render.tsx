@@ -4,7 +4,8 @@ import { useState, type ReactNode } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { BeforeAfterSlider } from '@/components/renders/before-after-slider';
-import { PickingListPanel, type PickingListItem } from '@/components/renders/picking-list-panel';
+import { PickingListPanel, type PickingListItem, type PickingMatch } from '@/components/renders/picking-list-panel';
+import { CompleteTheLook, slugifyCategory } from '@/components/renders/complete-the-look';
 
 interface ShoppableRenderProps {
   beforeUrl: string;
@@ -13,11 +14,19 @@ interface ShoppableRenderProps {
   totalEstimateAud: number | null;
   renderId: string;
   projectId?: string | null;
-  /** Optional slot rendered between the image and the picking list.
-   *  Used by the render page to drop the designer read in directly
-   *  under the render so the voice frames the look before the user
-   *  starts shopping. */
+  /** Optional slot rendered between the image and the carousels.
+   *  Used by the render page to drop the designer commentary in
+   *  directly under the render so the voice frames the look before
+   *  the user starts shopping. */
   between?: ReactNode;
+  /** Category-grouped product picks for the Shop-by-category carousels
+   *  (2026-05-22 Phase 2 IA). When provided, rendered above the
+   *  hotspot picking list so the carousels are the primary shopping
+   *  surface and the hotspot-on-image list becomes the secondary
+   *  detection-anchored view. Hotspot clicks try to scroll to the
+   *  matching category carousel first; fall back to the picking-list
+   *  item if no matching category exists in the carousels. */
+  categories?: { displayLabel: string; products: PickingMatch[] }[];
   /** Server-seeded wishlist (#106). Threaded straight through to the
    *  picking-list panel so heart icons render in their saved state
    *  on first paint. */
@@ -40,6 +49,7 @@ export function ShoppableRender({
   renderId,
   projectId,
   between,
+  categories,
   initialSavedProductIds,
 }: ShoppableRenderProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -49,8 +59,22 @@ export function ShoppableRender({
     setActiveIndex(index);
   }
 
+  // Hotspot → carousel scroll. New behaviour (2026-05-22): each
+  // hotspot's category is slugified the same way as the carousel ids,
+  // so clicking a hotspot scrolls to the matching shop-by-category
+  // carousel below. Falls back to the legacy picking-list item scroll
+  // when no matching carousel exists (carousels render only for
+  // categories that have catalogue picks).
   function handleHotspotClick(index: number) {
     setActiveIndex(index);
+    const item = items[index];
+    if (item?.category) {
+      const carousel = document.getElementById(`cat-${slugifyCategory(item.category)}`);
+      if (carousel) {
+        carousel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
     document
       .getElementById(`pl-item-${index}`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -133,6 +157,21 @@ export function ShoppableRender({
           voice frames the look before the shopping decisions begin. */}
       {between ?? null}
 
+      {/* Shop-by-category carousels (Phase 2 IA — 2026-05-22). Primary
+          shopping surface. Hotspot clicks above scroll into a matching
+          carousel via the `cat-{slug}` anchor each category renders. */}
+      {categories && categories.length > 0 ? (
+        <CompleteTheLook
+          categories={categories}
+          initialSavedProductIds={initialSavedProductIds}
+        />
+      ) : null}
+
+      {/* Hotspot-anchored picking list — now the SECONDARY view sitting
+          below the carousels. Still useful for users who want to
+          shop directly from the items detected on the rendered image
+          rather than browsing by category. Carousels handle the
+          breadth, this handles the depth-per-detected-item. */}
       <PickingListPanel
         items={items}
         activeIndex={activeIndex}

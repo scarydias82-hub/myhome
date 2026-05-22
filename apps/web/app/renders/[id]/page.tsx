@@ -14,7 +14,6 @@ import type { PickingListItem } from '@/components/renders/picking-list-panel';
 import { ShortlistButton } from '@/components/projects/shortlist-button';
 import { RevisionStrip, type RevisionStripItem } from '@/components/renders/revision-strip';
 import { RenderActionBand } from '@/components/renders/render-action-band';
-import { CompleteTheLook } from '@/components/renders/complete-the-look';
 import { fetchCompleteTheLook } from '@/lib/completeTheLook';
 import { getStyle } from '@/lib/styles';
 import { findPaletteByHexes } from '@/lib/palettes';
@@ -308,6 +307,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               renderId={render.id}
               projectId={render.project_id}
               initialSavedProductIds={savedProductIds}
+              categories={completeTheLookCategories}
               between={
                 <section className="mt-2">
                   <DesignerRead
@@ -324,18 +324,13 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               revisions={signedRevisions}
               activeRevisionId={activeRevisionIdForStrip}
             />
-            {/* Complete the look (#116) — category-aligned picks under
-                the detection-based hotspot list. Surfaces categories
-                the user would shop for this room type (cushions,
-                throws, art, lighting, etc.) that the render frame
-                didn't necessarily capture. Server-rendered with the
-                same palette/style/room filters as the picking list. */}
-            {completeTheLookCategories.length > 0 ? (
-              <CompleteTheLook
-                categories={completeTheLookCategories}
-                initialSavedProductIds={savedProductIds}
-              />
-            ) : null}
+            {/* Shop-by-category carousels (#116, Phase 2 IA 2026-05-22):
+                now rendered INSIDE ShoppableRender — directly under
+                the designer commentary, above the hotspot picking
+                list — so the carousels are the primary shopping
+                surface and the hotspots scroll-link straight into
+                them. The standalone CompleteTheLook section that
+                used to live below RevisionStrip is gone. */}
             {/* End-of-render action band (#107) — three follow-up moves
                 so the user has a clear next step after the wow moment:
                 try another palette · share the link · save to project.
