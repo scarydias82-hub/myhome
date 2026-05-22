@@ -25,6 +25,19 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Render-path UX latency pass.** Two cheap wins on
+  perceived render time. (1) RenderPoll interval 3000ms → 1500ms in
+  components/renders/render-poll.tsx (MAX_POLLS bumped 80 → 160 to
+  preserve the ~4 minute wall-clock budget); the render usually
+  completes 0-3s before the user sees it because polling was the
+  choke point at the end. (2) Warmup keepalive in
+  components/rooms/upload-form.tsx — the existing on-mount POST to
+  /api/warm only fired once, so a user who hesitated past the
+  ~5-minute cache window between upload and submit hit a cold
+  fal/Anthropic on render. Replaced with a paletteId-watching effect
+  that re-fires whenever the user lands on a different palette
+  (palette is typically the last decision before render). Both
+  fire-and-forget; no quality risk.
 - `2026-05-22` — **Matching pipeline: concurrency cap + retry on 429.**
   Pairs with the base64-candidates fix to fully close the matching
   failure modes the 2026-05-22T00-22-19 eval surfaced. Two structural

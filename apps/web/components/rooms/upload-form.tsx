@@ -163,9 +163,17 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   useEffect(() => {
-    fetch('/api/warm', { method: 'POST' }).catch(() => {});
     return () => streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
+
+  // Warmup keepalive. Fires on mount (paletteId has a default value)
+  // and again whenever the user lands on a different palette. Keeps
+  // fal's queue + Anthropic warm even if the user hesitates past the
+  // ~5-minute cache window between upload and submit. Fire-and-forget;
+  // a failed warm-up never blocks render submit.
+  useEffect(() => {
+    fetch('/api/warm', { method: 'POST' }).catch(() => {});
+  }, [paletteId]);
 
   async function handleFile(next: File | null) {
     setError(null);

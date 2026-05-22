@@ -11,8 +11,13 @@ interface RenderPollProps {
   createdAt: string;
 }
 
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 80; // ~4 minutes — enough for queue + render + finalise
+// Tightened from 3000ms → 1500ms on 2026-05-22 to cut perceived
+// "render done" latency. The render typically completes 0-3s before
+// the user sees it because polling is the choke point at the end.
+// MAX_POLLS bumped 80 → 160 to keep the same ~4 minute wall-clock
+// budget for queue + render + finalise.
+const POLL_INTERVAL_MS = 1500;
+const MAX_POLLS = 160;
 
 // Lightweight client poller that hits /api/renders/[id]/status until the
 // render is in a terminal state, then refreshes the server page so the new
