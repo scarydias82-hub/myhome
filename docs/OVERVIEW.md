@@ -25,6 +25,27 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Designer tone rewrite — products-first, no critique
+  (Phase 1 of 3 for the render-page IA rework).** Per the owner
+  directive that vision/designer/Kontext output should all serve the
+  picking list, not critique the upload, the designer SYSTEM prompt
+  in `lib/prompts/designer-system.md` was rewritten end-to-end:
+  excited tone, leads with what's in the render, names products and
+  palette tones explicitly, ends with a "I've pulled together my
+  go-to's — keep scrolling for more by category" curated invite.
+  Output shape collapsed from five sections (designerRead +
+  recommendations + compositionNote + watchOutFor + nextStep) to
+  three (designerRead + paletteStory + exploreInvite) — the
+  per-product reasoning is now redundant because the category
+  carousels render the products directly, and the critique sections
+  ("watch out for") are exactly what the owner asked to retire.
+  `DesignerAdvice` type, parser, and `<DesignerRead>` component all
+  updated. Old-shape rows still parse via backwards-compat fields on
+  the interface. Removed the "Claude Sonnet reads your room photo
+  and the palette you picked, then writes a designer's-eye critique"
+  description from the component header — the commentary now speaks
+  for itself. Phase 2 (carousels-first IA + hotspot→carousel scroll
+  linkage) and Phase 3 (extended-set inline expansion) ship next.
 - `2026-05-22` — **Depth/perspective preservation directive in
   Kontext.** Surfaced by a real user render: after the open-plan
   fix the same photo came back preserving the layout but with the

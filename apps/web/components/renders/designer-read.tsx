@@ -1,40 +1,45 @@
 'use client';
 
-// Designer-read display + self-healing fetch.
+// Designer commentary display + self-healing fetch.
 //
-// The render flow tries to populate renders.designer_read in three places,
-// in order of preference:
-//   1. /api/render after() block (optimistic — fires when user submits)
-//   2. /api/advise direct call (client fallback below)
-//   3. The 20260520100000 migration backfills don't apply here — this
-//      is per-render
+// 2026-05-22 rewrite: tone flipped to excited / products-first per the
+// owner directive. The component now renders a tight three-section
+// commentary (designer read of the render + palette story + invite to
+// keep exploring) and intentionally removes:
+//   - The descriptive intro paragraph ("Claude Sonnet reads your
+//     room…") — replaced with the commentary speaking for itself
+//   - The "Watch out for" / "Next step" sections — those were the
+//     critique surfaces the owner asked us to retire
+//   - Per-product reasoning blocks — the category carousels show the
+//     products directly now, so we don't repeat the work
 //
-// When the server page hands us a populated advice prop, render it.
-// When it doesn't, fire off /api/advise on mount so the user isn't
-// stuck staring at a "reading the room" placeholder forever.
-// /api/advise is idempotent (checks designer_read first) so concurrent
-// renders don't double-spend.
+// Backwards-compatibility: pre-rewrite designer_read JSON rows have
+// the old shape (designerRead + recommendations + compositionNote +
+// watchOutFor + nextStep). The new render path returns the new shape
+// (designerRead + paletteStory + exploreInvite). The component
+// tolerates either — if paletteStory and exploreInvite are missing,
+// it falls back to showing just the original designerRead and a
+// short default invite so the page still works while old renders are
+// re-rendered or aged out.
+//
+// The fetch fallback (calls /api/advise on mount when initialAdvice
+// is null) is unchanged — /api/advise is idempotent and returns the
+// new shape.
 
 import { useEffect, useState } from 'react';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
-import { Pill } from '@/components/saltbush/pill';
-
-interface DesignerRecommendation {
-  product: string;
-  retailer: string;
-  price: string;
-  whyThisRoom: string;
-  placement: string;
-  scaleCheck: string;
-}
 
 export interface DesignerAdvice {
   designerRead: string;
-  recommendations: DesignerRecommendation[];
-  compositionNote: string;
-  watchOutFor: string;
-  nextStep: string;
+  paletteStory?: string;
+  exploreInvite?: string;
+  // Legacy fields tolerated on old rows. Not rendered post-rewrite —
+  // present so the JSON parses without errors.
+  recommendations?: unknown[];
+  compositionNote?: string;
+  watchOutFor?: string;
+  nextStep?: string;
 }
 
 interface DesignerReadProps {
@@ -62,12 +67,10 @@ export function DesignerRead({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Server already has it — nothing to do.
     if (initialAdvice) {
       setAdvice(initialAdvice);
       return;
     }
-    // Already fetching or already errored — don't refire.
     if (loading || error) return;
 
     let cancelled = false;
@@ -99,7 +102,6 @@ export function DesignerRead({
     return () => {
       cancelled = true;
     };
-    // initialAdvice intentionally excluded — we only ever read it on first mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderId]);
 
@@ -108,14 +110,8 @@ export function DesignerRead({
       <header className="border-b border-ink/[0.06] p-6">
         <Eyebrow>Designer read</Eyebrow>
         <DisplayHeading level={3} className="mt-2">
-          A senior designer's <em>read</em> on this room.
+          Your <em>curated</em> picks.
         </DisplayHeading>
-        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-          Claude Sonnet reads your room photo and the palette you picked,
-          then writes a designer's-eye critique with specific product
-          recommendations, placement notes, and what to watch in your
-          existing space.
-        </p>
       </header>
 
       {advice ? (
@@ -129,10 +125,6 @@ export function DesignerRead({
   );
 }
 
-// Loading state — also shown on the very first page load before /api/advise
-// has had time to respond. Pulsing dot signals work-in-progress.
-// When palette + room context is available we surface them so the wait
-// state reads as "we know what you picked" rather than generic.
 function ReadingPlaceholder({
   paletteName,
   roomLabel,
@@ -142,12 +134,12 @@ function ReadingPlaceholder({
 }) {
   const headline =
     paletteName && roomLabel
-      ? `Reading your ${roomLabel} for ${paletteName}.`
+      ? `Bringing ${paletteName} to life in your ${roomLabel}.`
       : paletteName
-        ? `Considering ${paletteName} for your room.`
+        ? `Bringing ${paletteName} to life.`
         : roomLabel
           ? `Reading your ${roomLabel}.`
-          : 'Reading the room.';
+          : 'Putting your picks together.';
 
   return (
     <div className="p-6 md:p-8">
@@ -165,17 +157,15 @@ function ReadingPlaceholder({
           {headline}
         </p>
         <p className="mt-2 max-w-md text-[14px] text-ink-soft">
-          Claude is reading the light, the architecture, and the palette
-          — then drafting recommendations specific to your space. Usually
-          15 to 25 seconds. The render is building in parallel.
+          Your render's ready — your curator is writing a short read on
+          what's in it and how it ties to the palette. Usually 15 to 25
+          seconds.
         </p>
       </div>
     </div>
   );
 }
 
-// Error state — shown when /api/advise fails. Surfaces the underlying
-// message so we can debug without digging into Vercel logs.
 function ReadingError({ message }: { message: string }) {
   return (
     <div className="p-6 md:p-8">
@@ -188,8 +178,8 @@ function ReadingError({ message }: { message: string }) {
         </p>
         <p className="mt-2 max-w-md text-[13px] text-ink-soft">{message}</p>
         <p className="mt-3 max-w-md text-[12px] text-ink-faint">
-          The render is unaffected. Refresh the page to try again, or move
-          on — your shoppable picking list is below.
+          The render is unaffected. Refresh the page to try again, or
+          scroll on — your shoppable carousels are below.
         </p>
       </div>
     </div>
@@ -199,89 +189,32 @@ function ReadingError({ message }: { message: string }) {
 function AdviceBlock({ advice }: { advice: DesignerAdvice }) {
   return (
     <div className="space-y-8 p-6 md:p-8">
-      <div>
-        <Eyebrow>The read</Eyebrow>
-        <p className="mt-3 max-w-3xl font-display text-[20px] leading-snug text-ink">
-          {advice.designerRead}
-        </p>
-      </div>
-
-      {advice.recommendations.length > 0 ? (
+      {advice.designerRead ? (
         <div>
-          <Eyebrow>Recommendations</Eyebrow>
-          <ol className="mt-4 space-y-5">
-            {advice.recommendations.map((r, i) => (
-              <li
-                key={`${r.product}-${i}`}
-                className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-5"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <p className="font-display text-h4 text-ink">
-                    {i + 1}. {r.product}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {r.retailer ? <Pill tone="cream">{r.retailer}</Pill> : null}
-                    {r.price ? (
-                      <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                        {r.price}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                {r.whyThisRoom ? (
-                  <p className="mt-3 text-[15px] leading-relaxed text-ink">
-                    <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                      Why this room ·{' '}
-                    </span>
-                    {r.whyThisRoom}
-                  </p>
-                ) : null}
-                {r.placement ? (
-                  <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
-                    <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                      Placement ·{' '}
-                    </span>
-                    {r.placement}
-                  </p>
-                ) : null}
-                {r.scaleCheck ? (
-                  <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
-                    <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                      Scale ·{' '}
-                    </span>
-                    {r.scaleCheck}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-
-      {advice.compositionNote ? (
-        <div>
-          <Eyebrow>Composition note</Eyebrow>
-          <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-ink">
-            {advice.compositionNote}
+          <Eyebrow>The read</Eyebrow>
+          <p className="mt-3 max-w-3xl font-display text-[20px] leading-snug text-ink">
+            {advice.designerRead}
           </p>
         </div>
       ) : null}
 
-      {advice.watchOutFor ? (
+      {advice.paletteStory ? (
         <div>
-          <Eyebrow tone="faint">Watch out for</Eyebrow>
+          <Eyebrow>Palette story</Eyebrow>
           <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-ink">
-            {advice.watchOutFor}
+            {advice.paletteStory}
           </p>
         </div>
       ) : null}
 
-      {advice.nextStep ? (
+      {advice.exploreInvite ? (
         <div className="rounded-xl bg-ink p-5 text-paper">
           <p className="font-mono text-meta uppercase tracking-eyebrow text-paper/70">
-            Next step
+            Keep exploring
           </p>
-          <p className="mt-2 font-display text-[18px] leading-snug">{advice.nextStep}</p>
+          <p className="mt-2 font-display text-[18px] leading-snug">
+            {advice.exploreInvite}
+          </p>
         </div>
       ) : null}
     </div>

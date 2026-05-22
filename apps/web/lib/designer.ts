@@ -31,21 +31,19 @@ function loadSystemPrompt(): string {
   return SYSTEM_PROMPT_CACHE;
 }
 
-export interface DesignerRecommendation {
-  product: string;
-  retailer: string;
-  price: string;
-  whyThisRoom: string;
-  placement: string;
-  scaleCheck: string;
-}
-
 export interface DesignerAdvice {
+  /** Two-to-three sentence greeting describing what's exciting in the
+   *  render. Names specific products visible. Positive only — does not
+   *  reference the original upload. */
   designerRead: string;
-  recommendations: DesignerRecommendation[];
-  compositionNote: string;
-  watchOutFor: string;
-  nextStep: string;
+  /** Three-to-four sentence walkthrough of how the palette plays out
+   *  across the render. Names the tones (dominant / secondary / accent)
+   *  and which products carry each. */
+  paletteStory: string;
+  /** One-to-two sentence invitation to keep scrolling into the curated
+   *  category carousels and use the extended set per category for more
+   *  options matched to the palette + style. */
+  exploreInvite: string;
   raw: string;
 }
 
@@ -190,21 +188,18 @@ async function fetchCandidates(
 }
 
 // Parse the system-prompt OUTPUT FORMAT. The model is instructed to emit
-// plain text with labelled sections, not markdown. We split on the labels
-// and tolerate small whitespace variations.
+// plain text with three labelled sections — DESIGNER READ, PALETTE STORY,
+// EXPLORE INVITE. We split on the labels and tolerate small whitespace
+// variations.
 function parseDesignerOutput(text: string): Omit<DesignerAdvice, 'raw'> {
-  const designerRead = extractSection(text, 'DESIGNER READ', 'RECOMMENDATIONS');
-  const recsBlock = extractSection(text, 'RECOMMENDATIONS', 'COMPOSITION NOTE');
-  const compositionNote = extractSection(text, 'COMPOSITION NOTE', 'WATCH OUT FOR');
-  const watchOutFor = extractSection(text, 'WATCH OUT FOR', 'NEXT STEP');
-  const nextStep = extractSection(text, 'NEXT STEP', null);
+  const designerRead = extractSection(text, 'DESIGNER READ', 'PALETTE STORY');
+  const paletteStory = extractSection(text, 'PALETTE STORY', 'EXPLORE INVITE');
+  const exploreInvite = extractSection(text, 'EXPLORE INVITE', null);
 
   return {
     designerRead,
-    recommendations: parseRecommendations(recsBlock),
-    compositionNote,
-    watchOutFor,
-    nextStep,
+    paletteStory,
+    exploreInvite,
   };
 }
 
@@ -228,30 +223,10 @@ function findLabel(text: string, label: string, fromIndex = 0): number {
   return fromIndex + m.index + m[0].length - m[0].trimEnd().length + m[0].length;
 }
 
-function parseRecommendations(block: string): DesignerRecommendation[] {
-  if (!block) return [];
-  // Each rec starts with "PRODUCT:" — split on that.
-  const chunks = block
-    .split(/(?:^|\n)\s*PRODUCT\s*:\s*/i)
-    .map((c) => c.trim())
-    .filter(Boolean);
-  return chunks.map((chunk) => {
-    const get = (label: string) => {
-      // Match the labelled line up to the next ALL-CAPS label or end.
-      const re = new RegExp(
-        `${label}\\s*:\\s*([\\s\\S]+?)(?=\\n\\s*(?:RETAILER|PRICE|WHY THIS ROOM|PLACEMENT|SCALE CHECK|PRODUCT)\\s*:|$)`,
-        'i',
-      );
-      const m = chunk.match(re);
-      return m && m[1] ? m[1].trim() : '';
-    };
-    return {
-      product: chunk.split(/\n/)[0]?.trim() ?? '',
-      retailer: get('RETAILER'),
-      price: get('PRICE'),
-      whyThisRoom: get('WHY THIS ROOM'),
-      placement: get('PLACEMENT'),
-      scaleCheck: get('SCALE CHECK'),
-    };
-  });
-}
+// Note: prior versions of this file parsed a RECOMMENDATIONS section with
+// per-product PRODUCT/RETAILER/PRICE/WHY THIS ROOM/PLACEMENT/SCALE CHECK
+// blocks. The 2026-05-22 prompt rewrite (excited tone, products-first
+// directive) dropped per-product reasoning from the designer's output —
+// the category carousels render the products directly, so the designer
+// just sets the page tone and frames the curation. The parser was
+// removed with the schema change.
