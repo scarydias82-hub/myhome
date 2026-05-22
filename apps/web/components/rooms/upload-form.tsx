@@ -40,10 +40,11 @@ const ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 interface AnalyseResponse {
   roomId: string;
   analysis: RoomAnalysis | null;
-  // Room-grounded recommendation from #142 — Claude's palette + style
-  // pick after seeing the actual photo (plus any brief tags from the
-  // project). Pre-fills the carousels.
-  recommendation?: {
+  error?: string;
+}
+
+interface RecommendResponse {
+  recommendation: {
     paletteId: string;
     paletteName: string;
     styleSlug: string;
@@ -81,6 +82,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RoomAnalysis | null>(null);
   const [analysing, setAnalysing] = useState(false);
+  // Phase 2 of the photo flow (#143). Set true after vision returns
+  // and we kick off /api/recommend; flipped back to false when the
+  // recommendation arrives (or fails). Drives the overlay on the
+  // carousels — distinct from `analysing` which drives the overlay
+  // on the photo.
+  const [recommending, setRecommending] = useState(false);
   const [analysisConfirmed, setAnalysisConfirmed] = useState(false);
 
   const [style, setStyle] = useState<StyleSlug>('japandi');
@@ -269,28 +276,55 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
             'Vision analysis was unavailable, but you can still proceed. The restyle will be less precise.',
         );
       }
-      // #142 — apply the room-grounded recommendation if Claude
-      // produced one. Overrides the brief-pre-fill from the useEffect
-      // above because this recommendation has SEEN the photo (light,
-      // flooring, architecture) and the brief one only had the
-      // tags. The user can still override either by picking a
-      // different palette / direction in the carousels.
-      if (json.recommendation) {
-        const rec = json.recommendation;
-        setPaletteId(rec.paletteId);
-        if (rec.styleSlug) setStyle(rec.styleSlug as StyleSlug);
-        setDirection(rec.direction);
-        setRecommendationReasoning(rec.reasoning);
-        // Flip the "we have a designer's pick" flag so the summary
-        // card shows the recommendation block even when there's no
-        // project brief in the picture.
-        setBriefPreFilled(true);
-      }
+      // Vision is done. Show the carousels immediately (with their
+      // default palette selection) — the recommendation arrives via
+      // a separate call below, which has its own overlay on the
+      // carousels themselves. #143.
       setAnalysisConfirmed(true);
+
+      // Phase 2: kick off the recommendation. We fire-and-forget here
+      // (no await) so the React render commits the analysing=false +
+      // analysisConfirmed=true update first, which mounts the
+      // carousels. Then the recommendation overlay fades in on top
+      // of them while the synth runs.
+      if (json.roomId && json.analysis) {
+        void recommendForRoom(json.roomId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error. Try again.');
     } finally {
       setAnalysing(false);
+    }
+  }
+
+  async function recommendForRoom(rid: string) {
+    setRecommending(true);
+    try {
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roomId: rid, projectId: projectId ?? null }),
+      });
+      const json = (await res.json().catch(() => ({}))) as RecommendResponse;
+      if (!res.ok || !json.recommendation) {
+        // Silent fallback — the carousels keep their default
+        // selection. We don't surface an error because the user can
+        // still proceed; this is best-effort enrichment.
+        return;
+      }
+      const rec = json.recommendation;
+      setPaletteId(rec.paletteId);
+      if (rec.styleSlug) setStyle(rec.styleSlug as StyleSlug);
+      setDirection(rec.direction);
+      setRecommendationReasoning(rec.reasoning);
+      // Flip the "we have a designer's pick" flag so the summary
+      // card shows the recommendation block + commentary even when
+      // there's no project brief in the picture.
+      setBriefPreFilled(true);
+    } catch {
+      // Same silent fallback as above.
+    } finally {
+      setRecommending(false);
     }
   }
 
@@ -457,21 +491,29 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
             direction={direction}
             reasoning={recommendationReasoning}
           />
-          <Step3Style
-            paletteId={paletteId}
-            onPaletteChange={setPaletteId}
-            direction={direction}
-            onDirectionChange={(next) => {
-              // Mutex behaviour: setting direction='2026' clears any
-              // previous timeless pick (and vice versa). Setting to
-              // null clears either. The paletteId is updated by the
-              // caller via onPaletteChange when a direction card is
-              // tapped — those carousels are palette-backed, so
-              // picking a direction card IS picking that palette.
-              setDirection(next);
-            }}
-            trendPreviews={trendPreviews}
-          />
+          {/* Carousels + the Phase-2 recommendation overlay. The
+              relative wrapper anchors the overlay to JUST this
+              region (not the whole page) so the photo, designer-
+              summary, and CTAs all stay interactive while Claude
+              picks a direction. */}
+          <div className="relative">
+            <Step3Style
+              paletteId={paletteId}
+              onPaletteChange={setPaletteId}
+              direction={direction}
+              onDirectionChange={(next) => {
+                // Mutex behaviour: setting direction='2026' clears any
+                // previous timeless pick (and vice versa). Setting to
+                // null clears either. The paletteId is updated by the
+                // caller via onPaletteChange when a direction card is
+                // tapped — those carousels are palette-backed, so
+                // picking a direction card IS picking that palette.
+                setDirection(next);
+              }}
+              trendPreviews={trendPreviews}
+            />
+            {recommending ? <CarouselRecommendingOverlay /> : null}
+          </div>
         </>
       ) : null}
 
@@ -502,7 +544,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           type="submit"
           variant="cta"
           size="lg"
-          disabled={!analysisConfirmed || submitting || converting || analysing}
+          disabled={!analysisConfirmed || submitting || converting || analysing || recommending}
         >
           {submitting ? 'Restyling… (~30s)' : 'Restyle the room'}
         </Button>
@@ -788,6 +830,41 @@ function AnalysingPlaceholder() {
       <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
         Vision · ~8s
       </p>
+    </div>
+  );
+}
+
+// CarouselRecommendingOverlay (#143) — sits over the 3 carousels
+// while /api/recommend runs. The vision overlay on the photo has
+// already cleared by this point, so the user sees the carousels
+// mount with their default selection, then this overlay slides
+// over them with copy that explains what Claude's doing.
+//
+// Visual treatment mirrors the photo overlay (ink/55 + backdrop-blur)
+// so the two staged overlays read as one design language. Centered
+// content with a pulse bar at the bottom. pointer-events-auto blocks
+// taps so users don't pick a palette mid-thought — once Claude
+// settles, the overlay dismisses and the pre-selection appears.
+function CarouselRecommendingOverlay() {
+  return (
+    <div
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-ink/55 p-6 text-center backdrop-blur-sm"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream/40 bg-cream/10 backdrop-blur">
+        <span aria-hidden className="animate-pulse text-cream text-[20px]">✦</span>
+      </div>
+      <p className="mt-4 font-display text-h3 leading-tight text-cream md:text-[24px]">
+        Claude is picking a direction for your room…
+      </p>
+      <p className="mt-2 max-w-sm font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
+        Weighing your preferences against the room&rsquo;s light, flooring and architecture.
+        About 10 seconds.
+      </p>
+      <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-cream/20">
+        <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
+      </div>
     </div>
   );
 }
