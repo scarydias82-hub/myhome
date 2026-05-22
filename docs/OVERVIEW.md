@@ -25,6 +25,17 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Supabase migrations automated on push to main.**
+  New `.github/workflows/supabase-push.yml` runs `supabase db push
+  --include-all` whenever main changes any file under
+  `supabase/migrations/`. Closes a workflow gap that built up after
+  multiple recent features (#139a, #139b, #140, #141, plus the
+  picking_list_status migration) shipped code to Vercel but left
+  their schema migrations un-applied to the linked Supabase project,
+  causing PostgREST 4xx on the new columns. Concurrency-locked so
+  two pushes don't race; pinned to Supabase CLI 2.x; needs three
+  repo secrets (SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF,
+  SUPABASE_DB_PASSWORD). Manual re-trigger via workflow_dispatch.
 - `2026-05-22` — **Two-stage render completion + tightened picking list.**
   The architectural fix for "renders feel slow." Pre-change the user
   saw nothing for ~60-90s then everything arrived at once because
