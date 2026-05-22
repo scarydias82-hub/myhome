@@ -25,6 +25,23 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Depth/perspective preservation directive in
+  Kontext.** Surfaced by a real user render: after the open-plan
+  fix the same photo came back preserving the layout but with the
+  room's depth compressed/telescoped toward the camera. Same
+  failure family as the open-plan back wall — Kontext has
+  composition priors and reshapes pixels to match them when
+  nothing in the prompt anchors the geometry. Fix: a new directive
+  in `roomFactsToArchitecturalPreserves` that consumes the
+  already-captured `dimensions_approximate_m: { width, depth, height }`
+  field from `RoomAnalysis` (vision populates this when confident).
+  When width or depth is non-null, the prompt now names the
+  approximate proportions and emits a FORBIDDEN list against
+  compressing depth, narrowing the room, moving the far wall
+  closer, or telescoping the view. Skipped entirely when both
+  dims are null. The metric numbers don't need to be exact — the
+  ratio + explicit anti-compression ban is what bites. No schema
+  change, no migration; pure prompt-builder logic.
 - `2026-05-22` — **Vision SYSTEM prompt reframed as products-first.**
   Owner-directive change: the platform's primary purpose is steering
   the user toward a confident shopping list, not producing a pretty

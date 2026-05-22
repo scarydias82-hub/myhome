@@ -78,6 +78,27 @@ export function roomFactsToArchitecturalPreserves(
     );
   }
 
+  // Depth/perspective preservation. Even when Kontext keeps the
+  // open layout, it often compresses the depth axis — squeezes the
+  // room shorter toward the camera so the back zone reads closer
+  // than it is. Image-to-image models don't have native 3D
+  // understanding; they reshape pixels to match common interior
+  // composition priors. Surfacing the room's actual dimensions
+  // (or just naming the ones vision is confident about) anchors
+  // the perspective. The metric numbers don't need to be exact —
+  // the RATIO + the explicit ban on compression is what bites.
+  const dims = facts.dimensions_approximate_m;
+  const widthM = dims?.width;
+  const depthM = dims?.depth;
+  if (widthM != null || depthM != null) {
+    const parts: string[] = [];
+    if (widthM != null) parts.push(`${widthM}m wide`);
+    if (depthM != null) parts.push(`${depthM}m deep`);
+    out.push(
+      `ROOM PROPORTIONS: image 1 shows a room that is approximately ${parts.join(' × ')}. PRESERVE the camera perspective and depth-of-field. ABSOLUTELY FORBIDDEN: shortening or compressing the depth toward the camera, narrowing the room, moving the far wall/zone closer, telescoping the view to feel more square. The distance from camera to back of frame in the render MUST match image 1.`,
+    );
+  }
+
   return out;
 }
 
