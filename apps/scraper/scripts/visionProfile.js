@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import sharp from 'sharp';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -150,17 +151,78 @@ function normaliseMediaType(raw) {
   return ALLOWED_MEDIA_TYPES.has(t) ? t : 'image/jpeg';
 }
 
+// Anthropic vision caps: 5MB per image and 8000px on any dimension.
+// Tile / flooring / carpet scrapes routinely store 8-15MB swatches that
+// blow past both limits and produce 400 invalid_request_error responses.
+// Pre-resize everything to a safe ceiling — JPEG quality 85, max edge
+// 1568px (matches Anthropic's recommended sweet spot for vision tokens).
+const MAX_IMAGE_EDGE = 1568;
+const JPEG_QUALITY = 85;
+
 async function fetchImage(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`image fetch ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length === 0) throw new Error('empty image body');
-  return { buffer: buf, mediaType: normaliseMediaType(res.headers.get('content-type')) };
+  const raw = Buffer.from(await res.arrayBuffer());
+  if (raw.length === 0) throw new Error('empty image body');
+
+  // Re-encode through sharp regardless of source format: caps dimensions,
+  // strips EXIF, normalises to JPEG. sharp also catches malformed bytes
+  // here with a clear error rather than letting Anthropic reject them.
+  try {
+    const resized = await sharp(raw)
+      .rotate() // honour EXIF orientation before stripping the tag
+      .resize(MAX_IMAGE_EDGE, MAX_IMAGE_EDGE, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
+      .toBuffer();
+    return { buffer: resized, mediaType: 'image/jpeg' };
+  } catch (err) {
+    throw new Error(`image decode/resize failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// Retry-with-backoff on transient Anthropic errors (529 overloaded,
+// 503 unavailable, 429 rate-limited). The scraper isn't under a 60s
+// Vercel ceiling so we can afford long waits — 529 floods cleared up
+// to background levels in well under a minute during the May-22 outage.
+function isRetryableAnthropicError(err) {
+  const status = err?.status ?? err?.response?.status;
+  const errorType = err?.error?.type ?? err?.type;
+  if (status === 529 || status === 503 || status === 429) return true;
+  if (errorType === 'overloaded_error' || errorType === 'rate_limit_error') return true;
+  if (typeof err?.message === 'string' && /overload|rate.?limit|temporar/i.test(err.message)) {
+    return true;
+  }
+  return false;
+}
+
+async function callAnthropicWithRetry(params) {
+  // Six attempts at 0/3/8/20/45/90s — total ~165s of patience. Anthropic
+  // overload events typically clear inside the first three retries; the
+  // long tail catches the rare 5+ minute capacity slumps.
+  const delays = [0, 3000, 8000, 20000, 45000, 90000];
+  let lastErr;
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableAnthropicError(err) || i === delays.length - 1) {
+        throw err;
+      }
+      const next = delays[i + 1];
+      console.warn(`  ↻ retryable error (${err?.status ?? err?.error?.type ?? 'unknown'}), backing off ${next}ms`);
+    }
+  }
+  throw lastErr;
 }
 
 async function generateProfile(product) {
   const { buffer, mediaType } = await fetchImage(product.image_url);
-  const message = await anthropic.messages.create({
+  const message = await callAnthropicWithRetry({
     model: MODEL,
     max_tokens: 1500,
     // Cache the system block — same across every product in the run, so
@@ -319,7 +381,11 @@ while (true) {
       } else {
         failed++;
         const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-        console.error(`  ✗ vision profile failed: ${msg.slice(0, 120)}`);
+        // Show the full message so 400 image-too-large / image-decode
+        // errors stay readable. Cap at 400 chars for the rare case where
+        // Anthropic returns a long stack trace, but don't truncate the
+        // meaningful portion of the response body.
+        console.error(`  ✗ vision profile failed: ${msg.slice(0, 400)}`);
       }
     }
   }
