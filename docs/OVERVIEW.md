@@ -25,6 +25,33 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Two-stage render completion + tightened picking list.**
+  The architectural fix for "renders feel slow." Pre-change the user
+  saw nothing for ~60-90s then everything arrived at once because
+  /api/renders/[id]/status blocked one poll response on image-save +
+  the 30-50s matching pipeline. New model: foreground saves the fal
+  image and flips `status='succeeded'` + new `picking_list_status='building'`
+  in ~5s; matching runs via `after()` and writes
+  `picking_list_status='ready'` when done. Migration
+  `20260522150000_renders_picking_list_status.sql` adds the column
+  (backfilled 'ready' for existing rows with a picking list,
+  'not_started' otherwise) plus a CHECK constraint on the four
+  states. RenderPoll now tracks BOTH terminal axes and calls
+  `router.refresh()` on each transition — image lands at ~T+30, list
+  populates at ~T+60. A small "Finding matching products…" chip
+  shows in the heading row while building. TTL guard: if
+  picking_list_status sits in 'building' for >120s the next poll
+  marks it 'failed' so the user isn't stuck. Status route
+  maxDuration bumped 60→120 so the after() worker has headroom.
+  Same change tightens the picking-list pipeline itself:
+  MAX_ITEMS 12→8, CANDIDATES_PER_ITEM 8→5, validate pass disabled
+  (ENABLE_VALIDATE=false; flip back to true if Florence-2 starts
+  mislabelling architecture as objects). Combined: user perceives
+  the render at ~30s instead of ~75s, with the list assembling
+  visibly over the next 25-35s — competitive with Midjourney-class
+  UX on the first impression. Frontend is forward-compatible: page
+  loads cleanly pre-migration (picking_list_status fetched in a
+  separate maybeSingle() query that tolerates missing column).
 - `2026-05-22` — **Eval mirrors prod warmup + poll cadence.** The
   2026-05-22T00-39-18 eval surfaced a 42.7s Kontext inference time
   vs 24.7s the run before — same code, same fixture. Root cause was

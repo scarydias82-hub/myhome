@@ -32,6 +32,7 @@ interface RenderRow {
   style_profile_id: string;
   project_id: string | null;
   picking_list: PickingListItem[] | null;
+  picking_list_status: 'not_started' | 'building' | 'ready' | 'failed' | null;
   cost_estimate_aud: number | null;
   designer_read: DesignerAdvice | null;
 }
@@ -91,6 +92,26 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   if (!designerReadRes.error && designerReadRes.data) {
     render.designer_read =
       (designerReadRes.data as { designer_read: DesignerAdvice | null }).designer_read ?? null;
+  }
+
+  // Optional picking_list_status — present after the
+  // 20260522150000_renders_picking_list_status.sql migration. Drives
+  // the two-stage completion model (image-first, picking list as it
+  // builds). Falls back to legacy single-stage behaviour when the
+  // column is missing: 'ready' if picking_list is non-null, otherwise
+  // 'not_started'.
+  const pickingListStatusRes = await supabase
+    .from('renders')
+    .select('picking_list_status')
+    .eq('id', id)
+    .maybeSingle();
+  if (!pickingListStatusRes.error && pickingListStatusRes.data) {
+    render.picking_list_status =
+      (pickingListStatusRes.data as {
+        picking_list_status: RenderRow['picking_list_status'];
+      }).picking_list_status ?? null;
+  } else {
+    render.picking_list_status = render.picking_list ? 'ready' : 'not_started';
   }
 
   // Optional active_revision_id — only present after the
@@ -245,6 +266,15 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
           </div>
           {isDone && afterSigned?.data?.signedUrl ? (
             <div className="flex flex-wrap items-center gap-4">
+              {render.picking_list_status === 'building' ? (
+                <span className="inline-flex items-center gap-2 font-mono text-meta uppercase tracking-eyebrow text-ink-soft">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-clay opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-clay" />
+                  </span>
+                  Finding matching products…
+                </span>
+              ) : null}
               <ShortlistButton
                 projectId={render.project_id}
                 kind="render"
@@ -346,6 +376,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             <RenderPoll
               renderId={render.id}
               initialStatus={render.status}
+              initialPickingListStatus={render.picking_list_status}
               createdAt={render.created_at}
             />
             {/* During the wait the designer read lives directly below

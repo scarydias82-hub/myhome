@@ -1,27 +1,35 @@
 // GET /api/renders/[id]/status
 //
-// Polled by the render page. Each call:
-//   - Reads the render row.
-//   - If terminal ('succeeded'/'failed'/'cancelled'), returns as-is.
-//   - If 'running' and fal still busy, returns { status: 'running' }.
-//   - If 'running' and fal completed, finalises inline:
-//       a. Download the Flux result, upload to the renders bucket
-//       b. Run the picking-list pipeline (Florence-2 + Claude
-//          validator + Claude ranker)
-//       c. Update the renders row in one go (status + output_url +
-//          picking_list + cost) so the page sees everything together
-//     The previous design split this into two functions with a
-//     fire-and-forget fetch, but `void fetch()` after `return` was
-//     unreliable — Vercel would kill the function before the outbound
-//     request initiated, so /build-picking-list never ran and the user
-//     saw "no items detected yet" forever.
+// Polled by the render page. Two-stage completion model (2026-05-22):
+// the render image and the picking list complete independently so the
+// user sees the rendered room ~30s after submit instead of waiting
+// 60-90s for everything to land at once.
 //
-// With density tuned down (MAX_ITEMS 12, CANDIDATES_PER_ITEM 8) the
-// full pipeline fits comfortably inside the 60s function budget. If a
-// slow Claude call ever pushes us over, the catch block falls back to
-// an empty picking list rather than leaving the render trapped.
+// Each call:
+//   - Reads the render row (status + picking_list_status + ...).
+//   - If both stages terminal, returns as-is.
+//   - If 'running' and fal still busy, returns the running state.
+//   - If 'running' and fal just completed:
+//       FOREGROUND (~5s):
+//         a. Download the Flux result, upload to the renders bucket
+//         b. UPDATE: status='succeeded', output_url, picking_list_status='building'
+//         c. Schedule picking-list build via after()
+//         d. Return immediately so the polling client refreshes the
+//            page and the user sees the rendered image
+//       BACKGROUND (after(), ~25-30s):
+//         e. Run Florence-2 + matcher + wall-paint
+//         f. UPDATE: picking_list, picking_list_status='ready' (or 'failed')
+//   - If output_url set and picking_list_status='building':
+//       Return current state, poll continues to catch the 'ready' flip.
+//       TTL: if building > 120s, mark 'failed' so polls don't run forever.
+//
+// Pre-2026-05-22 this route did everything in one blocking call.
+// `void fetch()` after return was tried and failed (Vercel killed the
+// function before the outbound request initiated). `after()` is the
+// supported pattern — runs in the response's worker after the response
+// is flushed, bounded by maxDuration.
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -30,9 +38,19 @@ import { buildPickingList } from '@/lib/matching';
 import { findPaletteByHexes } from '@/lib/palettes';
 
 export const runtime = 'nodejs';
-// Full finalise (upload + picking list) fits inside 60s for typical
-// renders. The picking-list density was tuned specifically to land here.
-export const maxDuration = 60;
+// Foreground (image save) is ~5s; after() (matching) is ~25-30s. 120s
+// gives the matching pipeline comfortable headroom even if a slow Claude
+// retry kicks in. The response flushes after the foreground work, so
+// the user perceives ~5s, not 120s.
+export const maxDuration = 120;
+
+// If picking_list_status has been 'building' for longer than this,
+// assume the previous after() got killed and mark the build as failed
+// so the user isn't stuck polling forever. They can retry via the
+// rebuild button.
+const PICKING_LIST_BUILD_TTL_MS = 120_000;
+
+type PickingListStatus = 'not_started' | 'building' | 'ready' | 'failed';
 
 interface RenderRow {
   id: string;
@@ -40,6 +58,7 @@ interface RenderRow {
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   output_url: string | null;
   picking_list: unknown;
+  picking_list_status: PickingListStatus | null;
   cost_estimate_aud: number | null;
   fal_request_id: string | null;
   completed_at: string | null;
@@ -59,7 +78,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const renderRes = await admin
     .from('renders')
     .select(
-      'id, user_id, status, output_url, picking_list, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id',
+      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id',
     )
     .eq('id', id)
     .single();
@@ -68,13 +87,57 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Render not found' }, { status: 404 });
   }
 
-  // Terminal states — nothing more to do.
+  const pickingListStatus: PickingListStatus = render.picking_list_status ?? 'not_started';
+
+  // TTL guard: if the picking-list build has been "building" longer
+  // than PICKING_LIST_BUILD_TTL_MS without completing, the previous
+  // after() got killed. Mark it failed so polls stop and the rebuild
+  // button is the user's recovery path.
   if (
+    pickingListStatus === 'building' &&
+    render.completed_at &&
+    Date.now() - new Date(render.completed_at).getTime() > PICKING_LIST_BUILD_TTL_MS
+  ) {
+    console.warn(`[status] picking-list build TTL exceeded for ${render.id}, marking failed`);
+    await admin
+      .from('renders')
+      .update({ picking_list_status: 'failed' })
+      .eq('id', render.id);
+    return NextResponse.json({
+      status: render.status,
+      pickingListStatus: 'failed',
+      pickingListError: 'Build exceeded time budget — try the rebuild button.',
+    });
+  }
+
+  // Terminal states. The render lifecycle now has two terminal axes:
+  // status (image render) and picking_list_status (matching). The
+  // client should stop polling only when BOTH are terminal.
+  const renderTerminal =
     render.status === 'succeeded' ||
     render.status === 'failed' ||
-    render.status === 'cancelled'
-  ) {
-    return NextResponse.json({ status: render.status });
+    render.status === 'cancelled';
+  const pickingListTerminal =
+    pickingListStatus === 'ready' ||
+    pickingListStatus === 'failed' ||
+    // not_started is terminal if the render itself failed/cancelled —
+    // no point building a list for a render that doesn't exist.
+    (pickingListStatus === 'not_started' && render.status !== 'succeeded');
+  if (renderTerminal && pickingListTerminal) {
+    return NextResponse.json({
+      status: render.status,
+      pickingListStatus,
+    });
+  }
+
+  // Image already saved but matching still in progress. Just report
+  // current state — the after() worker on a prior poll is doing the
+  // build, no new work to kick off here.
+  if (render.output_url && pickingListStatus === 'building') {
+    return NextResponse.json({
+      status: render.status,
+      pickingListStatus,
+    });
   }
 
   // Running but no fal job — shouldn't happen; mark failed so we don't
@@ -82,9 +145,17 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!render.fal_request_id) {
     await admin
       .from('renders')
-      .update({ status: 'failed', completed_at: new Date().toISOString() })
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        picking_list_status: 'failed',
+      })
       .eq('id', render.id);
-    return NextResponse.json({ status: 'failed', error: 'No fal request id' });
+    return NextResponse.json({
+      status: 'failed',
+      pickingListStatus: 'failed',
+      error: 'No fal request id',
+    });
   }
 
   // Provider-aware: dispatches to flux-general or kontext-multi based
@@ -92,28 +163,40 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const fal = await checkActiveStatus(render.fal_request_id);
 
   if (fal.status === 'in_queue' || fal.status === 'in_progress') {
-    return NextResponse.json({ status: 'running', falStatus: fal.status });
+    return NextResponse.json({
+      status: 'running',
+      falStatus: fal.status,
+      pickingListStatus,
+    });
   }
 
   if (fal.status === 'failed') {
     await admin
       .from('renders')
-      .update({ status: 'failed', completed_at: new Date().toISOString() })
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        picking_list_status: 'failed',
+      })
       .eq('id', render.id);
-    return NextResponse.json({ status: 'failed' });
+    return NextResponse.json({ status: 'failed', pickingListStatus: 'failed' });
   }
 
-  // fal.status === 'completed' — finalise inline.
-  // Idempotency: if output_url is already set we've already finalised.
+  // fal.status === 'completed' — foreground: save image. Background
+  // (after()): build picking list. Idempotency: if output_url is
+  // already set we've already done the foreground; just report state.
   if (render.output_url) {
-    return NextResponse.json({ status: 'succeeded' });
+    return NextResponse.json({
+      status: 'succeeded',
+      pickingListStatus,
+    });
   }
 
   try {
     const result = await fetchActiveResult(render.fal_request_id);
     const outKey = `${user.id}/${render.id}.webp`;
 
-    // Step 1: download fal result, upload to storage. ~5s.
+    // Step 1 (foreground, ~5s): download fal result, upload to storage.
     const bytes = new Uint8Array(await (await fetch(result.imageUrl)).arrayBuffer());
     const upload = await admin.storage.from('renders').upload(outKey, bytes, {
       contentType: 'image/webp',
@@ -122,31 +205,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     });
     if (upload.error) throw new Error(upload.error.message);
 
-    // Step 2: LOOP BREAK. Mark the render as succeeded + persist
-    // output_url BEFORE running the slow picking-list build. If the
-    // function gets killed by maxDuration during the build, the next
-    // poll sees output_url is set, short-circuits, and the page shows
-    // the rendered image. We never get trapped in the same expensive
-    // finalise loop we had before.
+    // Step 2 (foreground): mark image-stage succeeded + flip
+    // picking_list_status to 'building'. The 'building' flag is what
+    // tells subsequent polls "image is ready, matching is in flight,
+    // keep polling but don't kick off another build."
     await admin
       .from('renders')
       .update({
         status: 'succeeded',
         output_url: outKey,
         completed_at: new Date().toISOString(),
+        picking_list_status: 'building',
       })
       .eq('id', render.id);
 
-    // Pull the palette off the style profile so buildPickingList can
-    // surface a Dulux wall-paint match at the front of the picking
-    // list. Optional — if the profile is missing or has no palette
-    // we just skip the wall-paint item.
-    //
-    // We ALSO reverse-lookup the palette id from the hex array so the
-    // candidate fetcher can pre-filter by palette_tags + room_tags
-    // (Round 17 pre-selection). Falls back gracefully when either
-    // signal is missing — the matcher then queries category-only as
-    // it did before.
+    // Pre-fetch palette + room context. We do this in the foreground
+    // because the rows are small and we'd rather fail fast (palette
+    // missing → wall-paint match skipped) than crash the background
+    // task. The after() worker then runs purely against in-memory
+    // values + fal CDN.
     let paletteHexes: string[] | undefined;
     let paletteId: string | undefined;
     if (render.style_profile_id) {
@@ -161,10 +238,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       paletteId = palette?.id;
     }
 
-    // Room type lives in rooms.analysis. Used to filter the picking
-    // list candidate pool to room-appropriate products (Beds in
-    // bedrooms, Dining Tables in dining rooms, etc.). The room slug
-    // shape matches palette.recommended_rooms (snake_case).
     let roomType: string | undefined;
     if (render.room_id) {
       const roomRes = await admin
@@ -183,47 +256,62 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       console.log(`[status] picking-list filter context: palette=${paletteId} room=${roomType}`);
     }
 
-    // Step 3: best-effort picking-list build. We have ~50s of remaining
-    // function budget after the upload. Density is tuned to fit; if
-    // anything pushes us over (slow Claude call, Florence-2 timeout)
-    // the render is already saved, picking_list stays null, and the
-    // /build-picking-list endpoint can be invoked later as a manual
-    // rebuild.
-    try {
-      const matchRes = await buildPickingList({
-        admin,
-        renderImageUrl: result.imageUrl,
-        paletteHexes,
-        paletteId,
-        roomType,
-      });
-      await admin
-        .from('renders')
-        .update({
-          picking_list: matchRes.items,
-          cost_estimate_aud: estimateTotal(matchRes.items),
-        })
-        .eq('id', render.id);
-      return NextResponse.json({
-        status: 'succeeded',
-        pickingListItems: matchRes.items.length,
-      });
-    } catch (err) {
-      console.error('[status] inline picking list failed', err);
-      return NextResponse.json({
-        status: 'succeeded',
-        pickingListItems: 0,
-        pickingListError: err instanceof Error ? err.message : 'build failed',
-      });
-    }
+    // Step 3 (BACKGROUND via after()): run Florence-2 + matcher +
+    // wall-paint. Runs after the response is flushed so the client
+    // sees the image-ready state immediately. Bounded by maxDuration
+    // (120s); recovery is the TTL guard at the top of the handler.
+    const renderImageUrl = result.imageUrl;
+    const renderId = render.id;
+    after(async () => {
+      try {
+        console.log(`[status:after] building picking list for ${renderId}`);
+        const matchRes = await buildPickingList({
+          admin,
+          renderImageUrl,
+          paletteHexes,
+          paletteId,
+          roomType,
+        });
+        await admin
+          .from('renders')
+          .update({
+            picking_list: matchRes.items,
+            cost_estimate_aud: estimateTotal(matchRes.items),
+            picking_list_status: 'ready',
+          })
+          .eq('id', renderId);
+        console.log(
+          `[status:after] picking list ready for ${renderId} — ${matchRes.items.length} items`,
+        );
+      } catch (err) {
+        console.error(`[status:after] picking list build failed for ${renderId}`, err);
+        await admin
+          .from('renders')
+          .update({ picking_list_status: 'failed' })
+          .eq('id', renderId);
+      }
+    });
+
+    return NextResponse.json({
+      status: 'succeeded',
+      pickingListStatus: 'building',
+    });
   } catch (err) {
     console.error('finalise render failed', err);
     await admin
       .from('renders')
-      .update({ status: 'failed', completed_at: new Date().toISOString() })
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        picking_list_status: 'failed',
+      })
       .eq('id', render.id);
     return NextResponse.json(
-      { status: 'failed', error: err instanceof Error ? err.message : 'Finalise failed' },
+      {
+        status: 'failed',
+        pickingListStatus: 'failed',
+        error: err instanceof Error ? err.message : 'Finalise failed',
+      },
       { status: 500 },
     );
   }

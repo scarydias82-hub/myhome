@@ -63,21 +63,23 @@ export interface MatchResult {
 
 const MATCHES_PER_ITEM = 5;
 // Each ranker call sends 1 crop + N candidate images to Claude Haiku.
-// Larger N = more variety per category but a larger Claude payload. 8 is
-// the sweet spot between variety and latency for the 60s background
-// build window.
-const CANDIDATES_PER_ITEM = 8;
+// 2026-05-22: 8 → 5. The smaller candidate pool is faster (~30% smaller
+// payload, faster ranker latency, less rate-limit pressure) without a
+// visible quality drop — Claude is already only returning the top 5
+// per box, so any 6th-or-later candidate it discarded was leftover
+// anyway. 5 keeps enough variety for the ranker to make a meaningful
+// choice while keeping latency tight.
+const CANDIDATES_PER_ITEM = 5;
 // Lowered from 0.005 → 0.002 (0.2% of image) so we catch decor like lamps,
 // cushions, vases. They're small in pixels but matter visually.
 const MIN_BOX_AREA_RATIO = 0.002;
-// Tuned to fit the 60s background build endpoint:
-//   - 12 boxes × validator (Haiku, ~3-5s parallel) = ~5s wall-clock
-//   - 12 boxes × ranker (Haiku with 8 candidate images, ~5-8s parallel) = ~8s wall-clock
-//   - plus Florence-2 detection (~10s) and image fetch (~3s)
-//   - total ~26-32s, well inside the 60s envelope
-// We previously had this at 15 with 12 candidates which routinely
-// pushed past 60s and trapped renders in "running" forever.
-const MAX_ITEMS = 12;
+// 2026-05-22: 12 → 8. Combined with progressive picking-list reveal in
+// the status route (after()-driven matching), the user sees the render
+// instantly and items populate as they land — they no longer feel the
+// matching wall-clock. 8 high-quality picks beat 15 mid-tier ones and
+// land in ~25-30s instead of 45-60s. Buffer is still +3 so detection
+// noise has headroom to drop.
+const MAX_ITEMS = 8;
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 // Concurrency caps for the Claude fan-outs. The 2026-05-22 eval surfaced
 // silent 429 rate-limit failures when validate (12+ boxes) and rank
@@ -182,20 +184,33 @@ export async function buildPickingList({
   const rawBoxes = await detectObjects(renderImageUrl);
   const sized = dedupeBoxes(rawBoxes)
     .filter((b) => (b.w * b.h) / (imageWidth * imageHeight) >= MIN_BOX_AREA_RATIO)
-    .slice(0, MAX_ITEMS + 3); // pull a couple extra — validator may drop some
+    .slice(0, MAX_ITEMS + 3); // pull a couple extra — buffer for drops
   console.log(
     `[matching] Florence-2 returned ${rawBoxes.length} boxes, ${sized.length} after dedupe+size-filter`,
   );
 
-  // Claude-vision sanity pass: drops architectural false-positives (open
-  // doorways read as "mirror", walls read as "art") and corrects mislabels
-  // (a bed Florence-2 calls "sofa", a side table called "ottoman").
-  const boxes = await validateBoxesWithClaude(imgBuf, sized, imageWidth, imageHeight);
-  console.log(
-    `[matching] validator kept ${boxes.length}/${sized.length} boxes (labels: ${boxes
-      .map((b) => b.label)
-      .join(', ')})`,
-  );
+  // 2026-05-22: validate pass disabled. The Claude-vision sanity check
+  // (drops "mirror" for open doorways, "art" for blank walls, etc.) cost
+  // ~6-10s of wall-clock with concurrency cap and recent eval runs
+  // showed it keeping 15/15 boxes — pure overhead. Flip ENABLE_VALIDATE
+  // back to true if Florence-2 starts mislabelling architectural
+  // elements as objects in the picking list. validateBoxesWithClaude()
+  // is kept in-file for fast re-enable.
+  const ENABLE_VALIDATE = false;
+  const boxes = ENABLE_VALIDATE
+    ? await validateBoxesWithClaude(imgBuf, sized, imageWidth, imageHeight)
+    : sized;
+  if (ENABLE_VALIDATE) {
+    console.log(
+      `[matching] validator kept ${boxes.length}/${sized.length} boxes (labels: ${boxes
+        .map((b) => b.label)
+        .join(', ')})`,
+    );
+  } else {
+    console.log(
+      `[matching] validator skipped — labels: ${boxes.map((b) => b.label).join(', ')}`,
+    );
+  }
 
   const settled = await settledWithConcurrency(boxes, RANK_CONCURRENCY, (box) =>
     buildPickingItem({ admin, imgBuf, imageWidth, imageHeight, box, paletteId, roomType }),
