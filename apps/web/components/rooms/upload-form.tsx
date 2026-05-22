@@ -121,7 +121,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           // the brief synthesiser intended.
           const recommended = listPalettes().find((p) => p.id === rec.palette_id);
           if (recommended) {
-            setDirection(recommended.timelessness < 7 ? '2026' : 'timeless');
+            setDirection(recommended.timelessness < 9 ? '2026' : 'timeless');
           }
         }
         setBriefPreFilled(true);
@@ -1030,8 +1030,8 @@ function Step3Style({
   trendPreviews: Map<string, TrendPreview>;
 }) {
   const all = listPalettes();
-  const trendForward = all.filter((p) => p.timelessness < 7);
-  const timeless = all.filter((p) => p.timelessness >= 7);
+  const trendForward = all.filter((p) => p.timelessness < 9);
+  const timeless = all.filter((p) => p.timelessness >= 9);
 
   return (
     <>

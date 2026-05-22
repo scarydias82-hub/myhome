@@ -667,7 +667,7 @@ function BriefReviewPlaceholder({
               </p>
             ) : null}
             {palette.timelessness !== undefined ? (
-              <Pill tone={palette.timelessness >= 7 ? 'olive' : 'clay'} size="sm" className="mt-2">
+              <Pill tone={palette.timelessness >= 9 ? 'olive' : 'clay'} size="sm" className="mt-2">
                 Timelessness {palette.timelessness}/10
               </Pill>
             ) : null}

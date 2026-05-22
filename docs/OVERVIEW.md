@@ -141,6 +141,20 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — Trend-vs-Tried-&-Tested threshold raised from
+  `timelessness >= 7` to `>= 9` across all 5 consumers
+  (`wizard-carousel-chooser.tsx`, `trends-section.tsx`,
+  `upload-form.tsx`, `project-wizard.tsx`, `brief-picker.tsx`).
+  Restores the 10 trend-forward / 6 timeless split the JSON's own
+  description claims; the previous threshold had drifted to 6 / 10
+  as palette `timelessness` scores were re-tuned upward over time.
+  Tried & Tested bucket now: Hamptons Heritage, Honest Essentials,
+  Australian Federation, Mid-Century Walnut, Coastal Whitewash,
+  Modernist Restraint. English Country (8) moves into 2026 trend
+  alongside Warm Grounded Earth, Misty Blue Neutral, Silhouette &
+  Pale. Data unchanged; threshold-only fix. The constant is still
+  duplicated locally in two files (not centralised) — left as-is
+  to keep the change scope-tight.
 - `2026-05-22` — **`public.users.first_name` column added.** Migration
   `20260522130000_users_first_name.sql` adds a nullable `first_name
   text` column and updates the `handle_new_user` auth trigger to

@@ -359,7 +359,7 @@ function BriefResponseCard({
                       <span
                         className={cn(
                           'rounded-pill px-2.5 py-1 font-mono text-[10px] uppercase tracking-eyebrow',
-                          palette.timelessness >= 7
+                          palette.timelessness >= 9
                             ? 'bg-olive/15 text-olive'
                             : 'bg-ink/[0.06] text-ink-soft',
                         )}

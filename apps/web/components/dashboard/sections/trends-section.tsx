@@ -11,7 +11,7 @@
 // intros tells the user clearly: "this is what's hot now" vs "this is
 // what doesn't date".
 //
-// Bucket logic: timelessness >= 7 → Timeless directions. < 7 → 2026.
+// Bucket logic: timelessness >= 9 → Timeless directions. < 9 → 2026.
 // Threshold tuned to split the current 16-palette set into 10 trend +
 // 6 timeless (matches the editorial intent of the Layer 3 expansion).
 //
@@ -61,7 +61,7 @@ interface TrendsSectionProps {
   palettes: DashboardPaletteCard[];
 }
 
-const TIMELESS_THRESHOLD = 7;
+const TIMELESS_THRESHOLD = 9;
 
 export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
   const trendForward = trends.filter((t) => (t.timelessness ?? 5) < TIMELESS_THRESHOLD);
@@ -83,7 +83,7 @@ export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
       {/* ② 2026 Design Trends carousel — what's hot this year, sourced
           from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU
           et al. Dedup-by-palette upstream means each trend-forward
-          palette (timelessness < 7) gets exactly one card here. */}
+          palette (timelessness < 9) gets exactly one card here. */}
       <TrendsCarousel
         anchor="trends-2026"
         title="2026 Design Trends"

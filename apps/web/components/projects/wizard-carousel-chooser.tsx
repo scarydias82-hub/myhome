@@ -10,16 +10,17 @@
 //                             User can scroll + override.
 //
 //   ② 2026 DESIGN TRENDS      optional, mutex with ③. The 10 trend-
-//                             forward palettes (timelessness < 7).
+//                             forward palettes (timelessness < 9).
 //                             Picking here syncs the palette in ①.
 //                             Greys ③ entirely.
 //
 //   ③ TRIED & TESTED          optional, mutex with ②. The 6 timeless
-//                             palettes (timelessness >= 7). Federation,
-//                             Hamptons Heritage, Mid-Century Walnut,
-//                             Coastal Whitewash, English Country,
-//                             Modernist Restraint. Picking here syncs
-//                             the palette in ① and greys ② entirely.
+//                             palettes (timelessness >= 9). Hamptons
+//                             Heritage, Honest Essentials, Australian
+//                             Federation, Mid-Century Walnut, Coastal
+//                             Whitewash, Modernist Restraint. Picking
+//                             here syncs the palette in ① and greys ②
+//                             entirely.
 //
 // The chooser's job is to LET THE USER LOCK IN a palette (+ optional
 // direction). It doesn't render. The render kickoff lives on the
@@ -63,7 +64,7 @@ interface ChooserProps {
   onSelectionChange: (selection: CarouselSelection) => void;
 }
 
-const TIMELESS_THRESHOLD = 7;
+const TIMELESS_THRESHOLD = 9;
 
 export function WizardCarouselChooser({
   briefResponse,
