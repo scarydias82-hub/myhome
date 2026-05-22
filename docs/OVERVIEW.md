@@ -25,6 +25,22 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Catalogue coverage audit + #162 memoed: heritage
+  retailer scrapers.** After the morning's vision_profile rebuild
+  (1,391 products rescored against all 56 palettes, palette_tags
+  re-derived in lock-step), an audit confirmed 0 palettes have zero
+  total product coverage but 14 sit under 50 total products — all
+  heritage / period leaning palettes added in `ef147c6` / `ade2461`
+  (victorian-refined, bauhaus-primary, french-provincial, cottage-
+  english, forest-green-classic, etc). 17 of 56 palettes have zero
+  sofas; same heritage cluster. Root cause: the scraper roster is
+  modern / contemporary biased (Globewest, Koala, Freedom, MCM House,
+  Coco Republic). #162 memos the next step — scrape 3-4 heritage-
+  leaning AU retailers (Provincial Home Living, Domayne, Fenton &
+  Fenton, an antique specialist) so the heritage palettes have real
+  catalogue rows to anchor renders. Until then the heritage palettes
+  remain shippable but will render with substitute pieces drawn
+  from neutral / warm-grounded-earth overlap.
 - `2026-05-22` — **#82 shipped — auto-stage every detected item on
   every render.** Closes the catalog-to-render fidelity gap so users
   see actual SKU pixels in the rendered scene by default, not Flux's
@@ -1752,6 +1768,52 @@ task IDs; reference them when briefing Claude Code.
   first-class render layer + Bunnings affiliate revenue.
 - **#64 — Freedom Furniture scraper.** Mass-market complement to the
   luxury catalogue.
+- **#162 — Heritage / period / colonial AU retailer scrapers.** Surfaced
+  by the 2026-05-22 vision_profile rebuild + audit: after rescoring
+  all 1,391 imageable products against the full 56-palette set, the
+  Layer 2/3 heritage palettes added on 2026-05-20 came back with weak
+  catalogue coverage. Current low-coverage palettes (all heritage /
+  period leaning):
+  - victorian-refined (3 total products, 0 sofas)
+  - bauhaus-primary (5 total, 0 sofas)
+  - french-provincial (6 total, 0 sofas)
+  - cottage-english (6 total, 0 sofas)
+  - forest-green-classic (7 total, 0 sofas)
+  - smoky-lavender (9 total, 0 sofas)
+  - aegean-blue-white (12 total, 0 sofas)
+  - hamptons-heritage (0 sofas — modern variant exists but classic
+    Hamptons not represented)
+  - australian-federation (0 sofas)
+  - english-country (0 sofas)
+  - art-deco-jewel (28 total, 0 sofas)
+  - sage-and-terracotta (29 total, 0 sofas)
+  Root cause: the current scraper roster is biased modern /
+  contemporary (Globewest, Koala, Freedom, MCM House, Coco Republic,
+  GlobeWest, Beacon Lighting, etc.) — they sell beautiful modern
+  pieces but their catalogues don't include period-correct upholstery,
+  classical mouldings, federation-era timber pieces, or colonial-
+  detail joinery. A user picking `victorian-refined` and uploading a
+  living room cannot get a render that anchors on real AU products
+  because we don't stock the catalogue rows.
+  Target retailers to scrape (3-4 chosen for first pass):
+  - **Provincial Home Living** — french provincial, english country,
+    cottage. Direct match for ~4 of the under-covered palettes.
+  - **Domayne** — partial heritage (Hamptons-leaning, traditional
+    upholstery, classic timber). Already a brand AU users recognise.
+  - **Fenton & Fenton** — eclectic / boho / heritage-with-colour. Hits
+    art-deco-jewel + soft-lilac + sunset-ochre tonally.
+  - **The Heritage Furniture Co. / Curio & Curio / Antique Outlet
+    AU** — antique / restoration / period. One specialist source for
+    federation + colonial pieces. Pick whichever has the most
+    consistent product image quality + URL stability for scraping.
+  After scrape: re-run `pnpm --filter @myhome/scraper run vision-profile`
+  (incremental — only new rows) + `redrive-tags`. Re-run the coverage
+  audit to confirm sofa-per-palette counts move into the workable
+  range (≥ 5 sofas) for the targeted heritage palettes.
+  Alternative path if scraping these retailers fails on TOS / image
+  quality / SKU instability: revisit "cull under-covered palettes
+  from the picker" (the option not taken on 2026-05-22). Memo
+  rationale stays in this section either way.
 
 ### 6.2 Design Studio mode
 - **#66 — Account type: Individual vs Studio.** Splits the sign-up form
