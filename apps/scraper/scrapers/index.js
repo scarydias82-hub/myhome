@@ -24,6 +24,7 @@ import { scrapeSignorino } from './signorino.js';
 import { scrapeAbiInteriors } from './abiInteriors.js';
 import { scrapeTileCloud } from './tileCloud.js';
 import { scrapeFantastic } from './fantastic.js';
+import { scrapeBrosa } from './brosa.js';
 
 const SCRAPERS = [
   { name: 'Poliform', run: scrapePoliform },
@@ -42,6 +43,7 @@ const SCRAPERS = [
   { name: 'ABI Interiors', run: scrapeAbiInteriors },
   { name: 'Tile Cloud', run: scrapeTileCloud },
   { name: 'Fantastic Furniture', run: scrapeFantastic },
+  { name: 'Brosa', run: scrapeBrosa },
 ];
 
 const started = Date.now();

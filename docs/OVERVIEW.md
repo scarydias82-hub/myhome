@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `5e0f72f` (will
+**Last verified:** 2026-05-23 · most recent material commit: `cc1db7a` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,25 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-23` — **#157 Brosa scraper shipped — best-effort, DataDome-
+  gated (mid tier).** brosa.com.au is fronted by DataDome bot
+  protection — curl + Chrome UA returns the JS-challenge interstitial
+  (403), and that includes the public sitemap. Vanilla Playwright with
+  a real Chromium TLS fingerprint is the lowest-friction attempt;
+  DataDome's JS challenge often auto-solves in a real browser context.
+  The scraper warms up the cookie via homepage visit, detects whether
+  the challenge persisted (signature: `captcha-delivery.com`), and
+  aborts cleanly with a readable error if so — Promise.allSettled in
+  the orchestrator records the failure without taking down the batch.
+  URL guess (`/buy/<slug>` from the pre-Kogan Brosa pattern, confirmed
+  to be a real path namespace via robots.txt `/br/buy/...` disallow
+  rules) — the homepage warm-up dumps any visible nav links to stdout
+  so a wrong guess is debuggable. Status will be confirmed on the first
+  live run. If DataDome blocks it consistently, the fallback is
+  `playwright-extra` + stealth plugin (heavier dep) or skip Brosa for
+  a comparable mid-tier substitute like Castlery AU. #155 Amart
+  Furniture deferred per owner — gap covered by Adairs / Beacon
+  Lighting / Carpet Court for non-sofa mid-tier categories.
 - `2026-05-22` — **#154 Fantastic Furniture scraper shipped (budget
   tier, first new retailer in the §6.11 rollout).** `apps/scraper/scrapers/fantastic.js`
   + wired into `index.js`, `package.json` (`pnpm scrape:fantastic`),
@@ -1905,20 +1924,20 @@ The plumbing landed in #153 (above). Remaining work, in priority order:
   Salesforce as initially guessed); Playwright + cookie warm-up +
   DOM/API dual extraction. 9 canonical categories. See changelog
   for the detail.
-- **#155 — Amart Furniture scraper.** Budget-mid tier ($700–$1,500
-  sofas). Similar shape to Fantastic.
+- **#155 — Amart Furniture scraper. DEFERRED.** Owner skipped on
+  2026-05-22. Budget-mid is currently uncovered (no scraped retailer
+  lands there); revisit if the picking-list builder shows a gap for
+  users at the $700–$1,500 sofa price point.
 - **#156 — IKEA AU scraper.** Budget tier ($500–$1,200). Expect
   aggressive bot protection — likely needs the Koala-style Cloudflare
   warm-up (homepage visit → cookie capture → API requests through
   Playwright's browser context).
-- **#157 — Brosa scraper.** Mid tier ($700–$1,500 designer-inspired).
-  Brosa entered voluntary administration in late 2024 and was acquired
-  by Kogan (KGN.AX) — brosa.com.au is back online under Kogan
-  ownership. Catalogue platform unknown; likely shares infrastructure
-  with kogan.com (which is a Magento / custom hybrid) but the storefront
-  is still branded as Brosa with its own URL space. Worth probing
-  shopify-style `/products.json` first and falling back to Playwright
-  if not.
+- **#157 — Brosa scraper. SHIPPED (best-effort, DataDome-gated).**
+  Mid tier ($700–$1,500 designer-inspired). Site is fronted by
+  DataDome bot protection. Scraper uses vanilla Playwright + homepage
+  warm-up + JS-challenge detection (aborts cleanly if challenge
+  persists). First live run will confirm whether DataDome lets us
+  through. See changelog for the fallback ladder.
 - **#158 — Kmart / Target accent scraper.** Ultra-budget tier.
   No serious sofa catalogue — scope to stools, lamps, small rugs,
   bedside tables. Different product mix to the rest of the segment

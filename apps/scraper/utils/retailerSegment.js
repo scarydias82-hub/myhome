@@ -47,6 +47,7 @@ const RETAILER_SEGMENT = {
   // budget-mid — none scraped yet
 
   // mid
+  'Brosa': 'mid',
   'Adairs': 'mid',
   'Beacon Lighting': 'mid',
   'Carpet Court': 'mid',
