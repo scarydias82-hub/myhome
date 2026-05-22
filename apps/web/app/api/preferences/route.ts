@@ -14,7 +14,9 @@
 //   }
 
 import { NextResponse, type NextRequest } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
 
@@ -85,8 +87,22 @@ export async function PUT(req: NextRequest) {
     updated_at: new Date().toISOString(),
   };
 
+  // Use the admin client + upsert pattern (same as /api/projects and
+  // /api/render). User-scoped client failed for first-time saves
+  // because:
+  //   (a) public.users has no UPDATE RLS policy for the preferences
+  //       column path — auditing + adding one is more invasive than
+  //       just using service-role scoped to user.id;
+  //   (b) the auth → public.users trigger occasionally misses on
+  //       signup, so the row might not exist yet. The upsert
+  //       guarantees the row exists before we UPDATE preferences.
+  const admin = createAdminClient() as unknown as SupabaseClient;
+  await admin
+    .from('users')
+    .upsert({ id: user.id, email: user.email ?? '' }, { onConflict: 'id' });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await (admin as any)
     .from('users')
     .update({ preferences })
     .eq('id', user.id);
