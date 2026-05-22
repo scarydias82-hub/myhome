@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `f51897a`.
+**Last verified:** 2026-05-22 · most recent material commit: `840884e`.
 
 > **Living-doc protocol.** Every commit that materially changes the
 > product, the system, or the business updates the relevant section of this
@@ -24,6 +24,25 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **60s Vercel timeout fix on Claude-vision routes (project
+  analyse + vision-board upload).** A user hit a 60s function timeout on
+  /api/projects/[id]/analyse with a small bathroom image. Root cause:
+  Anthropic SDK calls had no per-call timeout (SDK default is 600s) so
+  any single hung call could burn the entire 60s function budget, and
+  the default retry schedule [0/3s/8s/15s] reserved 26s for backoff
+  delays alone. The project-analyse route chains two Claude calls
+  sequentially (analyseRoom + synthesiseBrief), compounding the risk.
+  Same bug pattern in vision-board upload (single Sonnet 4.6 identify
+  call) so both were patched together. Changes: (1) lib/vision.ts —
+  analyseRoom gets timeout=25_000 + delaysMs=[0,2s,5s], stale comment
+  about "3 attempts at 0/2s/5s" corrected; (2) lib/brief/synthesiser.ts —
+  synthesiseBrief gets timeout=30_000 + delaysMs=[0,2s,5s];
+  (3) lib/vision-board-image-match.ts — identifyImage gets timeout=30_000
+  + delaysMs=[0,2s,5s]; (4) /api/projects/[id]/analyse and /api/vision-
+  boards/[id]/upload now log [project-analyse] / [vision-board-upload]
+  timing breakdowns (download / vision / synth / total) so the next
+  failure tells us which stage ate the budget. Typical wall-clock after
+  fix: ~20-25s on the project analyse route (was unbounded).
 - `2026-05-22` — **Render page IA — extended set inline expansion
   (Phase 3 of 3).** Closes the carousels-first rework. Each
   `<CategoryCarousel>` now exposes a "See more {category}" affordance
