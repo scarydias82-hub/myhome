@@ -25,6 +25,23 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#163 shipped — never-empty Complete-the-Look
+  carousels.** Post-render shopping carousels (the per-category grids
+  alongside the hotspot picking list) used to filter out categories
+  with zero palette+room+style matches — so heritage palettes (#162)
+  or thin categories like curtains showed gaps. Added a user-signal
+  fallback tier on top of the existing 3-tier filter: products the
+  user has wishlisted in that category, plus catalogue rows ranked by
+  the prefs-vision-fit scorer (#156) against current
+  `users.preferences.tags`. Tiers 1-3 also tightened to drop into the
+  fallback as soon as palette coverage is below `perCategory` (vs
+  half-filling). Empty-category drop at the end of
+  `fetchCompleteTheLook` removed — every category in
+  `ROOM_CATEGORY_MANIFEST[room_type]` is now in the response with a
+  `source: 'palette' | 'mixed' | 'user_signal' | 'empty'` provenance
+  for future UI labelling. Carousels always have a story regardless
+  of palette coverage. Wires: `/renders/[id]/page.tsx` now loads
+  `users.preferences.tags` and passes it + `user.id` to the fetch.
 - `2026-05-22` — **Catalogue coverage audit + #162 memoed: heritage
   retailer scrapers.** After the morning's vision_profile rebuild
   (1,391 products rescored against all 56 palettes, palette_tags
@@ -1888,6 +1905,26 @@ Stage 1 is live; the rest is sequenced.
 - **#81 — Stage 3c: The Rug Establishment + Choices Flooring.** Rugs
   + hard flooring. Sandstone-2026 palette especially calls for oak +
   herringbone + travertine.
+- **#163 — Stage 4b: never-empty Complete-the-Look carousels.
+  SHIPPED 2026-05-22.** `fetchCompleteTheLook` in
+  `lib/completeTheLook.ts` had 3 tiers (palette+room+style →
+  palette+room → category+room) and dropped empty categories at the
+  end — so heritage palettes with thin catalogue coverage (#162) or
+  obscure categories (curtains pre-Spotlight scrape) showed nothing
+  for those rows. Added tier 4: user-signal fallback. Combines (a)
+  the user's wishlist intersected with the category — strongest
+  personal signal — and (b) catalogue rows scored by the
+  prefs-vision-fit ranker (#156) against the user's current
+  `users.preferences.tags`. Tiers 1-3 hold a stricter ≥ perCategory
+  threshold so any thin palette result drops to the supplement
+  rather than half-filling the row. Empty-category drop at the end
+  removed — every category in `ROOM_CATEGORY_MANIFEST[room_type]`
+  now appears in the response, with a `source: 'palette' | 'mixed' |
+  'user_signal' | 'empty'` provenance so the UI can label fallback
+  origin if desired. Wishlist loaded once per render via a single
+  foreign-table embed query; prefs ranker re-uses the deterministic
+  scorer from #156. Carousels now always have a story to tell, even
+  when the palette is thin.
 - **#82 — Stage 4: "Visualise this whole room" + emotional UX.
   SHIPPED 2026-05-22.** New module `lib/auto-stage.ts` hooks into
   the `after()` block in `/api/renders/[id]/status` right after the
