@@ -146,8 +146,18 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login?next=/dashboard');
 
+  // Prefer the explicit first_name on public.users; fall back to a
+  // heuristic derived from the email prefix for accounts that haven't
+  // had one captured yet.
+  const { data: profile } = await supabase
+    .from('users')
+    .select('first_name')
+    .eq('id', user.id)
+    .maybeSingle<{ first_name: string | null }>();
+
   const emailPrefix = user.email?.split('@')[0] ?? 'there';
-  const firstName = capitalise(emailPrefix.split(/[._-]/)[0] ?? emailPrefix);
+  const fallbackFirstName = capitalise(emailPrefix.split(/[._-]/)[0] ?? emailPrefix);
+  const firstName = profile?.first_name?.trim() || fallbackFirstName;
   const initials = firstName.slice(0, 2).toUpperCase();
 
   const admin = createAdminClient();

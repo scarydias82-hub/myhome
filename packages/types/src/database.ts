@@ -12,17 +12,20 @@ export interface Database {
         Row: {
           id: string;
           email: string;
+          first_name: string | null;
           created_at: string;
           pinterest_connected_at: string | null;
         };
         Insert: {
           id: string;
           email: string;
+          first_name?: string | null;
           created_at?: string;
           pinterest_connected_at?: string | null;
         };
         Update: {
           email?: string;
+          first_name?: string | null;
           pinterest_connected_at?: string | null;
         };
       };

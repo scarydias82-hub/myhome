@@ -84,6 +84,17 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — **`public.users.first_name` column added.** Migration
+  `20260522130000_users_first_name.sql` adds a nullable `first_name
+  text` column and updates the `handle_new_user` auth trigger to
+  populate it from `raw_user_meta_data->>'first_name'` on signup
+  (future-proofs the signup form when it starts capturing names).
+  Dashboard's `firstName` derivation now prefers
+  `public.users.first_name` and falls back to the existing
+  email-prefix heuristic when null — single source of truth feeds
+  both `TopNav` and `HeroGreeting`. Backfill of existing closed-beta
+  accounts runs separately via Supabase Studio SQL editor to keep
+  beta-tester emails out of source control.
 - `2026-05-22` — iOS PWA status bar flipped to `black-translucent`
   (was `default`). Content now extends edge-to-edge under the status
   bar. Status bar icons render white over our cream background —
