@@ -295,6 +295,22 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — **New `/palettes` page + desktop nav "Discover" →
+  "Palettes" rename.** The desktop TopNav's "Discover" link pointed
+  at `/dashboard` — a dead anchor for users already on /dashboard.
+  Renamed to "Palettes" and retargeted to a new `/palettes` page
+  that renders all 16 colour palettes in a responsive grid (sorted
+  timelessness-desc so Hamptons / Federation / etc. lead). Auth-
+  gated like /catalogue. Extracted the existing
+  `PaletteSwatchCard` from `trends-section.tsx` to
+  `components/palettes/palette-swatch-card.tsx` so dashboard
+  carousel and the new page share one card visually. Also
+  retargeted the dashboard "Colour palettes → See all →" link
+  from `/dashboard#palettes` (self-anchor, did nothing) to
+  `/palettes`. Added `app/palettes/loading.tsx` for snappiness.
+  NOTE: per-page internal navs (`/catalogue`, `/projects`,
+  `/rooms/new`, `/privacy`) don't yet include a "Palettes" link —
+  consistency pass not in scope here.
 - `2026-05-22` — **Fix: "Add to vision board" was silently broken
   on every product / palette / trend card.** The
   `<AddToVisionBoardButton>` prop was named `ref`, which is a

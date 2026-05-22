@@ -33,7 +33,7 @@ export function TopNav({ initials, fullName }: TopNavProps) {
         </Link>
 
         <nav className="hidden gap-7 md:flex">
-          <NavLink href="/dashboard">Discover</NavLink>
+          <NavLink href="/palettes">Palettes</NavLink>
           <NavLink href="/projects">Projects</NavLink>
           <NavLink href="/catalogue">Catalogue</NavLink>
         </nav>
