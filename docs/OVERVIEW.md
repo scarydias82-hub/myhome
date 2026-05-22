@@ -25,6 +25,18 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#164 shipped — coerce legacy accounts to set
+  preferences before dismissing the modal.** Audit found 4 of 6
+  closed-beta accounts had `preferences IS NULL` (created before
+  #153 shipped, never onboarded). Their renders were
+  preference-blind: #156 ranker no-op, #163 fallback only hit the
+  wishlist half. "Skip for now" removed from the first-time
+  `PreferencesModal`. Backdrop dismiss + Esc already disabled in
+  first-time mode, so legacy accounts now must pick ≥ 1 tag to
+  proceed. Edit mode (preferences already set) keeps the Cancel
+  button — saved users opening prefs to look aren't trapped.
+  Closed-beta-scoped coercion; comment in modal file flags the
+  decision point for when public signups open.
 - `2026-05-22` — **#163 shipped — never-empty Complete-the-Look
   carousels.** Post-render shopping carousels (the per-category grids
   alongside the hotspot picking list) used to filter out categories
@@ -2248,6 +2260,24 @@ reinforces "your taste is the foundation of every render".
   inherited tags by re-firing recommend without overrideTags. The
   per-render override lives in React state only — never persisted.
 
+- **#164 — Phase E: closed-beta coercion of legacy accounts.
+  SHIPPED 2026-05-22.** Audit on 2026-05-22 confirmed 4 of 6
+  closed-beta accounts had `preferences IS NULL` — pre-existing
+  users who never had the chance to onboard because #153 shipped
+  after their signup. Their renders were preference-blind: #156
+  ranker no-op (empty briefTags), #163 carousel fallback hit only
+  the wishlist half. To make today's preference-aware paths
+  actually fire for them, the "Skip for now" affordance on the
+  first-time `PreferencesModal` was removed. With closed-beta
+  locked, the only users hitting `isFirstTime=true` are these
+  legacy accounts; they now MUST pick at least one tag before
+  dismissing. Backdrop dismiss + Esc were already disabled in
+  first-time mode. Edit mode (saved users) keeps the Cancel button
+  so users opening their prefs to look but not change are not
+  trapped. When public signups open, revisit whether the no-skip
+  behaviour stays or becomes a softer "Remind me later" — comment
+  in `components/dashboard/preferences-modal.tsx` flags the
+  decision point.
 - **#157 — Phase D: edge cases + telemetry.** Closed-beta users with
   no `preferences` yet trigger the onboarding modal next login.
   Existing projects with existing briefs are untouched. Log frequency
