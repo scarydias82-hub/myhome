@@ -1,12 +1,20 @@
 'use client';
 
 // Preferences modal — captures the canonical user-level taste signal
-// (§6.11 Phase A, #153). Two callers:
+// (§6.11 Phase A, #153). Three callers:
 //
 //   1. Onboarding — dashboard renders this with open=true and
-//      isFirstTime=true when users.preferences IS NULL. Modal can't be
-//      dismissed by clicking the backdrop on first run; user has to
-//      either complete or hit "Skip for now".
+//      isFirstTime=true when users.preferences IS NULL. Modal cannot
+//      be dismissed by clicking the backdrop, hitting Esc, or any
+//      "Skip" affordance — the user MUST pick at least one tag and
+//      save. The "Skip for now" affordance was removed on
+//      2026-05-22 (#164) as a one-time soft-launch coercion: with
+//      closed-beta locked, the only users hitting this modal are
+//      legacy accounts created before #153 shipped, and we want
+//      their preference-aware code paths (#156 ranker + #163
+//      carousel fallback) to actually start firing for them. When
+//      public signups open, revisit whether the no-skip behaviour
+//      should stay or be replaced with a softer "Remind me later".
 //   2. Edit — dashboard's HeroGreeting renders this with
 //      open=true (controlled) when the user clicks the "Edit →" pill
 //      in the taste-signal chip row. Standard modal — backdrop
@@ -131,12 +139,6 @@ export function PreferencesModal({
     }
   }
 
-  function skipForNow() {
-    // First-time path: leaves users.preferences null. Dashboard will
-    // re-prompt on next login. Lower-friction than forcing completion.
-    onClose();
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center"
@@ -175,7 +177,7 @@ export function PreferencesModal({
             {isPerRender
               ? "Pick the tags you want the designer to read for this image only. Your saved preferences on the dashboard won't change — to update those, edit them from the dashboard."
               : isFirstTime
-                ? 'Pick the tags that resonate. Your preferences become the foundation of every render and recommendation — you can change them anytime from the dashboard, and override them per project or per photo.'
+                ? 'Pick the tags that resonate. Your preferences become the foundation of every render and recommendation. You can change them anytime from the dashboard, and override them per project or per photo — but pick at least one now so the next render is genuinely yours.'
                 : 'Your preferences are inherited by new projects and by photos uploaded outside a project. Changes here don’t touch existing projects (those keep their own brief).'}
           </p>
         </header>
@@ -204,16 +206,15 @@ export function PreferencesModal({
             {selected.size} tag{selected.size === 1 ? '' : 's'} selected
           </p>
           <div className="flex flex-wrap gap-2">
-            {isFirstTime ? (
-              <button
-                type="button"
-                onClick={skipForNow}
-                disabled={busy}
-                className="rounded-pill border border-ink/15 px-4 py-2 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink disabled:opacity-40"
-              >
-                Skip for now
-              </button>
-            ) : (
+            {/* #164 — "Skip for now" removed on first-time onboarding.
+                Closed-beta is locked, and the only users hitting this
+                modal are legacy accounts created before #153 — we
+                want their preference-aware paths (#156 + #163) to
+                actually start firing. They must pick at least one tag
+                to dismiss the modal. Edit mode (isFirstTime=false)
+                keeps the Cancel button so saved users aren't trapped
+                when they open prefs to look but not change anything. */}
+            {!isFirstTime ? (
               <button
                 type="button"
                 onClick={onClose}
@@ -222,7 +223,7 @@ export function PreferencesModal({
               >
                 Cancel
               </button>
-            )}
+            ) : null}
             <button
               type="button"
               onClick={save}
