@@ -482,39 +482,48 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           make — auto-confirm via #101 handled most cases silently
           already. This pulls the surface entirely. */}
 
-      {analysisConfirmed ? (
-        <>
-          <DesignerSummaryCard
-            analysis={analysis}
-            briefPreFilled={briefPreFilled}
+      {/* DesignerSummaryCard only renders when we have analysis data
+          (Phase 1 done). Commentary inside the card progressively
+          reveals — room read first, then the "why" once Phase 2 is
+          done. */}
+      {analysisConfirmed && analysis ? (
+        <DesignerSummaryCard
+          analysis={analysis}
+          briefPreFilled={briefPreFilled}
+          paletteId={paletteId}
+          direction={direction}
+          reasoning={recommendationReasoning}
+        />
+      ) : null}
+
+      {/* Carousels mount as soon as analysis kicks off — not waiting
+          for Phase 1 to complete. Single carousel overlay spans
+          BOTH phases (analysing + recommending) so the user sees
+          the destination they're heading toward while Claude works.
+          The relative wrapper anchors the overlay to this region
+          only — photo overlay above stays in place during Phase 1,
+          photo becomes interactive again in Phase 2. */}
+      {analysing || analysisConfirmed ? (
+        <div className="relative">
+          <Step3Style
             paletteId={paletteId}
+            onPaletteChange={setPaletteId}
             direction={direction}
-            reasoning={recommendationReasoning}
+            onDirectionChange={(next) => {
+              // Mutex behaviour: setting direction='2026' clears any
+              // previous timeless pick (and vice versa). Setting to
+              // null clears either. The paletteId is updated by the
+              // caller via onPaletteChange when a direction card is
+              // tapped — those carousels are palette-backed, so
+              // picking a direction card IS picking that palette.
+              setDirection(next);
+            }}
+            trendPreviews={trendPreviews}
           />
-          {/* Carousels + the Phase-2 recommendation overlay. The
-              relative wrapper anchors the overlay to JUST this
-              region (not the whole page) so the photo, designer-
-              summary, and CTAs all stay interactive while Claude
-              picks a direction. */}
-          <div className="relative">
-            <Step3Style
-              paletteId={paletteId}
-              onPaletteChange={setPaletteId}
-              direction={direction}
-              onDirectionChange={(next) => {
-                // Mutex behaviour: setting direction='2026' clears any
-                // previous timeless pick (and vice versa). Setting to
-                // null clears either. The paletteId is updated by the
-                // caller via onPaletteChange when a direction card is
-                // tapped — those carousels are palette-backed, so
-                // picking a direction card IS picking that palette.
-                setDirection(next);
-              }}
-              trendPreviews={trendPreviews}
-            />
-            {recommending ? <CarouselRecommendingOverlay /> : null}
-          </div>
-        </>
+          {analysing || recommending ? (
+            <CarouselRecommendingOverlay phase={analysing ? 'analysing' : 'recommending'} />
+          ) : null}
+        </div>
       ) : null}
 
       {/* Step 5 hero products picker removed in #128. The auto-feature
@@ -750,11 +759,24 @@ function DesignerSummaryCard({
           : 'Room read pending'}
       </p>
 
-      {/* Recommendation block — only when there's a brief. Otherwise
-          the room read alone tells the user "the designer saw your
-          space; now pick a palette below." */}
+      {/* Commentary — Claude's punchy "why this direction" reasoning.
+          Sits directly under the room read so the editorial logic
+          reads as one breath: ROOM → WHY → WHAT. When the
+          recommendation hasn't landed yet (Phase 2 still running)
+          we show a placeholder line so the layout doesn't jump. */}
+      <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-ink md:text-[15px]">
+        {reasoning ?? (
+          <span className="text-ink-faint italic">
+            Designer&rsquo;s reasoning is coming together — watch the carousels below.
+          </span>
+        )}
+      </p>
+
+      {/* Recommendation block — once the synth has settled. Palette
+          name + direction label sit alongside the swatch chip so
+          the user maps "name" to "actual colours" instantly. */}
       {briefPreFilled && palette ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="mt-5 grid gap-4 border-t border-ink/[0.06] pt-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
               Recommended for this room
@@ -771,17 +793,8 @@ function DesignerSummaryCard({
                 </>
               ) : null}
             </p>
-            {/* Designer's reasoning — Claude's 1-2 sentence "why this
-                palette for this room." Only when present (room-
-                grounded recommendation #142). */}
-            {reasoning ? (
-              <p className="mt-2 italic font-dmsans text-[12px] leading-relaxed text-ink-soft/85 md:text-[13px]">
-                &ldquo;{reasoning}&rdquo;
-              </p>
-            ) : null}
           </div>
-          {/* Swatch chip — visual anchor for the recommendation so
-              the user maps "name" to "actual colours" instantly. */}
+          {/* Swatch chip — full palette in a pill. */}
           <div className="flex h-10 w-40 shrink-0 overflow-hidden rounded-full border border-ink/10 md:w-32">
             {paletteSwatch(palette).slice(0, 5).map((hex, i) => (
               <div key={`${hex}-${i}`} className="flex-1" style={{ backgroundColor: hex }} />
@@ -834,18 +847,34 @@ function AnalysingPlaceholder() {
   );
 }
 
-// CarouselRecommendingOverlay (#143) — sits over the 3 carousels
-// while /api/recommend runs. The vision overlay on the photo has
-// already cleared by this point, so the user sees the carousels
-// mount with their default selection, then this overlay slides
-// over them with copy that explains what Claude's doing.
+// CarouselRecommendingOverlay (#143/#144) — sits over the 3
+// carousels across BOTH phases of the photo flow:
+//   phase='analysing'    → vision is still running; the carousels
+//                          are visible as the upcoming decision but
+//                          locked while Claude reads the room
+//   phase='recommending' → vision is done; synthesiser is picking
+//                          a palette + direction
 //
-// Visual treatment mirrors the photo overlay (ink/55 + backdrop-blur)
-// so the two staged overlays read as one design language. Centered
-// content with a pulse bar at the bottom. pointer-events-auto blocks
-// taps so users don't pick a palette mid-thought — once Claude
-// settles, the overlay dismisses and the pre-selection appears.
-function CarouselRecommendingOverlay() {
+// Same visual treatment across both phases — only the headline copy
+// shifts — so the user sees one continuous "Claude is working"
+// overlay rather than two disjoint spinners. ink/55 + backdrop-blur
+// mirrors the photo overlay above so both surfaces read as one
+// design language.
+function CarouselRecommendingOverlay({
+  phase,
+}: {
+  phase: 'analysing' | 'recommending';
+}) {
+  // Headline stays consistent across both phases ("design direction"
+  // is the carousel area's job no matter which API call is running).
+  // The step indicator + sub-line tell the user where we are in the
+  // pipeline so the wait feels like progress, not a single long pause.
+  const step = phase === 'analysing' ? 1 : 2;
+  const sub =
+    phase === 'analysing'
+      ? 'Reading the room — light, flooring, architecture, existing colours. About 8 seconds.'
+      : 'Picking the palette and trend that fit. About 10 seconds.';
+
   return (
     <div
       className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-ink/55 p-6 text-center backdrop-blur-sm"
@@ -855,15 +884,35 @@ function CarouselRecommendingOverlay() {
       <div className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream/40 bg-cream/10 backdrop-blur">
         <span aria-hidden className="animate-pulse text-cream text-[20px]">✦</span>
       </div>
-      <p className="mt-4 font-display text-h3 leading-tight text-cream md:text-[24px]">
-        Claude is picking a direction for your room…
+      <p className="mt-4 font-dmmono text-[10px] uppercase tracking-eyebrow text-cream/75">
+        Step {step} of 2
+      </p>
+      <p className="mt-2 font-display text-h3 leading-tight text-cream md:text-[24px]">
+        Claude is thinking about your design direction…
       </p>
       <p className="mt-2 max-w-sm font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
-        Weighing your preferences against the room&rsquo;s light, flooring and architecture.
-        About 10 seconds.
+        {sub}
       </p>
-      <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-cream/20">
-        <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
+      {/* Two-segment progress bar — first segment fills during
+          analysing, second during recommending. Gives the user a
+          visual sense of pipeline progress. */}
+      <div className="mt-5 flex w-44 gap-1.5">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-cream/20">
+          <div
+            className={cn(
+              'h-full rounded-full',
+              phase === 'analysing' ? 'w-1/2 animate-pulse bg-clay' : 'w-full bg-cream/70',
+            )}
+          />
+        </div>
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-cream/20">
+          <div
+            className={cn(
+              'h-full rounded-full',
+              phase === 'recommending' ? 'w-1/2 animate-pulse bg-clay' : 'w-0',
+            )}
+          />
+        </div>
       </div>
     </div>
   );
