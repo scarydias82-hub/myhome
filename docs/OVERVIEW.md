@@ -25,6 +25,25 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#82 shipped — auto-stage every detected item on
+  every render.** Closes the catalog-to-render fidelity gap so users
+  see actual SKU pixels in the rendered scene by default, not Flux's
+  generic interpretation of "boucle sofa". New module
+  `apps/web/lib/auto-stage.ts` hooks into the `after()` block in
+  `/api/renders/[id]/status` right after the picking list flips to
+  'ready'. For every detected non-paint item with a top match that
+  has a `productId` + `imageUrl`, builds a `MultiStageItem` and
+  calls the existing `stageMultipleProducts()` pipeline (background-
+  remove via birefnet → composite → Flux Kontext harmonise). Caps
+  at 4 items, persists as a new `multi_staged` revision so the
+  user sees the staged composite as the canonical view but can
+  revert to base render via the revision strip in one click. Label
+  `+ N products (auto)` differentiates from user-initiated
+  multi-stages. Failures swallowed — base render + picking list
+  still succeed. Kill-switch: `AUTO_STAGE_ALL=false`. Renders now
+  show real product imagery by default, ~20-30s after the picking
+  list lands (progressive enhancement layered on top of the
+  existing pipeline; no breaking changes).
 - `2026-05-22` — **§6.12 memoed: Personalised product universe
   (per-user curated catalogue) + tasks #158-#161.** Builds on #156:
   every product now carries `vision_profile` and every user carries
@@ -1807,10 +1826,24 @@ Stage 1 is live; the rest is sequenced.
 - **#81 — Stage 3c: The Rug Establishment + Choices Flooring.** Rugs
   + hard flooring. Sandstone-2026 palette especially calls for oak +
   herringbone + travertine.
-- **#82 — Stage 4: "Visualise this whole room" + emotional UX.**
-  After the picking list lands, auto-stage the top match for every
-  detected item into one composite Flux Pro Fill call. This is the
-  emotional commitment moment.
+- **#82 — Stage 4: "Visualise this whole room" + emotional UX.
+  SHIPPED 2026-05-22.** New module `lib/auto-stage.ts` hooks into
+  the `after()` block in `/api/renders/[id]/status` right after the
+  picking list flips to 'ready'. For every detected non-paint item
+  with a top match that has a `productId` + `imageUrl`, build a
+  `MultiStageItem` and call the existing
+  `stageMultipleProducts()` pipeline (background-remove via
+  birefnet → composite → harmonise via Flux Kontext). Cap at
+  4 items (matches the manual `/api/stage-multi` MAX_ITEMS so
+  composite cost stays bounded). Persist as a new `multi_staged`
+  revision and flip `renders.active_revision_id` so the user sees
+  the staged composite by default. Label `+ N products (auto)`
+  distinguishes auto-stages from user-initiated multi-stages in
+  the revision strip so reverting is one click. Failures are
+  logged + swallowed — base render + picking list still succeed.
+  Kill-switch: `AUTO_STAGE_ALL=false` env var. Closes the
+  catalog-to-render fidelity gap (#73 SHIPPED the manual path; #82
+  makes real SKU pixels the default surface).
 - (Stage 5 = warm-lead retailer plumbing — covered by existing
   pending tasks #52 + #53.)
 

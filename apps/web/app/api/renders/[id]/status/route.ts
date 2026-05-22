@@ -36,6 +36,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { checkActiveStatus, fetchActiveResult } from '@/lib/fal';
 import { buildPickingList } from '@/lib/matching';
 import { findPaletteByHexes } from '@/lib/palettes';
+import { autoStageAfterPickingList } from '@/lib/auto-stage';
 
 export const runtime = 'nodejs';
 // Foreground (image save) is ~5s; after() (matching) is ~25-30s. 120s
@@ -64,6 +65,9 @@ interface RenderRow {
   completed_at: string | null;
   style_profile_id: string | null;
   room_id: string | null;
+  /** Needed by the auto-stage hook (#82) so the staged_images row +
+   *  multi_staged revision land on the right project. */
+  project_id: string | null;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -78,7 +82,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const renderRes = await admin
     .from('renders')
     .select(
-      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id',
+      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id',
     )
     .eq('id', id)
     .single();
@@ -239,18 +243,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     }
 
     let roomType: string | undefined;
+    // photo_url is the storage key inside the rooms bucket — needed by
+    // the auto-stage hook (#82) to download the original room photo
+    // for compositing. We fetch it here in the foreground so the
+    // after() worker doesn't need a second round-trip.
+    let roomPhotoKey: string | null = null;
     if (render.room_id) {
       const roomRes = await admin
         .from('rooms')
-        .select('analysis, room_type')
+        .select('analysis, room_type, photo_url')
         .eq('id', render.room_id)
         .single();
       const room = roomRes.data as {
         analysis: { room_type?: string | null } | null;
         room_type: string | null;
+        photo_url: string | null;
       } | null;
       const rawRoomType = room?.analysis?.room_type ?? room?.room_type ?? undefined;
       if (rawRoomType) roomType = rawRoomType.toLowerCase().replace(/\s+/g, '_');
+      roomPhotoKey = room?.photo_url ?? null;
     }
     if (paletteId || roomType) {
       console.log(`[status] picking-list filter context: palette=${paletteId} room=${roomType}`);
@@ -262,6 +273,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     // (120s); recovery is the TTL guard at the top of the handler.
     const renderImageUrl = result.imageUrl;
     const renderId = render.id;
+    const userId = user.id;
+    const projectId = render.project_id;
     after(async () => {
       try {
         console.log(`[status:after] building picking list for ${renderId}`);
@@ -283,6 +296,32 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         console.log(
           `[status:after] picking list ready for ${renderId} — ${matchRes.items.length} items`,
         );
+
+        // #82 — auto-stage the top-matched SKU into the rendered scene
+        // for every detected non-paint item. Runs AFTER picking_list
+        // flips to 'ready' so the user sees the picking list at the
+        // earliest opportunity; the staged composite then arrives as
+        // a new active revision (progressive enhancement). Failures
+        // are logged + swallowed — base render + picking list still
+        // succeed. Kill-switch: AUTO_STAGE_ALL=false env var.
+        try {
+          const autoStageRes = await autoStageAfterPickingList({
+            admin,
+            renderId,
+            userId,
+            roomPhotoKey,
+            projectId,
+            pickingListItems: matchRes.items,
+          });
+          console.log(
+            `[status:after] auto-stage for ${renderId}: staged=${autoStageRes.staged} skipped=${autoStageRes.skipped}${autoStageRes.reason ? ` (${autoStageRes.reason})` : ''}`,
+          );
+        } catch (autoErr) {
+          console.warn(
+            `[status:after] auto-stage failed for ${renderId} — base render + picking list still succeeded`,
+            autoErr instanceof Error ? autoErr.message : autoErr,
+          );
+        }
       } catch (err) {
         console.error(`[status:after] picking list build failed for ${renderId}`, err);
         await admin
