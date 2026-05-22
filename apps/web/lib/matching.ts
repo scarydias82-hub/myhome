@@ -1,24 +1,32 @@
-// End-to-end product matching pipeline. We replaced the CLIP+pgvector
-// matching step with a Claude-vision ranking step — HF's serverless
-// inference for CLIP is unreliable in production and the native ONNX
-// runtime won't load on Vercel. Trade-off: ~3-5s per match call versus
-// ~10s of HF cold start, plus Claude can reason about *why* a product
-// matches (silhouette, palette, material) which the embedding step
-// couldn't.
+// End-to-end product matching pipeline.
 //
-// Flow:
+// Flow (post-#146):
 //   1. Detect bounding boxes in the rendered image (Florence-2 via fal.ai)
-//   2. For each box, pull the top N candidate products from the catalogue
-//      by category
-//   3. Ask Claude Haiku to rank those candidates by visual similarity to
-//      the cropped item from the render
+//   2. For each box, embed the cropped region via CLIP (HF Inference on
+//      Vercel via @/lib/embeddings; falls through to LOCAL onnxruntime in
+//      dev where the native binary loads) and call match_products_filtered
+//      RPC — palette_tags + room_tags pre-filter, HNSW cosine pre-rank,
+//      returns the top CANDIDATES_PER_ITEM visually-similar candidates.
+//      If embedding fails (no HF_TOKEN, transient outage), gracefully
+//      falls back to the legacy palette_tags + price-desc query.
+//   3. Ask Claude Haiku to rank those CLIP-pre-narrowed candidates by
+//      visual similarity to the cropped item from the render
 //   4. Return the picking list
+//
+// History: this file originally replaced a pure CLIP+pgvector matcher with
+// Claude-vision ranking because HF Inference cold-started for >10s and
+// onnxruntime wouldn't load on Vercel. #146 brings CLIP back as a pre-rank
+// filter (not as the final ranker), getting the candidate-quality win
+// without the cold-start tax — embedding the crop is one HF call, the
+// catalogue embeddings are pre-computed offline by apps/scraper/scripts/
+// embed.js, and the pgvector HNSW index does the cosine sort in-DB.
 
 import sharp from 'sharp';
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { detectObjects, dedupeBoxes, categoryForLabel, type Bbox } from '@/lib/detection';
 import { withAnthropicRetry } from '@/lib/anthropic-retry';
+import { embedImage } from '@/lib/embeddings';
 
 export interface PickingMatch {
   productId: string;
@@ -491,7 +499,7 @@ async function buildPickingItem({
     .jpeg({ quality: 85 })
     .toBuffer();
 
-  const candidates = await fetchCandidates({ admin, category, paletteId, roomType });
+  const candidates = await fetchCandidates({ admin, category, paletteId, roomType, cropBuf });
   const matches = await rankWithClaude(cropBuf, candidates);
 
   // Items where the catalogue has no SKUs in the detected category are
@@ -550,30 +558,66 @@ async function fetchCandidates({
   category,
   paletteId,
   roomType,
+  cropBuf,
 }: {
   admin: SupabaseClient;
   category: string;
   paletteId?: string;
   roomType?: string;
+  /** Cropped render region for CLIP embed + cosine pre-rank. When
+   *  provided, fetchCandidates embeds the crop once and calls the
+   *  match_products_filtered RPC; visually-similar candidates win.
+   *  When omitted or when embedding fails, falls back to the legacy
+   *  palette+room+category filter sorted by price desc. */
+  cropBuf?: Buffer;
 }): Promise<ProductRow[]> {
-  // Pull a diverse slate of products in the target category. We sort by
-  // price descending to bias toward more representative pieces — cheap
-  // accessories can dominate categories like "Lighting" otherwise.
-  //
-  // Layered filters when palette + room context is available:
-  //   - palette_tags @> [paletteId]            → only style-compatible
-  //   - room_tags && [roomType, 'any']         → only room-appropriate
-  // Plus a graceful fallback: if the layered query returns nothing we
-  // re-run with just the category filter so the user always sees
-  // candidates. The pre-filter is a "narrow when possible, never
-  // starve" guarantee — losing a strict filter is better than an empty
-  // picking-list item.
   const cats = categoryCandidates(category);
   const selectCols =
     'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
 
+  // CLIP pre-rank path — visually-similar candidates beat price-sorted
+  // ones every time. Embedding lives behind @/lib/embeddings; on Vercel
+  // it hits HF Inference (REMOTE), in dev it loads the local onnxruntime
+  // CLIP model. Both produce the same 512-dim ViT-B/32 vector that the
+  // catalogue rows were embedded with offline by embed.js. On any
+  // failure (no HF_TOKEN, HF outage, embedding error, RPC empty),
+  // gracefully falls through to the legacy filter path below so the
+  // matcher never starves on a flaky upstream.
+  if (cropBuf) {
+    try {
+      const startedAt = Date.now();
+      const queryEmbedding = await embedImage(new Uint8Array(cropBuf));
+      const embedMs = Date.now() - startedAt;
+      const { data, error } = await admin.rpc('match_products_filtered', {
+        query_embedding: queryEmbedding,
+        category_list: cats,
+        palette_id: paletteId ?? null,
+        room_type: roomType ?? null,
+        match_count: CANDIDATES_PER_ITEM,
+      });
+      if (error) {
+        console.error('[matching] CLIP pre-rank RPC failed', error);
+      } else if (data && data.length > 0) {
+        console.log(
+          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${data.length} candidates in ${embedMs}ms embed`,
+        );
+        return data as ProductRow[];
+      } else {
+        console.log(
+          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): 0 — falling back to legacy filter`,
+        );
+      }
+    } catch (err) {
+      console.error('[matching] CLIP embed failed, falling back', err);
+    }
+  }
+
+  // Legacy filter path. Pull a diverse slate of products in the target
+  // category sorted by price descending to bias toward representative
+  // pieces — cheap accessories can dominate categories like "Lighting"
+  // otherwise. Used when CLIP pre-rank is unavailable or returned empty.
   if (paletteId && roomType) {
-    let q = admin
+    const filtered = await admin
       .from('products')
       .select(selectCols)
       .in('category', cats)
@@ -582,7 +626,6 @@ async function fetchCandidates({
       .overlaps('room_tags', [roomType, 'any'])
       .order('price_aud', { ascending: false, nullsFirst: false })
       .limit(CANDIDATES_PER_ITEM);
-    const filtered = await q;
     if (filtered.error) {
       console.error('candidate fetch (filtered) failed', filtered.error);
     } else if (filtered.data && filtered.data.length > 0) {

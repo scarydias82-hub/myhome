@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `c166d19` (will
+**Last verified:** 2026-05-22 · most recent material commit: `60d3f13` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,27 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#146 CLIP pre-rank in matcher (catalogue intelligence
+  Phase 2).** Brings CLIP back into the matcher as a pre-rank filter
+  (not as the final ranker, which is where it lost us last time).
+  Render-time flow: for each detected bounding box, embed the crop
+  once via `@/lib/embeddings` (HF Inference on Vercel, LOCAL onnxruntime
+  in dev — both produce the same 512-dim ViT-B/32 vector that the
+  catalogue rows were embedded with offline by `embed.js`) and call
+  the new `match_products_filtered` RPC (migration 20260522170000).
+  The RPC narrows by category list + palette_tags membership + room_tags
+  overlap and sorts by HNSW cosine distance, returning the top
+  CANDIDATES_PER_ITEM visually-similar candidates. Those feed the
+  Claude Haiku ranker as before. On any failure (no HF_TOKEN, HF
+  outage, embedding error, RPC empty) `fetchCandidates()` gracefully
+  falls back to the legacy palette_tags + room_tags + price-desc path,
+  so the matcher never starves on a flaky upstream. Quality win is
+  immediate (candidates are visually-similar instead of price-sorted);
+  latency win compounds with #147 when the Claude ranker shrinks.
+  Catalogue embedding backfill is via the existing
+  `pnpm --filter @myhome/scraper run embed` — coverage matters: if
+  embeddings are thin in production the RPC returns few rows and the
+  fallback path takes over. Run `embed` to fill any gaps.
 - `2026-05-22` — **#145 vision_profile foundation shipped (catalogue
   intelligence bundle Phase 1).** New `vision_profile jsonb` column on
   `products` (migration 20260522160000) + a new scraper script
@@ -1219,7 +1240,8 @@ making sure each user has a great first render — concierge-style if needed.
 | **Auth + DB + Storage**       | Supabase (Sydney)                      | Postgres for relational data, Storage for room/render/staged image buckets, Auth for sessions. RLS on every user-scoped table. `pgvector` for the design-knowledge corpus. |
 | **Render generation**         | fal.ai                                 | `flux-control-lora-canny/image-to-image` for the restyle (strength 0.70, canny conditioning preserves architecture). `flux-pro/v1/fill` for virtual staging. Async submit + poll pattern to clear Vercel's 60s function cap. |
 | **Object detection**          | fal.ai (Florence-2)                    | Two parallel passes per render: default object-detection + caption-to-phrase-grounding with a curated furniture noun list. Results merged for picking-list density. |
-| **Vision validation + rank**  | Anthropic Claude Haiku 4.5             | Crops each detection and asks Claude to classify (drops anything it reads as architecture, walls, doorways). Then ranks the catalogue against each detection by vision. Replaced an earlier CLIP-based ranker that wouldn't deploy reliably on Vercel. |
+| **CLIP pre-rank (#146)**      | CLIP ViT-B/32 (HF Inference REMOTE on Vercel, LOCAL onnxruntime in dev) + pgvector HNSW | Embeds the cropped render region once per box and calls `match_products_filtered` RPC — palette_tags + room_tags filter, cosine sort, returns the top-K visually-similar candidates. Falls back to the legacy palette+price-desc query when embedding or RPC fails so the matcher never starves on a flaky upstream. |
+| **Vision validation + rank**  | Anthropic Claude Haiku 4.5             | Crops each detection and asks Claude to classify (drops anything it reads as architecture, walls, doorways). Then ranks the CLIP-pre-narrowed catalogue candidates by vision. Originally replaced an earlier CLIP-only ranker; #146 brought CLIP back as a pre-rank filter, not the final ranker. |
 | **Designer LLM**              | Anthropic Claude Sonnet 4.6            | Reads the room analysis, the chosen palette, the matched products, and 5–8 RAG chunks from the design-knowledge corpus. Returns the editorial "designer read" shown on the render page. |
 | **Room vision analysis**      | Anthropic Claude Haiku 4.5             | One-shot structured JSON from the uploaded room photo: dimensions estimate, light direction, existing materials, architecture features. Cached on `rooms.analysis` so we never re-pay for the same upload. |
 | **Catalogue scrapers**        | `apps/scraper`                         | Standalone pnpm app. Coco Republic (BigCommerce sitemap), Poliform (Shopify JSON), GlobeWest (Magento + Playwright). Each scrape writes JSON to `output/<retailer>/`, then `pnpm ingest` (single shared script) runs every product through `utils/paletteMatch.js` (Lab ΔE filter against the 10 app palettes), drops products that match no palette, and upserts to `products` via service role with `palette_tags text[]` populated. ~236 SKUs today. |
@@ -1530,16 +1552,19 @@ end-state: ~3–5s with visibly more on-brief picks.
   inputs and better material for the brief-to-retailer flow (#53).
 
 - **#146 — Backfill CLIP embeddings + pgvector pre-rank in matcher.**
-  Backfill `products.clip_embedding` for every catalogue row via the
-  existing `embeddings.ts` LOCAL path — runs offline in the scraper,
-  sidesteps the Vercel onnxruntime loading failure that originally
-  pushed us off CLIP at render-time (see the header comment in
-  `apps/web/lib/matching.ts:1-7`). Then add a pre-rank stage to
-  `fetchCandidates()` in `matching.ts`: embed the crop once, do
-  pgvector cosine similarity against the (already pre-filtered)
-  candidate pool, return the top 3 to feed to the Claude ranker.
-  Expected matcher tail drop from ~10–15s to ~3–5s. Depends on #145
-  — filter quality has to be solid before the ranker pool can shrink.
+  *Shipped.* Migration `20260522170000_match_products_filtered_rpc.sql`
+  adds `match_products_filtered(query_embedding, category_list,
+  palette_id, room_type, match_count)` which filters by palette_tags +
+  room_tags and sorts by HNSW cosine distance. `fetchCandidates()` in
+  `lib/matching.ts` now embeds the crop once via `@/lib/embeddings`
+  (HF Inference on Vercel, LOCAL onnxruntime in dev) and calls the
+  RPC; falls back to the legacy palette+price-desc filter when the
+  embedding or RPC fails. The catalogue embedding column
+  (`products.embedding vector(512)`) and the `embed.js` script already
+  existed from M2; this work just consumes them again. Backfill is via
+  `pnpm --filter @myhome/scraper run embed` — coverage gaps fall
+  through to the legacy path so the matcher never starves. Latency
+  win compounds with #147 when the Claude ranker shrinks.
 
 - **#147 — Matcher refactor: consume `vision_profile`, drop ranker
   candidate count.** Rewrite `fetchCandidates()` to score against
