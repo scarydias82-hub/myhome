@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `b994b42` (will
+**Last verified:** 2026-05-22 · most recent material commit: `5e0f72f` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,24 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#154 Fantastic Furniture scraper shipped (budget
+  tier, first new retailer in the §6.11 rollout).** `apps/scraper/scrapers/fantastic.js`
+  + wired into `index.js`, `package.json` (`pnpm scrape:fantastic`),
+  and `retailerSegment.js` ('Fantastic Furniture' → 'budget'). Site is
+  SAP Commerce Cloud behind Cloudflare with a 1.9KB SPA shell — needs
+  Playwright + JS hydration. Strategy modelled on the Freedom scraper:
+  Cloudflare cookie warm-up via homepage visit, then per-landing
+  scrape with DOM + API-response interception (the SPA fires
+  `api.fantasticfurniture.com.au` JSON during boot; we walk the
+  responses for product URLs as a fallback when DOM hydration
+  partially fails). Reconnaissance shortcut: their public
+  `sitemap.xml` index exposes Category + Product sub-sitemaps —
+  that's where the 9 canonical-category landing URLs came from
+  (Sofas, Chairs ×2, Stools, Rugs, Lamps ×2, Wall Lights, Beds,
+  Desks). Same per-landing 30–50 product cap pattern as Freedom.
+  No migration needed — segment is tagged at scrape time via
+  `segmentFor(RETAILER)` and threaded through ingest. New retailers
+  don't need backfill SQL because they have no pre-existing rows.
 - `2026-05-22` — **#153 market-segment plumbing shipped + Freedom
   catalogue extended (catalogue expansion budget-tier groundwork).**
   Every product now carries a `market_segment` tag so a global user
@@ -1882,12 +1900,11 @@ products the user can plausibly afford.
 
 The plumbing landed in #153 (above). Remaining work, in priority order:
 
-- **#154 — Fantastic Furniture scraper.** Budget tier ($400–$1,200
-  sofas). Salesforce Commerce Cloud likely. Target 30–50 products
-  per canonical category across the nine (Sofas, Chairs, Stools, Rugs,
-  Lamps, Wall Lights, Beds, Desks; Mirrors optional). First budget
-  retailer — validates the segment filter end-to-end with real budget
-  data.
+- **#154 — Fantastic Furniture scraper. SHIPPED.** Budget tier
+  ($400–$1,200 sofas). SAP Commerce Cloud behind Cloudflare (not
+  Salesforce as initially guessed); Playwright + cookie warm-up +
+  DOM/API dual extraction. 9 canonical categories. See changelog
+  for the detail.
 - **#155 — Amart Furniture scraper.** Budget-mid tier ($700–$1,500
   sofas). Similar shape to Fantastic.
 - **#156 — IKEA AU scraper.** Budget tier ($500–$1,200). Expect

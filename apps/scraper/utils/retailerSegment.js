@@ -40,7 +40,10 @@ export const SEGMENTS = /** @type {const} */ ([
 // file). Keep in sync when adding a new retailer.
 const RETAILER_SEGMENT = {
   // ultra-budget — none scraped yet
-  // budget — none scraped yet
+
+  // budget
+  'Fantastic Furniture': 'budget',
+
   // budget-mid — none scraped yet
 
   // mid
