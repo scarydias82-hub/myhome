@@ -4,7 +4,8 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `840884e`.
+**Last verified:** 2026-05-22 · most recent material commit: `047b02e` (will
+be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
 > product, the system, or the business updates the relevant section of this
@@ -24,6 +25,21 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Roadmap: catalogue intelligence bundle memoed
+  (§6.9, tasks #145 + #146 + #147).** Spec for pre-computing per-
+  product visual + style fit so the render-time matcher does less
+  work, faster. Three sequenced tasks: vision-grounded
+  `vision_profile` on every product (#145), CLIP embedding backfill
+  + pgvector pre-rank in `matching.ts` (#146), and matcher refactor
+  to consume `vision_profile` + drop the Claude ranker candidate
+  count (#147). Targets the ~10–15s render-time Claude Haiku ranker
+  tail, with the goal of dropping it to ~3–5s while making picks
+  more on-brief. Cross-references the deferred room-side
+  vision→matcher bundle memo so the prompt-engineering work can be
+  amortised across both ends. (Draft was prepared in a prior session
+  using task IDs #140–#142; renumbered to #145–#147 on port since
+  those original IDs landed on shipped work — HEIC helper, dashboard
+  stock photos, rooms room-grounded recommendation.)
 - `2026-05-22` — **60s Vercel timeout fix on Claude-vision routes (project
   analyse + vision-board upload).** A user hit a 60s function timeout on
   /api/projects/[id]/analyse with a small bathroom image. Root cause:
@@ -1463,6 +1479,73 @@ Stage 1 is live; the rest is sequenced.
   emotional commitment moment.
 - (Stage 5 = warm-lead retailer plumbing — covered by existing
   pending tasks #52 + #53.)
+
+### 6.9 Catalogue intelligence (matcher acceleration)
+
+Pre-compute per-product visual + style fit so the render-time matcher
+does less work, faster. The current rule-based `palette_tags` derivation
+(see migration `20260520130000_products_style_room_mood_tags.sql`)
+inherits tags from the palette definitions — two sideboards from
+different retailers tagged for warm-grounded-earth can look completely
+different yet score identically because Claude has never looked at the
+product image. Ground the tags in vision, then add a CLIP pre-rank so
+the per-render Claude Haiku ranker can shrink (or disappear).
+
+Render-time matcher tail today: ~10–15s (8 boxes × Claude Haiku rank,
+throttled at `RANK_CONCURRENCY=4` to stay under Haiku's 50K input-
+tokens/min ceiling — see `apps/web/lib/matching.ts:84-94`). Target
+end-state: ~3–5s with visibly more on-brief picks.
+
+- **#145 — Vision-grounded `vision_profile` on every product.** Add a
+  `vision_profile jsonb` column on `products`. New scraper script
+  `apps/scraper/scripts/visionProfile.js` iterates the catalogue,
+  calls Claude Haiku on the product image, stores structured output:
+  per-palette fit (0.0–1.0), per-room fit (0.0–1.0), silhouette,
+  materials, color family, visual tone, quality tier. Backfill on the
+  current catalogue (~$10–30 one-off at Haiku pricing) and wire into
+  the ingest path so new products get the pre-pass automatically.
+  Replaces the rule-based `palette_tags` inheritance with a
+  vision-grounded fit signal. Knock-on win: better featured-curation
+  inputs (`featured-curation.ts:54-97` consumes `style_tags` today)
+  and better material for the brief-to-retailer flow (#53).
+
+- **#146 — Backfill CLIP embeddings + pgvector pre-rank in matcher.**
+  Backfill `products.clip_embedding` for every catalogue row via the
+  existing `embeddings.ts` LOCAL path — runs offline in the scraper,
+  sidesteps the Vercel onnxruntime loading failure that originally
+  pushed us off CLIP at render-time (see the header comment in
+  `apps/web/lib/matching.ts:1-7`). Then add a pre-rank stage to
+  `fetchCandidates()` in `matching.ts`: embed the crop once, do
+  pgvector cosine similarity against the (already pre-filtered)
+  candidate pool, return the top 3 to feed to the Claude ranker.
+  Expected matcher tail drop from ~10–15s to ~3–5s. Depends on #145
+  — filter quality has to be solid before the ranker pool can shrink.
+
+- **#147 — Matcher refactor: consume `vision_profile`, drop ranker
+  candidate count.** Rewrite `fetchCandidates()` to score against
+  `vision_profile` (palette_fit > 0.6 + room_fit > 0.6 as thresholds)
+  instead of the rule-based `palette_tags @>` filter. Drop
+  `CANDIDATES_PER_ITEM` from 5 → 3, or to 0 if the CLIP rank from
+  #146 is good enough on its own. Run an A/B eval against the current
+  matcher before shipping — the goal is faster *and* more on-brief,
+  not just faster. Depends on #145 + #146. Re-evaluate the deferred
+  vision Haiku → Sonnet upgrade memo here — Sonnet's reasoning
+  headroom pays off more on `vision_profile` generation than on
+  per-render room reads.
+
+**Cross-references:**
+- The deferred room-side **vision→matcher bundle** memo (purchase_
+  opportunities + replacement_hint on the user's room) is the
+  complement to this work. Together they make both ends of the
+  matcher smarter. Consider scheduling #145 alongside the room-side
+  bundle so the prompt-engineering effort is amortised.
+- Reference-image inpainting (#73, shipped) handles SKU fidelity in
+  the *render* (composite pipeline puts the actual product pixels in
+  the scene). This bundle handles SKU fidelity in the *match* — the
+  shopping list points at the right SKU in the first place.
+- The Stage 5 warm-lead retailer plumbing (#52, #53) gets richer
+  signal once `vision_profile` lands: a brief can be routed by
+  visual fit, not just by category.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live
