@@ -853,10 +853,11 @@ function DesignerSummaryCard({
   if (analysis?.room_type && analysis.room_type !== 'other') {
     roomReadParts.push(analysis.room_type.replace(/_/g, ' '));
   }
-  if (analysis?.light?.direction) {
-    roomReadParts.push(`${analysis.light.direction}-facing`);
-  } else if (analysis?.light?.quality) {
-    roomReadParts.push(analysis.light.quality);
+  // Cardinal direction dropped from vision (#149) — Claude can't infer
+  // compass orientation from a photo, and old cached analyses that
+  // still carry it are ignored here to keep the surface honest.
+  if (analysis?.light?.quality) {
+    roomReadParts.push(`${analysis.light.quality} light`);
   }
   if (analysis?.flooring) roomReadParts.push(analysis.flooring);
 

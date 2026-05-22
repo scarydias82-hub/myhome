@@ -231,8 +231,10 @@ function formatRoomFactsForPrompt(facts: RoomAnalysis | null): string {
     const sqm = (d.width * d.depth).toFixed(1);
     parts.push(`- Dimensions: ${d.width}m × ${d.depth}m (~${sqm} sqm)`);
   }
-  if (facts.light?.direction) {
-    parts.push(`- Light: ${facts.light.direction}-facing${facts.light.quality ? ` (${facts.light.quality})` : ''}`);
+  // Cardinal direction dropped from vision (#149) — Claude can't infer
+  // compass orientation from a photo. Surface only the light quality.
+  if (facts.light?.quality) {
+    parts.push(`- Light: ${facts.light.quality}`);
   }
   if (facts.flooring) parts.push(`- Existing flooring: ${facts.flooring}`);
   if (facts.architectural_features?.length) {

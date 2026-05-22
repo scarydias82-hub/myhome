@@ -25,6 +25,34 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#149 step 1 shipped — drop cardinal direction
+  from vision schema.** The c6f8137 hot-fix scrubbed cardinal
+  direction from the render-side prompts but `lib/vision.ts` was
+  still asking Claude for `"direction": "north" | "south" | "east"
+  | "west" | ...` in the analyseRoom schema — and consumers
+  (`lib/featuring.ts`, `lib/brief/synthesiser.ts`,
+  `components/rooms/upload-form.tsx` DesignerSummaryCard) were still
+  printing "south-facing" in matcher prompts, brief prompts, and the
+  user-facing room read. The schema-level fix:
+  - `lib/vision.ts` — `direction` removed from the JSON schema in the
+    system prompt + an explicit LIGHT directive added: "Do NOT
+    estimate cardinal compass direction. You cannot infer compass
+    orientation from a 2D photo without metadata; guessing produced
+    hallucinated windows downstream." TS type keeps `direction?` as
+    optional so cached `rooms.analysis` blobs from before the fix
+    still parse without crashing — new analyses just never return it.
+  - `lib/featuring.ts` + `lib/brief/synthesiser.ts` — `light:` line
+    now surfaces `quality` only, no cardinal segment.
+  - `components/rooms/upload-form.tsx` — DesignerSummaryCard room-read
+    line drops the `direction`-branch entirely; uses `light.quality`
+    only (so cached blobs with stale cardinal data don't surface
+    "south-facing" either).
+  Still deferred on #149: image-space `light.source` ("from left" /
+  "from right" / "from above" / "indirect") and `window_walls: string[]`
+  per the §6.10 plan — both are enhancements, not bug fixes. The
+  band-aid + this schema fix together close the window-hallucination
+  class without needing sensor data; #150/#151 RoomPlan integration
+  remains the long-term direction.
 - `2026-05-22` — **Dashboard preferences nested into HeroGreeting
   welcome copy.** Replaced the standalone PreferencesSection block
   (visible dedicated row right under the greeting, intro from #153)
@@ -1909,18 +1937,24 @@ already shipped is the right hook for whichever option wins.
 
 **Phased plan**
 
-- **#149 — vision.ts schema cleanup (no sensor required).** Drop the
-  `light.direction` cardinal enum from the analyseRoom schema. Replace
-  with image-space `light.source` ("from left" | "from right" |
-  "from above" | "from behind" | "indirect" | null) — what Claude
-  CAN actually see — plus an explicit `light.window_walls: string[]`
-  field describing which walls show windows ("left wall, large picture
-  window"; "back wall, two small awnings"). Update consumers in
-  `lib/styles.ts`, `lib/brief/synthesiser.ts`, `lib/featuring.ts`.
-  Invalidate cached `rooms.analysis` so the old shape doesn't linger
-  (re-runs are cheap — Haiku call per room). Pre-requisite for sensor
-  fusion: the schema needs to express the same facts on both sides
-  before reconciliation makes sense.
+- **#149 — vision.ts schema cleanup (no sensor required).**
+  - **Step 1 — SHIPPED 2026-05-22.** `light.direction` cardinal enum
+    dropped from the analyseRoom schema + system prompt. Consumers
+    in `lib/featuring.ts`, `lib/brief/synthesiser.ts`, and the
+    DesignerSummaryCard in `components/rooms/upload-form.tsx`
+    switched to `light.quality` only. TS type keeps `direction?`
+    optional so cached `rooms.analysis` blobs still parse without
+    crashing — new analyses won't return the field. `lib/styles.ts`
+    + `lib/kontextPrompt.ts` were already scrubbed by c6f8137.
+  - **Step 2 — TODO.** Replace with image-space `light.source`
+    ("from left" | "from right" | "from above" | "from behind" |
+    "indirect" | null) — what Claude CAN actually see from a 2D
+    photo.
+  - **Step 3 — TODO.** Add explicit `light.window_walls: string[]`
+    field describing which walls show windows ("left wall, large
+    picture window"; "back wall, two small awnings"). Pre-requisite
+    for sensor fusion: the schema needs to express the same facts
+    on both sides before reconciliation makes sense.
 
 - **#150 — Native iOS companion or Capacitor wrapper with RoomPlan.**
   Either path produces a USDZ/JSON room model from a 30-60s
