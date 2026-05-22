@@ -15,6 +15,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Pill } from '@/components/saltbush/pill';
 import { cn } from '@/lib/utils';
+import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
 
 interface Identification {
   primary_subject: string;
@@ -47,6 +48,7 @@ export function BoardImageUpload({ boardId }: { boardId: string }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -58,19 +60,41 @@ export function BoardImageUpload({ boardId }: { boardId: string }) {
     setError(null);
     setResult(null);
 
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
-      setError('Use a JPG, PNG or WebP image.');
+    // Accept JPG / PNG / WebP / HEIC (HEIC gets converted client-
+    // side). Type sniffing covers both proper MIME and extension-
+    // only iOS files.
+    const isAllowedMime = /^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type);
+    const isAllowedExt = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+    if (!isAllowedMime && !isAllowedExt) {
+      setError('Use a JPG, PNG, WebP or HEIC image.');
       return;
     }
-    if (file.size > 4 * 1024 * 1024) {
-      setError('Image is too large. Keep it under 4 MB.');
+    // Pre-resize size cap is generous (20 MB) so iPhone HEIC files
+    // don't get rejected before we have a chance to convert them.
+    if (file.size > 20 * 1024 * 1024) {
+      setError('Image is over 20 MB. Try a smaller one.');
       return;
     }
 
+    // Stage 1: prepare (HEIC convert + resize). Modern phone shots
+    // routinely sit at 8-15 MB; we downscale to ~1600px JPEG to
+    // land under Vercel's multipart cap before upload.
+    setPreparing(true);
+    let usable: File;
+    try {
+      usable = await prepareImageForUpload(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not prepare image.');
+      setPreparing(false);
+      return;
+    }
+    setPreparing(false);
+
+    // Stage 2: upload.
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append('photo', file);
+      fd.append('photo', usable);
       const res = await fetch(`/api/vision-boards/${boardId}/upload`, {
         method: 'POST',
         body: fd,
@@ -130,9 +154,10 @@ export function BoardImageUpload({ boardId }: { boardId: string }) {
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
             A Pinterest pin, an Instagram screenshot, a magazine photo, anything. Claude
             identifies what&rsquo;s in it and finds the closest match in our AU catalogue.
+            iPhone HEICs work fine — we convert and resize them automatically.
           </p>
         </div>
-        {!result && !uploading ? (
+        {!result && !uploading && !preparing ? (
           <Button
             type="button"
             variant="cta"
@@ -146,7 +171,10 @@ export function BoardImageUpload({ boardId }: { boardId: string }) {
       <input
         ref={fileInput}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        // HEIC included for iPhone Photos. The client converts to
+        // JPEG before upload, so the API only ever sees JPEG/PNG/
+        // WebP — no server change needed.
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
         className="sr-only"
         onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
       />
@@ -155,6 +183,25 @@ export function BoardImageUpload({ boardId }: { boardId: string }) {
         <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">
           {error}
         </p>
+      ) : null}
+
+      {preparing ? (
+        <div className="mt-5 flex items-start gap-4 rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-5">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-ink/15 bg-cream">
+            <span aria-hidden className="animate-pulse text-ink-soft text-[18px]">↻</span>
+          </div>
+          <div>
+            <p className="font-display text-h4 leading-tight text-ink md:text-[18px]">
+              Preparing your image…
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
+              Converting HEIC and resizing so it uploads cleanly. About 1–3 seconds.
+            </p>
+            <div className="mt-3 h-1.5 w-44 overflow-hidden rounded-full bg-cream">
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-ink/40" />
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {uploading ? (

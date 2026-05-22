@@ -11,6 +11,7 @@ import { type StyleSlug } from '@/lib/styles';
 import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
+import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
 
 // P0-2 confidence gate. When Claude returns ALL the load-bearing
 // facts we skip the manual review step entirely — the user can still
@@ -31,22 +32,10 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 
-async function convertHeicToJpeg(file: File): Promise<Blob> {
-  const buf = await file.arrayBuffer();
-  const blob = new Blob([buf], { type: file.type || 'image/heic' });
-  try {
-    const mod = await import('heic-to');
-    const result = await mod.heicTo({ blob, type: 'image/jpeg', quality: 0.92 });
-    if (result instanceof Blob) return result;
-  } catch (primary) {
-    console.warn('heic-to failed, trying heic2any', primary);
-  }
-  const { default: heic2any } = await import('heic2any');
-  const out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 });
-  const result = Array.isArray(out) ? out[0] : out;
-  if (!result) throw new Error('no blob returned');
-  return result;
-}
+// HEIC conversion + resize moved into lib/client/prepare-image-upload.ts
+// so /rooms/new and the vision-board upload share the same pipeline.
+// Any future tuning (quality, max dim, additional codec support)
+// lands in one place.
 
 interface AnalyseResponse {
   roomId: string;
@@ -198,63 +187,35 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       setError('Photo is over 15 MB. Try a smaller one.');
       return;
     }
+    // HEIC conversion + resize via the shared helper. The
+    // `converting` flag drives the visible "Converting HEIC → JPEG"
+    // placeholder; we set it for the whole prepare step (which
+    // includes the resize that runs on every large file, not just
+    // HEIC) so the user always sees something during the work.
     const isHeic = /^image\/(heic|heif)$/i.test(next.type) || /\.(heic|heif)$/i.test(next.name);
-    let usable = next;
-    if (isHeic) {
-      setConverting(true);
-      try {
-        const jpegBlob = await convertHeicToJpeg(next);
-        const baseName = next.name.replace(/\.(heic|heif)$/i, '') || 'room';
-        usable = new File([jpegBlob], `${baseName}.jpg`, { type: 'image/jpeg' });
-      } catch (err) {
-        console.error(err);
-        setError('Could not convert HEIC. Export as JPG from Photos.');
-        setConverting(false);
-        return;
-      }
-      setConverting(false);
-    }
-    // Vercel serverless caps multipart body at 4.5MB. Modern phone photos are
-    // routinely 8-15MB so we downscale client-side. 1600px wide is plenty for
-    // Claude vision; the original file stays in the user's session if they
-    // want to redo it from scratch.
+    setConverting(true);
+    let usable: File;
     try {
-      usable = await resizeForUpload(usable);
+      usable = await prepareImageForUpload(next);
     } catch (err) {
-      console.warn('resize failed, sending original', err);
+      setError(
+        isHeic
+          ? 'Could not convert HEIC. Export as JPG from Photos.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not prepare image.',
+      );
+      setConverting(false);
+      return;
     }
+    setConverting(false);
+
     setFile(usable);
     setPreview(URL.createObjectURL(usable));
     // Note: we no longer auto-fire analysis here. The user clicks
     // "Get design advice" once the photo is in place — that makes
     // the Claude call explicit (and gives them a chance to swap
     // photos before paying the ~8s vision round-trip).
-  }
-
-  // Returns the file unchanged if it's already small enough; otherwise
-  // re-encodes as JPEG at max 1600px wide. Preserves aspect ratio.
-  async function resizeForUpload(file: File): Promise<File> {
-    const TARGET_MAX_DIM = 1600;
-    const TARGET_MAX_BYTES = 3.5 * 1024 * 1024; // safe under Vercel's 4.5MB cap
-    if (file.size <= TARGET_MAX_BYTES) return file;
-
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, TARGET_MAX_DIM / Math.max(bitmap.width, bitmap.height));
-    const w = Math.round(bitmap.width * scale);
-    const h = Math.round(bitmap.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.88),
-    );
-    if (!blob) return file;
-    const base = file.name.replace(/\.[^.]+$/, '') || 'room';
-    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
   }
 
   async function analysePhoto(photoFile: File) {
