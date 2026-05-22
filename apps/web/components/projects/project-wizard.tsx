@@ -62,6 +62,16 @@ interface ProjectWizardProps {
   projectId: string;
   initialBriefTags: string[];
   initialBriefResponse: BriefSynthesis | null;
+  /** True when projects.brief was snapshotted from users.preferences
+   *  at create time and hasn't been edited since. Drives the
+   *  "Pre-filled from your preferences" banner in the BriefPicker.
+   *  The flag lives on projects.brief.inherited_from_user_prefs and
+   *  gets stripped on the first POST /api/projects/[id]/brief
+   *  (which replaces the whole brief shape with tags + response +
+   *  updated_at), so the banner naturally disappears once the user
+   *  edits or explicitly accepts the inherited tags. (§6.11 Phase B,
+   *  #154.) */
+  briefInheritedFromUserPrefs?: boolean;
   palettes: BriefPaletteLookup[];
   styles: BriefStyleLookup[];
   rooms: WizardRoom[];
@@ -89,6 +99,7 @@ export function ProjectWizard({
   projectId,
   initialBriefTags,
   initialBriefResponse,
+  briefInheritedFromUserPrefs = false,
   palettes,
   styles,
   rooms,
@@ -127,6 +138,7 @@ export function ProjectWizard({
           projectId={projectId}
           initialTags={initialBriefTags}
           initialResponse={initialBriefResponse}
+          inheritedFromUserPrefs={briefInheritedFromUserPrefs}
           palettes={palettes}
           styles={styles}
           onContinue={() => setCurrentStep(2)}
@@ -230,6 +242,7 @@ function Step1Brief({
   projectId,
   initialTags,
   initialResponse,
+  inheritedFromUserPrefs,
   palettes,
   styles,
   onContinue,
@@ -238,6 +251,7 @@ function Step1Brief({
   projectId: string;
   initialTags: string[];
   initialResponse: BriefSynthesis | null;
+  inheritedFromUserPrefs: boolean;
   palettes: BriefPaletteLookup[];
   styles: BriefStyleLookup[];
   onContinue: () => void;
@@ -257,6 +271,7 @@ function Step1Brief({
         projectId={projectId}
         initialTags={initialTags}
         initialResponse={initialResponse}
+        inheritedFromUserPrefs={inheritedFromUserPrefs}
         palettes={palettes}
         styles={styles}
         mode="wizard"

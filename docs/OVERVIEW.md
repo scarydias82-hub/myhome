@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `b994b42` (will
+**Last verified:** 2026-05-22 · most recent material commit: `bb0acc3` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,28 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#154 §6.11 Phase B shipped: project wizard inherits
+  user preferences.** New projects now snapshot `users.preferences.tags`
+  into `projects.brief.tags` at create time, with an
+  `inherited_from_user_prefs: true` marker on the brief. The wizard's
+  BriefPicker renders a "Pre-filled from your preferences — adjust if
+  this project is different" banner when that marker is present and
+  the user hasn't yet toggled anything; the banner hides as soon as
+  any chip is touched. Snapshot semantics enforced: subsequent
+  `POST /api/projects/[id]/brief` calls replace the whole brief shape
+  (existing behaviour), so the marker is naturally stripped after the
+  first save. Changes to `users.preferences` on the dashboard never
+  cascade into already-created projects — each project carries its
+  own copy from the moment it's born.
+  Files: `apps/web/app/api/projects/route.ts` (read prefs + snapshot
+  into the insert), `apps/web/app/projects/[id]/page.tsx` (read
+  the flag from `project.brief.inherited_from_user_prefs`),
+  `apps/web/components/projects/project-wizard.tsx` (pass through),
+  `apps/web/components/projects/brief-picker.tsx` (banner + edit-
+  detection). When a project is seeded from a vision board, the
+  user-pref tags overlay on the board's other signals
+  (palette_signal, style_signal, trend_signals, product_anchors)
+  rather than replacing them.
 - `2026-05-22` — **#153 §6.11 Phase A shipped: user preferences
   storage + onboarding + dashboard editor.** Closes the cold-start
   gap when users upload a photo outside a project — previously
@@ -1926,11 +1948,15 @@ reinforces "your taste is the foundation of every render".
   same chip language.
 
 - **#154 — Phase B: project wizard inherits + visible "inherited"
-  indicator.** Pre-fill the project brief from `users.preferences` at
-  create time. Render a banner "Pre-filled from your preferences —
-  adjust if this project is different." Save (existing behaviour)
-  creates a project.brief that is a SNAPSHOT; subsequent edits to the
-  brief don't touch `users.preferences`. Estimated: ~1 day, ~3 files.
+  indicator.** *Shipped.* `POST /api/projects` reads
+  `users.preferences.tags` and snapshots them into `projects.brief.tags`
+  with `inherited_from_user_prefs: true`. BriefPicker shows the
+  "Pre-filled from your preferences" banner when that marker is
+  present and the user hasn't toggled anything; the banner hides on
+  first chip toggle, the marker gets stripped on first save (existing
+  POST behaviour replaces the whole brief shape). Vision-board seeds
+  carry the user-pref tags overlaid on the board's other signals
+  (palette_signal, style_signal, etc.) rather than replacing them.
 
 - **#155 — Phase C: outside-project upload inherits + per-render
   override.** `/api/analyse-room` reads `users.preferences` as the
