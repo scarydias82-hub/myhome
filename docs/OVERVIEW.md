@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `e849150` (will
+**Last verified:** 2026-05-22 · most recent material commit: `c6f8137` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,23 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **§6.10 memoed: Sensor fusion (room scan + vision)
+  + tasks #149-#152.** The window-hallucination class of bugs has a
+  structural cause — Claude vision is guessing 3D geometry from 2D
+  pixels when modern phones can supply that ground truth natively
+  (Apple RoomPlan, ARKit). §6.10 lays out the phased path: (#149)
+  vision.ts schema cleanup to drop cardinal direction + add image-
+  space light source + window_walls list — no sensor required, the
+  proper version of the May-22 hot-fix; (#150) native iOS or
+  Capacitor wrapper with RoomPlan; (#151) sensor fusion reconciliation
+  logic in /api/analyse-room — trust LiDAR for geometry, Claude for
+  style/materials; (#152) optional Android ARCore plane-detection
+  fallback. Real native engineering — measured in weeks. Right call
+  after closed-beta proves rendering quality + conversion; memoed
+  now so the option stays visible while §6.9 catalogue-intelligence
+  work is priority. Cross-references the c6f8137 hot-fix as the
+  prompt-layer band-aid that holds while this proper architecture
+  is built.
 - `2026-05-22` — **Window-hallucination fix in render prompts.** User
   reported renders adding windows on walls that didn't have one in the
   original photo. Root cause: vision.ts asks Claude for cardinal
@@ -1704,6 +1721,100 @@ end-state: ~3–5s with visibly more on-brief picks.
 - The Stage 5 warm-lead retailer plumbing (#52, #53) gets richer
   signal once `vision_profile` lands: a brief can be routed by
   visual fit, not just by category.
+
+### 6.10 Sensor fusion (room scan + vision)
+
+The geometry-hallucination class of render bugs (windows appearing on
+walls that don't have them, walls drifting, doors invented) has a
+structural cause: Claude vision is guessing 3D facts from 2D pixels
+when modern phones can supply that ground truth natively. The May-22
+window-hallucination hot-fix (`c6f8137`) is the prompt-layer band-aid;
+this section is the proper architectural fix.
+
+**What sensors actually give us**
+
+| Sensor | iOS coverage | Android coverage | Returns |
+|---|---|---|---|
+| LiDAR | iPhone 12 Pro and later (Pro models only) | Spotty (some Pixel, Samsung S20 Ultra) | Depth map, mesh reconstruction |
+| **Apple RoomPlan** (iOS 16+) | LiDAR-equipped iPhones + iPads | Not available | Labelled room model — walls, windows, doors, sofas, beds, tables with 3D bounding boxes + semantic tags. **This is exactly what we're asking Claude to guess.** |
+| ARKit / ARCore plane detection | Wide | Wide | Floor + wall planes (no semantic labels) |
+| Compass + GPS | Universal | Universal | True north (kills the cardinal-direction-from-photo guesswork) |
+
+**What it solves vs doesn't**
+
+Solves: window/door/wall geometry, room dimensions, furniture inventory
+with bounding-box positions, true compass orientation.
+
+Doesn't solve: material identification (LiDAR sees geometry, not
+walnut-vs-oak), style judgement, the render itself (still Flux/Kontext).
+
+**Structural constraint**
+
+RoomPlan is iOS-native only — Swift/SwiftUI. WebXR doesn't expose
+LiDAR mesh data. myMaison is a Next.js web app, so reaching the sensor
+requires one of: a native iOS app, a Capacitor wrapper with a custom
+RoomPlan plugin, or a "scan-with-this-companion-app" UX that posts
+scan + photo to the existing upload endpoint. The PWA install path
+already shipped is the right hook for whichever option wins.
+
+**Phased plan**
+
+- **#149 — vision.ts schema cleanup (no sensor required).** Drop the
+  `light.direction` cardinal enum from the analyseRoom schema. Replace
+  with image-space `light.source` ("from left" | "from right" |
+  "from above" | "from behind" | "indirect" | null) — what Claude
+  CAN actually see — plus an explicit `light.window_walls: string[]`
+  field describing which walls show windows ("left wall, large picture
+  window"; "back wall, two small awnings"). Update consumers in
+  `lib/styles.ts`, `lib/brief/synthesiser.ts`, `lib/featuring.ts`.
+  Invalidate cached `rooms.analysis` so the old shape doesn't linger
+  (re-runs are cheap — Haiku call per room). Pre-requisite for sensor
+  fusion: the schema needs to express the same facts on both sides
+  before reconciliation makes sense.
+
+- **#150 — Native iOS companion or Capacitor wrapper with RoomPlan.**
+  Either path produces a USDZ/JSON room model from a 30-60s
+  walkthrough scan + the existing photo. Returns both to the upload
+  endpoint as a multipart payload (`photo`, `scan`). Capacitor is the
+  lower-effort path (re-uses the existing web app shell with a custom
+  plugin for RoomPlan); native is more flexibility but more build.
+  Estimated effort: 2-3 weeks Capacitor, 4-6 weeks native iOS.
+
+- **#151 — Sensor fusion logic in `/api/analyse-room`.** When scan
+  data is present, parse it into the same schema shape as the vision
+  analysis output. Then reconcile:
+  - Both agree on a chair → confidence 1.0, ship.
+  - LiDAR says "chair", Claude says "ottoman" → trust LiDAR for
+    geometry / classification, Claude for style + material
+    (it's a chair-sized boucle ottoman).
+  - LiDAR says window on east wall, Claude omits → trust LiDAR.
+    Render prompt builder now has authoritative window-wall data.
+  - Scan absent (Android / old iPhone / web) → fall back to
+    vision-only, current behaviour.
+  The reconciliation result feeds the existing `rooms.analysis` JSON
+  with an additional `source: "scan+vision" | "vision-only"` tag so
+  downstream consumers can decide whether to trust geometry.
+
+- **#152 — Android ARCore plane-detection fallback (optional).** Less
+  rich than RoomPlan (no labelled furniture), but window / door
+  geometry from plane edges still beats vision-only. Worth doing for
+  AU market Android share (~30-40% depending on segment) — but only
+  after iOS proves the fusion architecture is worth it.
+
+**Cross-references**
+- The window-hallucination hot-fix (`c6f8137`) is the prompt-layer
+  band-aid. #149 is the schema-level fix. #150 + #151 is the proper
+  sensor-fusion architecture.
+- §6.6 (AR / discovery) is a separate roadmap item — that's about
+  *showing* products in AR. This section is about *capturing* the
+  room with sensors before the render runs. Different timing, complementary tech.
+- The PWA path (already shipped) is the install hook for Capacitor /
+  native to feel like one app to the user.
+- Cost/benefit shape: this is real native engineering, multi-week
+  effort. Right call after closed-beta proves the rendering quality
+  and conversion mechanics — not before. Memoed now so the option
+  stays visible while we're prioritising the catalogue-intelligence
+  work (§6.9).
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live
