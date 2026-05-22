@@ -240,6 +240,98 @@ export async function fetchCompleteTheLook({
     .filter((c) => c.products.length > 0);
 }
 
+// Extended-set fetch for a single category. Used by the "See more"
+// inline expansion (Phase 3, 2026-05-22) on /renders/[id]'s shop-by-
+// category carousels — returns a longer set so the user can browse
+// beyond the carousel's initial top picks without leaving the page.
+//
+// Same 3-tier filter as fetchCompleteTheLook (palette+room+style →
+// palette+room → category+room). offset lets us skip the products
+// already visible in the carousel; limit controls the depth of the
+// extended set. Defaults: skip the first 8, return up to 24.
+export interface FetchExtendedOptions {
+  admin: SupabaseClient;
+  /** displayLabel from the carousel (e.g. "Beds", "Side Tables").
+   *  We expand it via CATEGORY_FAMILIES so the SQL matches the
+   *  retailer-side variants the catalogue actually stores. */
+  displayLabel: string;
+  roomType: string | null;
+  paletteId: string | null;
+  styleTags?: string[];
+  /** Skip this many results from the start. Caller passes the count
+   *  of products already shown in the carousel so the extended set
+   *  doesn't repeat them. Default 8. */
+  offset?: number;
+  /** Max products to return. Default 24. */
+  limit?: number;
+}
+
+export async function fetchExtendedCategory({
+  admin,
+  displayLabel,
+  roomType,
+  paletteId,
+  styleTags,
+  offset = 8,
+  limit = 24,
+}: FetchExtendedOptions): Promise<PickingMatch[]> {
+  const normalisedRoom = (roomType ?? '').toLowerCase().replace(/\s+/g, '_');
+  const roomFilter = normalisedRoom ? [normalisedRoom, 'any'] : ['any'];
+  const cats = expandCategory(displayLabel);
+  const selectCols =
+    'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
+  const from = offset;
+  const to = offset + limit - 1;
+
+  // Tier 1: palette + room + style.
+  if (paletteId && styleTags && styleTags.length > 0) {
+    const tier1 = await admin
+      .from('products')
+      .select(selectCols)
+      .in('category', cats)
+      .not('image_url', 'is', null)
+      .contains('palette_tags', [paletteId])
+      .overlaps('room_tags', roomFilter)
+      .overlaps('style_tags', styleTags)
+      .order('price_aud', { ascending: false, nullsFirst: false })
+      .range(from, to);
+    if (!tier1.error && tier1.data && tier1.data.length > 0) {
+      return (tier1.data as ProductRow[]).map((p, i) => productRowToMatch(p, i));
+    }
+  }
+
+  // Tier 2: palette + room.
+  if (paletteId) {
+    const tier2 = await admin
+      .from('products')
+      .select(selectCols)
+      .in('category', cats)
+      .not('image_url', 'is', null)
+      .contains('palette_tags', [paletteId])
+      .overlaps('room_tags', roomFilter)
+      .order('price_aud', { ascending: false, nullsFirst: false })
+      .range(from, to);
+    if (!tier2.error && tier2.data && tier2.data.length > 0) {
+      return (tier2.data as ProductRow[]).map((p, i) => productRowToMatch(p, i));
+    }
+  }
+
+  // Tier 3: category + room only.
+  const tier3 = await admin
+    .from('products')
+    .select(selectCols)
+    .in('category', cats)
+    .not('image_url', 'is', null)
+    .overlaps('room_tags', roomFilter)
+    .order('price_aud', { ascending: false, nullsFirst: false })
+    .range(from, to);
+  if (!tier3.error && tier3.data && tier3.data.length > 0) {
+    return (tier3.data as ProductRow[]).map((p, i) => productRowToMatch(p, i));
+  }
+
+  return [];
+}
+
 function productRowToMatch(p: ProductRow, position: number): PickingMatch {
   return {
     productId: p.id,

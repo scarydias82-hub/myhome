@@ -20,6 +20,12 @@ import type { PickingMatch } from '@/components/renders/picking-list-panel';
 interface CompleteTheLookProps {
   categories: { displayLabel: string; products: PickingMatch[] }[];
   initialSavedProductIds?: Set<string>;
+  /** Render id, needed by each carousel to fetch its extended set
+   *  via /api/renders/[id]/extended/[category] when the user taps
+   *  "See more". Optional — when missing the See-more affordance
+   *  is hidden so the surface still renders cleanly on legacy
+   *  call-sites. */
+  renderId?: string;
 }
 
 const aud = new Intl.NumberFormat('en-AU', {
@@ -55,6 +61,7 @@ function formatDimensions(
 export function CompleteTheLook({
   categories,
   initialSavedProductIds,
+  renderId,
 }: CompleteTheLookProps) {
   const [savedIds, setSavedIds] = useState<Set<string>>(
     () => new Set(initialSavedProductIds ?? []),
@@ -107,6 +114,7 @@ export function CompleteTheLook({
             products={cat.products}
             savedIds={savedIds}
             onToggleSaved={toggleSaved}
+            renderId={renderId}
           />
         ))}
       </div>
@@ -116,24 +124,91 @@ export function CompleteTheLook({
 
 // Carousel-style horizontal scroll per category. Each card is a fixed
 // width (~64-72 of viewport on mobile, ~280px on desktop) and the row
-// scrolls horizontally with native momentum. Cards beyond the viewport
-// are visible by swipe/scroll — no pagination dots, no nav arrows for
-// v1 (those can land in Phase 3 alongside the extended-set expansion).
+// scrolls horizontally with native momentum.
+//
+// Phase 3 (2026-05-22): "See more" button below the row fetches an
+// extended palette+room filtered set via /api/renders/[id]/extended/
+// [category] and renders it as a responsive grid beneath the row.
+// State is per-carousel — opening one doesn't open the others —
+// so the page only pays the fetch cost for categories the user
+// actually digs into.
 function CategoryCarousel({
   label,
   products,
   savedIds,
   onToggleSaved,
+  renderId,
 }: {
   label: string;
   products: PickingMatch[];
   savedIds: Set<string>;
   onToggleSaved: (productId: string) => void;
+  renderId?: string;
 }) {
+  const [extended, setExtended] = useState<PickingMatch[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
   if (products.length === 0) return null;
+
+  // Tracks the user's already-seen count so the endpoint can skip them.
+  // We pass the initial carousel length as offset; subsequent re-fetches
+  // (if we ever wire pagination beyond the first See-more) can grow
+  // this with the extended length too.
+  const offset = products.length;
+
+  async function loadExtended() {
+    if (!renderId) return;
+    if (extended) {
+      setOpen((prev) => !prev);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/renders/${renderId}/extended/${encodeURIComponent(label)}?offset=${offset}&limit=24`,
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        products?: PickingMatch[];
+        error?: string;
+      };
+      if (!res.ok || !json.products) {
+        setError(json.error ?? `Couldn't load more (HTTP ${res.status})`);
+        return;
+      }
+      setExtended(json.products);
+      setOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Couldn’t load more');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const seeMoreLabel = (() => {
+    if (loading) return 'Loading more…';
+    if (extended && open) return `Show fewer ${label.toLowerCase()}`;
+    if (extended && !open) return `Show extended set (${extended.length})`;
+    return `See more ${label.toLowerCase()}`;
+  })();
+
   return (
     <div id={`cat-${slugifyCategory(label)}`} className="scroll-mt-24">
-      <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">{label}</p>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">{label}</p>
+        {renderId ? (
+          <button
+            type="button"
+            onClick={loadExtended}
+            disabled={loading}
+            className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft underline-offset-2 transition hover:text-clay hover:underline disabled:opacity-60"
+          >
+            {seeMoreLabel}
+          </button>
+        ) : null}
+      </div>
       <div className="relative mt-3 -mx-6 md:-mx-10">
         <ul
           className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-3 md:px-10 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
@@ -153,6 +228,41 @@ function CategoryCarousel({
           ))}
         </ul>
       </div>
+
+      {error ? (
+        <p className="mt-2 font-mono text-meta uppercase tracking-eyebrow text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      {open && extended && extended.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-ink/[0.06] bg-cream p-4 md:p-6">
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+            Extended {label.toLowerCase()} · palette-matched
+          </p>
+          <ul
+            className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            role="list"
+          >
+            {extended.map((p) => (
+              <li key={p.productId}>
+                <CompactMatchCard
+                  match={p}
+                  saved={savedIds.has(p.productId)}
+                  onToggleSaved={() => onToggleSaved(p.productId)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {open && extended && extended.length === 0 ? (
+        <p className="mt-2 text-[14px] text-ink-soft">
+          No additional {label.toLowerCase()} match this palette yet. We'll
+          flag this category to our catalogue team.
+        </p>
+      ) : null}
     </div>
   );
 }

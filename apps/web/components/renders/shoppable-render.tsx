@@ -164,6 +164,7 @@ export function ShoppableRender({
         <CompleteTheLook
           categories={categories}
           initialSavedProductIds={initialSavedProductIds}
+          renderId={renderId}
         />
       ) : null}
 

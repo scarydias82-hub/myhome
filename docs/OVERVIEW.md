@@ -25,6 +25,29 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Render page IA — extended set inline expansion
+  (Phase 3 of 3).** Closes the carousels-first rework. Each
+  `<CategoryCarousel>` now exposes a "See more {category}" affordance
+  that fetches a deeper palette+room+style filtered set via
+  `GET /api/renders/[id]/extended/[category]` and renders it as a
+  responsive grid (2-cols mobile, 3 desktop, 4 wide) below the
+  carousel row. Toggle to collapse. State is per-carousel so the
+  page only pays the fetch cost for categories the user actually
+  digs into, and the wishlist hearts share state across visible
+  and extended cards in the same component. New
+  `fetchExtendedCategory` helper in `lib/completeTheLook.ts` reuses
+  the existing 3-tier filter logic (palette+room+style →
+  palette+room → category+room) with `offset`/`limit` so the
+  extended set skips the products already on screen and tops out
+  at 24 per category (60 max via the route guard). New route
+  `app/api/renders/[id]/extended/[category]/route.ts`: auth-gated,
+  scope-validates the render, resolves palette + style + room from
+  the render row exactly like the status route does, returns
+  `{ category, offset, limit, products }`. Closes the rework
+  initiated with the products-first vision directive — the page
+  now serves an excited designer commentary, primary carousels by
+  category, hotspot scroll-linkage, AND extended browse depth, all
+  without leaving the render page.
 - `2026-05-22` — **Render page IA — carousels-first + hotspot scroll
   linkage (Phase 2 of 3).** `<CompleteTheLook>` converted from a
   3-col grid to horizontal-scroll carousels per category — each
