@@ -31,7 +31,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { listPalettes, paletteSwatch, paletteBrightness } from '@/lib/palettes';
 import { TopNav } from '@/components/dashboard/top-nav';
 import { HeroGreeting } from '@/components/dashboard/hero-greeting';
-import { PreferencesSection } from '@/components/dashboard/sections/preferences-section';
 import {
   ProjectsSection,
   type DashboardProjectCard,
@@ -151,7 +150,7 @@ export default async function DashboardPage() {
   // heuristic derived from the email prefix for accounts that haven't
   // had one captured yet. Same query also pulls the canonical
   // preferences blob (#153, §6.11 Phase A) — null when the user
-  // hasn't onboarded yet, in which case PreferencesSection forces the
+  // hasn't onboarded yet, in which case HeroGreeting forces the
   // onboarding modal open on first dashboard load.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: profile } = await (supabase as any)
@@ -601,18 +600,11 @@ export default async function DashboardPage() {
       <main className="mx-auto max-w-[1200px] px-4 md:px-6">
         {/* 1. Hero + quick actions — compact on mobile so featured
             products land above the fold once the user scrolls a
-            single thumb-length. */}
-        <HeroGreeting firstName={firstName} />
-
-        {/* 1.5. My Preferences — canonical user-level taste signal
-            (§6.11 Phase A, #153). Placement A: visible dedicated
-            section right under the greeting so it's the first thing
-            a user sees after their name. Renders the onboarding
-            modal automatically on first dashboard load when
-            preferences is null. */}
-        <div className="mt-6">
-          <PreferencesSection preferences={userPreferences} />
-        </div>
+            single thumb-length. Canonical user preferences
+            (§6.11 Phase A, #153) are nested inside the greeting as
+            inline chips + Edit pill; the onboarding modal auto-opens
+            on first dashboard load when preferences is null. */}
+        <HeroGreeting firstName={firstName} preferences={userPreferences} />
 
         {/* 2. Featured products — Claude-curated weekly (heuristic
             until #137). Sits above all other content so products

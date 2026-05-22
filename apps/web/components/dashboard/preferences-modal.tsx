@@ -7,9 +7,13 @@
 //      isFirstTime=true when users.preferences IS NULL. Modal can't be
 //      dismissed by clicking the backdrop on first run; user has to
 //      either complete or hit "Skip for now".
-//   2. Edit — dashboard's PreferencesSection renders this with
-//      open=true (controlled) when the user clicks "Edit". Standard
-//      modal — backdrop dismisses, Esc closes.
+//   2. Edit — dashboard's HeroGreeting renders this with
+//      open=true (controlled) when the user clicks the "Edit →" pill
+//      in the taste-signal chip row. Standard modal — backdrop
+//      dismisses, Esc closes.
+//   3. Per-render override — /rooms/new's UploadForm renders this with
+//      persistMode='per-render' so saves return tags via
+//      onSaveOverride() instead of PUT-ing to /api/preferences.
 //
 // Both modes save by PUT /api/preferences. Successful save closes the
 // modal and refreshes the route so the dashboard section shows the

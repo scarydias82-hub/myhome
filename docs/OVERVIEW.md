@@ -25,6 +25,24 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Dashboard preferences nested into HeroGreeting
+  welcome copy.** Replaced the standalone PreferencesSection block
+  (visible dedicated row right under the greeting, intro from #153)
+  with an inline chip row + Edit pill nested at the end of
+  HeroGreeting's welcome copy. First-time users see a "Set up your
+  taste signal →" cognac pill that auto-opens the PreferencesModal;
+  returning users see a "Your taste:" eyebrow + up to 6 chips (with
+  "+N more" overflow) + an "Edit →" pill. The PreferencesModal mount
+  moved into HeroGreeting; the first-time auto-open flow is preserved
+  and snapshot semantics from #153/#154/#155 are unchanged — the
+  modal still PUTs to /api/preferences from the dashboard surface and
+  only that surface. Net effect: dashboard hero stays compact on
+  mobile while surfacing the taste signal at the point of greeting
+  rather than as a separate "system" panel. Files:
+  `components/dashboard/hero-greeting.tsx` (chips + modal),
+  `app/dashboard/page.tsx` (drop PreferencesSection import + mount),
+  `components/dashboard/preferences-modal.tsx` (comment refresh).
+  Dead file deleted: `components/dashboard/sections/preferences-section.tsx`.
 - `2026-05-22` — **Single native-picker upload UI for /rooms/new
   Step 01.** The room-photo upload affordance went from a two-button
   "Browse files / Use camera" split + a desktop `getUserMedia`
