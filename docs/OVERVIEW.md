@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `33b9f2e` (will
+**Last verified:** 2026-05-22 · most recent material commit: `3823d44` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,17 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#148 memoed: vision_profile becomes the source of
+  truth, old tag columns become projections (catalogue intelligence
+  Phase 4).** Spec for flipping the data ownership so `palette_tags`
+  / `style_tags` / `room_tags` / `mood_tags` are *derived* from
+  `vision_profile` rather than from ΔE76 colour-distance + palette
+  membership inheritance. Same column names, smarter data underneath
+  — featured-curation and any other consumer keeps reading without
+  changes. ΔE76 stays in the ingest path but only as the junk-photo
+  gate, not as a tag producer. Sequencing: don't flip until
+  vision_profile coverage is >~95% in production (running the #145
+  backfill now). Tracked in §6.9 as #148.
 - `2026-05-22` — **#147 vision_profile-aware matcher (catalogue
   intelligence Phase 3).** Closes the catalogue intelligence bundle.
   `fetchCandidates()` now has a three-tier fall-through: (1) new
@@ -1608,6 +1619,51 @@ end-state: ~3–5s with visibly more on-brief picks.
   (c) Re-evaluate the deferred vision Haiku → Sonnet upgrade memo —
   Sonnet's reasoning headroom pays off more on `vision_profile`
   generation than on per-render room reads.
+
+- **#148 — `vision_profile` as source of truth, old tag columns
+  become projections.** Phase 4 cleanup once #145 backfill coverage
+  is >~95% in production. Flips the data ownership: instead of
+  `palette_tags` / `style_tags` / `room_tags` / `mood_tags` being
+  derived at ingest from ΔE76 colour distance + palette-membership
+  inheritance, they're derived from `vision_profile` — Claude's
+  per-image judgement of palette + room fit. Column names stay the
+  same so featured-curation (`featured-curation.ts:54-97`) and any
+  other consumer keeps reading without code change; the data
+  underneath just got smarter.
+
+  Mapping (all mechanical, lives in a new `redeRiveTagsFromVisionProfile.js`
+  scraper script or as a post-step in `visionProfile.js`):
+  ```
+  palette_tags  ← keys of vision_profile.palette_fit where score >= 0.4
+  room_tags     ← keys of vision_profile.room_fit where score >= 0.4
+  style_tags    ← union of style_tags from palettes.json for each palette
+                  where palette_fit >= 0.4  (reuses productTags.deriveTags
+                  with vision-grounded membership instead of ΔE76 membership)
+  mood_tags     ← same union pattern, mood side
+  ```
+
+  Plus three companion edits:
+  1. `apps/scraper/scripts/ingest.js` — keep ΔE76 (`classifyProduct`)
+     ONLY as the junk filter (drop rows whose dominant colour matches
+     no palette). Stop having it write tag columns. New rows have empty
+     tag arrays until the next vision_profile + tag-derivation pass.
+  2. `apps/scraper/scripts/visionProfile.js` — after writing
+     `vision_profile`, derive + write the four tag columns in the same
+     update so a single sweep populates everything.
+  3. Optional follow-up: drop `room_tags` and `mood_tags` columns
+     entirely once all consumers are reading from `vision_profile`
+     directly. Keep `palette_tags` (small, cheap, useful for quick
+     dashboards / ad-hoc filtering); rename or drop the others when
+     they're genuinely unreferenced. `style_tags` stays until
+     featured-curation is rewritten against `vision_profile.color_family`
+     + `palette_fit` directly.
+
+  Sequencing rule: do NOT flip until vision_profile coverage is >~95%
+  in production. The Tier-1 matcher RPC already prefers vision_profile,
+  so during the partial-coverage window we want palette_tags to remain
+  as the safety net for Tier-2 fallback. Flipping early means rows
+  without vision_profile get empty tag arrays overnight and
+  featured-curation + matcher Tier-2 silently lose them.
 
 **Cross-references:**
 - The deferred room-side **vision→matcher bundle** memo (purchase_
