@@ -51,10 +51,13 @@ export interface DashboardPaletteCard {
   timelessness: number;
   personaFit: string[];
   recommendedRooms: string[];
-  /** Tags array from the palette source. The dashboard carousel filters
-   *  on `popular` so only the curated set surfaces here; the full
-   *  catalogue lives at /palettes. */
+  /** Tag list from palettes.json — used for filter chips on /palettes. */
   tags: string[];
+  /** Aggregate like count across all users (from palette_likes table).
+   *  0 on cold-start. */
+  likeCount: number;
+  /** Whether the current user has liked this palette. */
+  likedByUser: boolean;
 }
 
 interface TrendsSectionProps {
@@ -71,21 +74,20 @@ const TIMELESS_THRESHOLD = 9;
 export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
   const trendForward = trends.filter((t) => (t.timelessness ?? 5) < TIMELESS_THRESHOLD);
   const timeless = trends.filter((t) => (t.timelessness ?? 5) >= TIMELESS_THRESHOLD);
-  // Curated dashboard set — only palettes tagged "popular" in
-  // palettes.json. The full catalogue (56+ palettes) lives at /palettes
-  // so the carousel stays scannable.
-  const popularPalettes = palettes.filter((p) => p.tags.includes('popular'));
+  // The palette carousel receives a pre-composed, pre-sorted list from
+  // the server (popular-by-aggregate-likes + this user's liked palettes,
+  // lightest → darkest). No client-side filtering needed here.
 
   return (
     <section id="trends" className="py-10">
-      {/* ① Colour palette carousel — surfaces only the "popular" subset
-          (~18 palettes). The full catalogue is at /palettes with filter
-          chips. Mirrors the wizard Step 3 featured chooser. */}
+      {/* ① Colour palette carousel — community-popular + your liked
+          palettes, ordered lightest → darkest. Full 56-palette catalogue
+          at /palettes. */}
       <PaletteCarousel
         anchor="palettes"
         title="Colour palettes"
-        intro="The most-loved palettes from our catalogue — modern neutrals, naturals and a few statement directions. Browse the full set for more."
-        palettes={popularPalettes}
+        intro="What the community loves, plus your liked palettes — lightest to darkest. Like a card to keep it here. Browse all 56 palettes for the full range."
+        palettes={palettes}
         seeAllHref="/palettes"
       />
 

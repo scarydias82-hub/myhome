@@ -78,6 +78,20 @@ export function paletteSwatch(p: Palette): string[] {
   return order.map((r) => p.room_roles[r].hex);
 }
 
+// Perceptual brightness of a palette — used to sort carousels lightest → darkest.
+// Uses the wall colour as the dominant-surface proxy and the standard sRGB
+// relative luminance formula (IEC 61966-2-1) so the sort matches what the
+// human eye actually sees rather than raw RGB average.
+export function paletteBrightness(p: Palette): number {
+  const hex = p.room_roles.wall.hex.replace('#', '');
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  // sRGB → linear
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
 // Reverse-lookup a palette id from a hex array — used by the picking-list
 // builder to recover the palette id from style_profiles.palette (which
 // only stores hex codes). Match is exact-set-equality on lower-cased

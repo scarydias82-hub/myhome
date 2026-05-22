@@ -28,7 +28,7 @@ import { redirect } from 'next/navigation';
 import { isSupabaseConfigured, publicEnv } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { listPalettes, paletteSwatch } from '@/lib/palettes';
+import { listPalettes, paletteSwatch, paletteBrightness } from '@/lib/palettes';
 import { TopNav } from '@/components/dashboard/top-nav';
 import { HeroGreeting } from '@/components/dashboard/hero-greeting';
 import {
@@ -182,6 +182,7 @@ export default async function DashboardPage() {
     latestRenderRes,
     visionBoardsRes,
     featuredRes,
+    paletteLikesRes,
   ] = await Promise.all([
     supabase
       .from('projects')
@@ -254,6 +255,15 @@ export default async function DashboardPage() {
       .gt('featured_until', new Date().toISOString())
       .order('position', { ascending: true })
       .limit(12),
+    // All palette likes — used to compose the palette carousel from
+    // aggregate-popular + this user's liked palettes, sorted lightest
+    // → darkest. Table is small at beta scale; read all rows in one go.
+    // Cast through `any` — palette_likes not yet in generated types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('palette_likes')
+      .select('user_id, palette_id')
+      .limit(5000),
   ]);
 
   const projects = (projectsRes.data as ProjectRow[] | null) ?? [];
@@ -334,6 +344,42 @@ export default async function DashboardPage() {
   // Map palette_id → palette object (used for project cards + trend
   // bucket assignment).
   const palettesById = new Map(listPalettes().map((p) => [p.id, p]));
+
+  // --- Palette carousel composition -----------------------------------------
+  // "Popular" = palettes sorted by aggregate like count (all users).
+  // "Your palettes" = palettes this user has liked.
+  // Carousel = union(popular top-18 + user-liked), ordered lightest → darkest.
+  // Cold-start fallback: when the palette_likes table is empty we seed
+  // "popular" from the editorial `popular` tag so the carousel is never blank.
+
+  type PaletteLikeRow = { user_id: string; palette_id: string };
+  const allLikes = (paletteLikesRes.data as PaletteLikeRow[] | null) ?? [];
+
+  const likeCountMap = new Map<string, number>();
+  for (const row of allLikes) {
+    likeCountMap.set(row.palette_id, (likeCountMap.get(row.palette_id) ?? 0) + 1);
+  }
+  const userLikedPaletteIds = new Set(
+    allLikes.filter((l) => l.user_id === user.id).map((l) => l.palette_id),
+  );
+
+  // Top 18 most-liked globally — or editorial popular as the cold-start seed.
+  const sortedPopularIds: string[] =
+    likeCountMap.size > 0
+      ? [...likeCountMap.entries()]
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 18)
+          .map(([id]) => id)
+      : listPalettes()
+          .filter((p) => p.tags.includes('popular'))
+          .map((p) => p.id);
+
+  const carouselPaletteIds = new Set([...sortedPopularIds, ...userLikedPaletteIds]);
+  const carouselPalettes = listPalettes()
+    .filter((p) => carouselPaletteIds.has(p.id))
+    // Lightest → darkest: higher perceptual luminance first.
+    .sort((a, b) => paletteBrightness(b) - paletteBrightness(a));
+  // --------------------------------------------------------------------------
 
   // Project cards (existing logic, untouched)
   const projectCards: DashboardProjectCard[] = projects.map((p) => {
@@ -579,7 +625,7 @@ export default async function DashboardPage() {
             primary, "Render it" secondary. */}
         <TrendsSection
           trends={trendCards}
-          palettes={Array.from(palettesById.values()).map<DashboardPaletteCard>((p) => ({
+          palettes={carouselPalettes.map<DashboardPaletteCard>((p) => ({
             id: p.id,
             name: p.name,
             vibe: p.vibe,
@@ -589,6 +635,8 @@ export default async function DashboardPage() {
             personaFit: p.persona_fit,
             recommendedRooms: p.recommended_rooms,
             tags: p.tags,
+            likeCount: likeCountMap.get(p.id) ?? 0,
+            likedByUser: userLikedPaletteIds.has(p.id),
           }))}
         />
 

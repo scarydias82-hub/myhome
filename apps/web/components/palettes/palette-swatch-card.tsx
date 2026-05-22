@@ -7,6 +7,7 @@
 
 import Link from 'next/link';
 import { AddToVisionBoardButton } from '@/components/vision-boards/add-to-vision-board-button';
+import { PaletteLikeButton } from '@/components/palettes/palette-like-button';
 
 export interface PaletteCardData {
   id: string;
@@ -17,6 +18,10 @@ export interface PaletteCardData {
   timelessness: number;
   personaFit: string[];
   recommendedRooms: string[];
+  /** Aggregate like count across all users (palette_likes table). 0 cold-start. */
+  likeCount: number;
+  /** Whether the currently-signed-in user has liked this palette. */
+  likedByUser: boolean;
 }
 
 export function PaletteSwatchCard({ palette: p }: { palette: PaletteCardData }) {
@@ -63,6 +68,12 @@ export function PaletteSwatchCard({ palette: p }: { palette: PaletteCardData }) 
           >
             Start a project
           </Link>
+          <PaletteLikeButton
+            paletteId={p.id}
+            initialLiked={p.likedByUser}
+            initialCount={p.likeCount}
+            variant="compact"
+          />
           <AddToVisionBoardButton
             itemRef={{ itemType: 'palette', paletteId: p.id }}
             variant="compact"
