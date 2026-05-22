@@ -300,8 +300,23 @@ export function buildPrompt(
       // Subtle mode is the only place we still hard-pin flooring.
       preserve.push(`retain ${facts.flooring} flooring`);
     }
-    if (facts.light?.direction) {
-      preserve.push(`maintain ${facts.light.direction}-facing light direction`);
+    // Light QUALITY (warm/cool/diffuse/direct) is worth preserving; the
+    // CARDINAL direction is not — Claude can't determine true compass
+    // orientation from a single photo (no compass, no geo metadata), so
+    // light.direction is at best a guess from shadow length + colour
+    // temperature. Worse: passing it to Flux as "maintain north-facing
+    // light" makes the sampler invent a window on what IT thinks is the
+    // north wall, hallucinating openings where the original room has
+    // closed walls. We pass quality only and explicitly forbid new
+    // openings so the geometry of image 1 is the ground truth.
+    if (facts.light?.quality) {
+      preserve.push(
+        `maintain ${facts.light.quality} light character; do NOT add new windows, glazed openings, or wall apertures — every closed wall in image 1 stays closed`,
+      );
+    } else {
+      preserve.push(
+        `do NOT add new windows, glazed openings, or wall apertures — every closed wall in image 1 stays closed`,
+      );
     }
     if (preserve.length > 0) {
       base.push(preserve.join(', '));

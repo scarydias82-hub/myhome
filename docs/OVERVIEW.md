@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `3823d44` (will
+**Last verified:** 2026-05-22 · most recent material commit: `e849150` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,32 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **Window-hallucination fix in render prompts.** User
+  reported renders adding windows on walls that didn't have one in the
+  original photo. Root cause: vision.ts asks Claude for cardinal
+  light direction ("north" / "south" / "east" / "west") but Claude has
+  no way to determine true compass orientation from a single photo
+  (no compass, no geo metadata) — it's guessing from shadow length +
+  light colour temperature, often wrong. That guess fed straight into
+  the Flux prompt via `lib/styles.ts` as "maintain north-facing light
+  direction", which Flux interpreted by inventing a window on the
+  wall it associates with north — hallucinating openings where the
+  original had closed walls. Fix:
+  (a) `lib/styles.ts` — drop the cardinal-direction preserve directive
+     entirely. Pass `light.quality` (warm/cool/diffuse/direct) when
+     available, plus an explicit "do NOT add new windows / glazed
+     openings / wall apertures" forbidden clause.
+  (b) `lib/kontextPrompt.ts` — the window-preservation directive now
+     fires unconditionally (was: only when `light.notes` was set,
+     leaving the sampler unconstrained when Claude didn't volunteer a
+     window note). FORBIDDEN list extended from "no style change" to
+     "no NEW openings on walls that show closed walls in image 1".
+  Brief synthesiser + featuring still format `light.direction` into
+  their Claude prompts — lower impact (product recommendations, not
+  renders) but worth cleaning up in a follow-up. The proper fix is to
+  change the vision.ts schema to image-space light source ("from
+  left", "from above") + explicit window-walls list, deferred to a
+  separate ticket so this hot-fix can ship today.
 - `2026-05-22` — **#148 memoed: vision_profile becomes the source of
   truth, old tag columns become projections (catalogue intelligence
   Phase 4).** Spec for flipping the data ownership so `palette_tags`

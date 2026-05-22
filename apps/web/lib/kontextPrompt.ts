@@ -38,9 +38,22 @@ export function roomFactsToArchitecturalPreserves(
     );
   }
 
+  // Window directive always fires now — image 1 is the ground truth for
+  // which walls have openings. Previously this only emitted when
+  // light.notes was non-empty, leaving the sampler free to add windows
+  // to closed walls whenever Claude didn't volunteer a window note. The
+  // FORBIDDEN list now also blocks ADDING new openings on other walls,
+  // not just changing the existing one's style. Cardinal direction from
+  // facts.light.direction isn't used here either — Claude can't
+  // determine true north from a photo and Kontext interprets it by
+  // adding a window where it thinks north is, hallucinating openings.
   if (facts.light?.notes) {
     out.push(
-      `Window: keep the SAME window opening as image 1 — ${facts.light.notes}. FORBIDDEN: casement, sash, multi-pane, smaller window, radiator beneath, framed mullions. New curtains in palette tones are encouraged.`,
+      `Window: keep the SAME window opening as image 1 — ${facts.light.notes}. ABSOLUTELY FORBIDDEN: adding new windows to walls that show no window in image 1; converting closed walls into glazed openings or French doors; casement, sash, multi-pane swap; smaller window; radiator beneath; framed mullions. New curtains in palette tones are encouraged in front of EXISTING openings only.`,
+    );
+  } else {
+    out.push(
+      `Windows: ABSOLUTELY FORBIDDEN — do NOT add windows, glazed openings, French doors, skylights, or any new wall apertures. Every wall in image 1 that shows a closed wall must remain closed in the render. Curtains may only be added in front of EXISTING openings.`,
     );
   }
 
