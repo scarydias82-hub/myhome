@@ -23,6 +23,7 @@
     "ingest": "node scripts/ingest.js",
     "embed": "node scripts/embed.js",
     "embed:knowledge": "node scripts/embed-knowledge.js",
+    "vision-profile": "node scripts/visionProfile.js",
     "generate:trends": "node scripts/generate-trends.js"
   },
   "dependencies": {

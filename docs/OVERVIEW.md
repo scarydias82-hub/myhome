@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `047b02e` (will
+**Last verified:** 2026-05-22 · most recent material commit: `c166d19` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,21 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#145 vision_profile foundation shipped (catalogue
+  intelligence bundle Phase 1).** New `vision_profile jsonb` column on
+  `products` (migration 20260522160000) + a new scraper script
+  `apps/scraper/scripts/visionProfile.js` that calls Claude Haiku per
+  product image and returns a structured fit signal: silhouette,
+  materials, color_family, visual_tone, quality_tier, plus per-palette
+  fit and per-room fit scores in [0, 1] (≥0.4 threshold for inclusion;
+  others implicit 0). System prompt includes a compact one-line
+  descriptor of all 56 palettes; cache_control:ephemeral on the system
+  block amortises that cost across the run via Anthropic prompt-cache.
+  Resumable (skips rows that already have a profile unless --rebuild),
+  retailer-scopable, --dry / --limit flags. Backfill not yet run —
+  catalogue-wide pass is ~$15-30 at Haiku pricing; user gates the
+  spend. Matcher (#147) still uses palette_tags; vision_profile is
+  inert until #147 lands.
 - `2026-05-22` — **Roadmap: catalogue intelligence bundle memoed
   (§6.9, tasks #145 + #146 + #147).** Spec for pre-computing per-
   product visual + style fit so the render-time matcher does less
@@ -1223,7 +1238,7 @@ making sure each user has a great first render — concierge-style if needed.
 | `renders`          | One row per render attempt. Holds `fal_request_id`, `picking_list`, `cost_estimate_aud`, `status`, `output_url`. |
 | `staged_images`    | One row per virtual-staging call. Single or multi-product.           |
 | `render_revisions` | Version history per render. Original + every staging is one row. `renders.active_revision_id` points at the displayed revision. |
-| `products`         | Shared catalogue. Read for all authed users; service role writes.    |
+| `products`         | Shared catalogue. Read for all authed users; service role writes. Tag columns: `palette_tags`, `style_tags`, `room_tags`, `mood_tags`; vision-grounded fit signal: `vision_profile jsonb` (silhouette / materials / color_family / visual_tone / quality_tier / palette_fit / room_fit — populated by `apps/scraper/scripts/visionProfile.js`). |
 | `shortlist_items`  | Per-project picks promoted from a render or a staged image.          |
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
 | `palette_likes`    | Per-user palette hearts. `palette_id` is a text slug (no FK — palettes are compile-time JSON). Unique on `(user_id, palette_id)`. RLS: authenticated read (aggregate counts), insert/delete own rows. |
@@ -1496,18 +1511,23 @@ throttled at `RANK_CONCURRENCY=4` to stay under Haiku's 50K input-
 tokens/min ceiling — see `apps/web/lib/matching.ts:84-94`). Target
 end-state: ~3–5s with visibly more on-brief picks.
 
-- **#145 — Vision-grounded `vision_profile` on every product.** Add a
-  `vision_profile jsonb` column on `products`. New scraper script
-  `apps/scraper/scripts/visionProfile.js` iterates the catalogue,
-  calls Claude Haiku on the product image, stores structured output:
-  per-palette fit (0.0–1.0), per-room fit (0.0–1.0), silhouette,
-  materials, color family, visual tone, quality tier. Backfill on the
-  current catalogue (~$10–30 one-off at Haiku pricing) and wire into
-  the ingest path so new products get the pre-pass automatically.
-  Replaces the rule-based `palette_tags` inheritance with a
-  vision-grounded fit signal. Knock-on win: better featured-curation
-  inputs (`featured-curation.ts:54-97` consumes `style_tags` today)
-  and better material for the brief-to-retailer flow (#53).
+- **#145 — Vision-grounded `vision_profile` on every product.**
+  *Foundation shipped — backfill pending.* Migration
+  `20260522160000_products_vision_profile.sql` adds the `jsonb` column
+  + GIN index. Scraper script `apps/scraper/scripts/visionProfile.js`
+  iterates the catalogue, calls Claude Haiku on the product image with
+  a compact descriptor of all 56 palettes in the cached system prompt,
+  and returns structured output: silhouette, materials, color_family,
+  visual_tone, quality_tier, per-palette fit (≥0.4) and per-room fit
+  (≥0.4). Resumable (skips already-populated rows unless `--rebuild`),
+  concurrency-bounded at 4 workers, prompt-cache amortises the system
+  block across the run. Invoke:
+  `pnpm --filter @myhome/scraper run vision-profile`. Catalogue-wide
+  backfill is ~$15-30 one-off at Haiku pricing; not yet run.
+  The column is consumed by the matcher refactor (#147); until that
+  ships the data sits inert and `palette_tags` still drives candidate
+  selection. Knock-on win once consumed: better featured-curation
+  inputs and better material for the brief-to-retailer flow (#53).
 
 - **#146 — Backfill CLIP embeddings + pgvector pre-rank in matcher.**
   Backfill `products.clip_embedding` for every catalogue row via the
