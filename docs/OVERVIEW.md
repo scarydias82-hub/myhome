@@ -25,6 +25,22 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **§6.12 memoed: Personalised product universe
+  (per-user curated catalogue) + tasks #158-#161.** Builds on #156:
+  every product now carries `vision_profile` and every user carries
+  `preferences.tags`, both projectable into the same signal space.
+  The intersection IS the user's catalogue — a materialised subset of
+  the 2,500+ row product table that fits their declared taste,
+  computed independently of any room photo. Two surfaces from one
+  derivation: (1) a new dashboard "Your edit" personalised browse
+  view that doesn't need a room upload, (2) smaller candidate pool
+  feeding the render-time matcher → cheaper Sonnet curation, faster
+  renders, more honest "for you" framing. Phased: #158
+  on-the-fly affinity endpoint, #159 dashboard surface, #160
+  materialise + plug into /api/render candidate query, #161
+  cache invalidation + cron freshness. Same commit renumbers the
+  §6.11 planned "Phase D" from #156 to #157 — the integer was
+  reused by the shipped pre-filter PR.
 - `2026-05-22` — **#156 prefs ↔ vision_profile pre-filter shipped.**
   Closes the architectural gap where `users.preferences.tags` only
   shaped the *Claude designer's prompt* (recommend + curation) but
@@ -2100,13 +2116,15 @@ reinforces "your taste is the foundation of every render".
   inherited tags by re-firing recommend without overrideTags. The
   per-render override lives in React state only — never persisted.
 
-- **#156 — Phase D: edge cases + telemetry.** Closed-beta users with
+- **#157 — Phase D: edge cases + telemetry.** Closed-beta users with
   no `preferences` yet trigger the onboarding modal next login.
   Existing projects with existing briefs are untouched. Log frequency
   of per-render overrides so we can see whether the default
   inheritance is working or users are constantly overriding (signal
   that the canonical prefs need a richer schema). Estimated: ~0.5
-  day.
+  day. (Note: ID renumbered from the original #156 reservation —
+  the integer was reused by the shipped prefs ↔ vision_profile
+  pre-filter PR. §6.12 picks up the sequence from #158.)
 
 **Cross-references**
 - The deferred memory note on "minimal signup, onboarding wizard,
@@ -2118,6 +2136,139 @@ reinforces "your taste is the foundation of every render".
 - The brief synthesiser (`lib/brief/synthesiser.ts`) consumes tags
   today; once #155 lands it gets the same shape from outside-project
   uploads too. No prompt change.
+
+### 6.12 Personalised product universe (per-user curated catalogue)
+
+After #156 every product carries a `vision_profile` (Claude Haiku's read
+of materials / colour / tone / quality_tier / palette_fit / room_fit)
+and every user carries `preferences.tags` from §6.11. Both vocabularies
+project into the same signal space via the deterministic map in
+`lib/prefs-vision-fit.ts`. The **intersection** of those two sides IS
+the user's catalogue — a materialised subset of the 2,500+ row product
+table that fits their declared taste, computed independently of any
+room photo.
+
+Today the prefs ↔ vision_profile signal only fires *at render time*,
+between SQL fetch and Claude curation (#156). The architectural shift
+this section memos: do the narrowing *once per user* and use it for
+**two** distinct surfaces.
+
+**Two surfaces, one derivation**
+
+```
+User sets preferences           Catalogue grows / changes
+       │                                   │
+       ▼                                   ▼
+  preferences.tags             vision_profile per product
+       │                                   │
+       └─────────────┬─────────────────────┘
+                     │
+        user_product_affinity (materialised)
+                     │
+         ┌───────────┴───────────┐
+         ▼                       ▼
+  Dashboard "Your edit"   /api/render candidate pool
+   browse surface          ── intersected with this subset
+                              BEFORE palette+room SQL fires
+```
+
+**What it unlocks**
+
+1. **A new product surface — `Your edit` on the dashboard.** A
+   personalised browse view that doesn't require a room photo. "Your
+   600 matched products" is a meaningful engagement / shopping surface
+   the current architecture can't deliver. It also gives the user a
+   tangible payoff for setting preferences, which today are invisible
+   except as a downstream prompt input.
+2. **Faster, cheaper renders for prefs-set users.** Intersecting the
+   palette+room query with the user's affinity set typically takes the
+   candidate pool from ~100 down to ~20-40 before Claude Sonnet
+   curation runs. That's a smaller prompt (cheaper, faster) and a
+   stricter "for you" guarantee. The fallback metadata path also
+   benefits — it picks from a pre-narrowed pool that already respects
+   the user's avoid list.
+3. **An honest "for you" story.** "We've narrowed the catalogue to
+   what fits your taste" reads stronger than "we picked some
+   palette-matched things and asked Claude to be careful." Same data,
+   applied earlier, with a real new surface.
+
+**Phasing**
+
+- **#158 — Phase A: on-the-fly affinity endpoint.** Build
+  `lib/user-affinity.ts` extending the deterministic scorer from
+  `lib/prefs-vision-fit.ts` so it can rank the *whole* catalogue (not
+  just a palette-filtered slice) against a user's preference tags.
+  Add `GET /api/user-catalogue` returning the matched list with
+  scores, sorted desc, paginated. No materialisation yet — computed
+  on request (vision_profile is already in-DB so the query is fast
+  enough). Acceptance: endpoint returns < 500 ms for a typical user,
+  the score distribution looks sensible (most users land in the
+  600-900 range; abstract-preferences users in the 200-400 range).
+
+- **#159 — Phase B: surface in the UI.** Dashboard "Your edit"
+  section — top N products grouped by palette or category, image-led
+  cards matching the existing FeaturedProductsSection treatment.
+  Empty state for users without preferences directs them to the
+  onboarding modal. Decide between an inline dashboard block, a new
+  `/catalogue?for=me` route, or both. Acceptance: at least one
+  surface is live, visibly useful, and updates within a request of a
+  preferences edit.
+
+- **#160 — Phase C: materialise + plug into the render pipeline.**
+  New table `user_product_affinity (user_id uuid, product_id uuid,
+  score smallint, computed_at timestamptz)` with a composite primary
+  key + an index on `(user_id, score DESC)`. Recompute triggers:
+  `PUT /api/preferences` (synchronous, small — one user's row set),
+  scraper's `visionProfile.js` write (async, batched — only affected
+  users). `/api/render` joins the palette+room SQL against the
+  materialised set when the user has a row, falls back to the full
+  catalogue otherwise (preserves current behaviour for cold-start
+  users). Acceptance: matcher SQL ~3-5× fewer candidates for
+  prefs-set users; no regression for cold-start users.
+
+- **#161 — Phase D: freshness + observability.** Cron job: nightly
+  recompute for users whose preferences were edited that day (covers
+  any missed triggers). Bulk recompute when `palettes.json` or the
+  vision_profile schema versions. Telemetry: log how often a user's
+  affinity subset fails to fill a render's category buckets (signal
+  that we're over-narrowing). Add a dashboard health line showing
+  catalogue freshness per user.
+
+**Open design questions (resolve at #158)**
+
+- **Score visibility.** Showing the user "83% match" reads strong but
+  commits to a precision we may not have. Default to ordering desc and
+  showing no numbers; revisit if users start asking "why this product
+  ahead of that one."
+- **Anonymous browsing.** The personalised surface only renders for
+  signed-in users with preferences. Anonymous browsing stays on the
+  full catalogue (the current behaviour). The empty-state copy on the
+  personalised surface promotes sign-up.
+- **Abstract avoid slugs.** `avoid:trendy`, `avoid:fussy-patterns`,
+  `lifestyle:family-with-kids` etc. still don't project onto a single
+  `vision_profile` enum. Acceptable — those continue to feed Claude
+  Sonnet's curation reasoning at render time, but they don't shape the
+  pre-narrowed user catalogue. The doc surface explains this honestly.
+
+**Cross-references**
+
+- The deterministic scorer (`lib/prefs-vision-fit.ts`) shipped with
+  #156 — Phase A's affinity computation extends it from
+  per-render-bucket to whole-catalogue.
+- Depends on `vision_profile` being comprehensive across all 56
+  palettes (the post-2026-05-22 backfill — every product re-scored
+  against the Layer 2 / Layer 3 palettes added in `ef147c6` and
+  cherry-picked in `ade2461`).
+- Builds on §6.11 (user preferences foundation, #153-#157) — this
+  section is what makes the canonical brief load-bearing beyond
+  prompt-input.
+- Complements §6.9 (catalogue intelligence / matcher acceleration) —
+  §6.9 is about *which products match this palette+room*; §6.12 is
+  about *which products match this user*. They compose: matcher
+  filter ∩ user affinity = the candidates Sonnet sees.
+- Distinct from #129 (Claude-curated featured products) — that step
+  *picks* from a candidate pool; §6.12 *shapes* the pool earlier in
+  the pipeline so #129 has less work to do.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live
