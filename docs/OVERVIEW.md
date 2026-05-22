@@ -25,6 +25,41 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#165 shipped — auto-stage observability + open-plan
+  prompt fix.** Two changes from a real production diagnostic on
+  carydias@gmail.com's render (`546d0534`):
+  1. **Open-plan wall hallucination, prompt fix.** Vision correctly
+     captured `open_plan_zones` for the lounge_room render (kitchen +
+     dining visible past the sofa) but Kontext still injected a wall
+     behind the seating. Root cause: the OPEN-PLAN directive in
+     `lib/kontextPrompt.ts` was AFTER the doorway / windows
+     directives, so Kontext gave it lower weight; and the
+     doorway directive's "show ONLY hallway, wall, void" framing
+     gave the model permission to close off the open continuation as
+     a "wall". Fix: moved OPEN-PLAN to position 1 in
+     `roomFactsToArchitecturalPreserves`, rewrote with positive
+     framing ("the kitchen/dining/hallway visible at the back of
+     image 1 MUST remain visible") in addition to the existing
+     FORBIDDEN list, and made the doorway directive
+     conditional on the room being CLOSED-plan (skipped entirely
+     when `open_plan_zones.length > 0`).
+  2. **Auto-stage observability.** Audit confirmed #82's auto-stage
+     hook had not run on any render today (no `multi_staged`
+     revisions and no `staged_images` rows for renders that post-date
+     the #82 deploy). Vercel function logs aren't easily accessible
+     from CLI so the failure mode is invisible. Migration
+     `20260522220000_renders_auto_stage_status.sql` adds two columns
+     to renders: `auto_stage_status text` (null | started |
+     completed | failed | skipped) and `auto_stage_error text`
+     (reason / truncated error message). `lib/auto-stage.ts` now
+     returns a structured `AutoStageResult { outcome, staged,
+     skipped, reason }` and `/api/renders/[id]/status` writes
+     'started' eagerly before the call (so timeouts leave a trace)
+     then the final outcome after. Defensive: if the migration
+     hasn't been applied, the column-write fails gracefully and the
+     picking-list flow is unaffected.
+  Next render will write to these columns; we'll see in the DB
+  whether auto-stage ran and where it failed.
 - `2026-05-22` — **#164 shipped — coerce legacy accounts to set
   preferences before dismissing the modal.** Audit found 4 of 6
   closed-beta accounts had `preferences IS NULL` (created before

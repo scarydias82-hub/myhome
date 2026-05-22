@@ -42,26 +42,40 @@ export interface AutoStageContext {
   pickingListItems: PickingListItem[];
 }
 
+export type AutoStageOutcome = 'completed' | 'failed' | 'skipped';
+
+export interface AutoStageResult {
+  outcome: AutoStageOutcome;
+  staged: number;
+  skipped: number;
+  /** Human-readable detail. On 'skipped' explains why; on 'failed'
+   *  carries the underlying error message (truncated). On 'completed'
+   *  may be undefined or carry a "+N skipped" detail. Surfaced into
+   *  renders.auto_stage_error by the status route. */
+  reason?: string;
+}
+
 /**
  * Auto-stage the top-matched SKU for every detected non-paint item.
  * Idempotency: relies on the caller (status route's `after()` block)
  * only running once per successful render — same gate as the picking
  * list build itself.
  *
- * Returns a short result summary for logging; callers don't need to
- * react to it (auto-stage is best-effort).
+ * Returns a structured result. The caller is expected to persist
+ * `outcome` into renders.auto_stage_status and `reason` into
+ * renders.auto_stage_error (#165 observability).
  */
 export async function autoStageAfterPickingList(
   ctx: AutoStageContext,
-): Promise<{ staged: number; skipped: number; reason?: string }> {
+): Promise<AutoStageResult> {
   if (process.env.AUTO_STAGE_ALL === 'false') {
-    return { staged: 0, skipped: 0, reason: 'kill-switch (AUTO_STAGE_ALL=false)' };
+    return { outcome: 'skipped', staged: 0, skipped: 0, reason: 'kill-switch (AUTO_STAGE_ALL=false)' };
   }
   if (!ctx.roomPhotoKey) {
-    return { staged: 0, skipped: 0, reason: 'no room photo key' };
+    return { outcome: 'skipped', staged: 0, skipped: 0, reason: 'no room photo key' };
   }
   if (ctx.pickingListItems.length === 0) {
-    return { staged: 0, skipped: 0, reason: 'empty picking list' };
+    return { outcome: 'skipped', staged: 0, skipped: 0, reason: 'empty picking list' };
   }
 
   // Filter down to items we can actually stage:
@@ -116,48 +130,76 @@ export async function autoStageAfterPickingList(
     });
   }
 
+  const totalSkipped = skippedPaint + skippedNoMatch + skippedNoImage + skippedBadBbox;
   if (items.length === 0) {
     const reason = `no stageable items (paint=${skippedPaint} noMatch=${skippedNoMatch} noImage=${skippedNoImage} badBbox=${skippedBadBbox})`;
-    return { staged: 0, skipped: skippedPaint + skippedNoMatch + skippedNoImage + skippedBadBbox, reason };
+    return { outcome: 'skipped', staged: 0, skipped: totalSkipped, reason };
   }
 
   console.log(
     `[auto-stage] staging ${items.length} items for render ${ctx.renderId} (paint=${skippedPaint} noMatch=${skippedNoMatch} noImage=${skippedNoImage} badBbox=${skippedBadBbox} skipped)`,
   );
 
-  const result = await stageMultipleProducts({
-    admin: ctx.admin,
-    userId: ctx.userId,
-    roomPhotoKey: ctx.roomPhotoKey,
-    renderId: ctx.renderId,
-    projectId: ctx.projectId,
-    items,
-  });
+  // Wrap the heavy work (cutout × N → composite → harmonise → upload →
+  // staged_images insert) and revision append in one try/catch so the
+  // caller can persist a 'failed' outcome + error message regardless
+  // of which sub-step blew up. Throwing the error preserves caller
+  // semantics — the status route already swallows + persists.
+  try {
+    const result = await stageMultipleProducts({
+      admin: ctx.admin,
+      userId: ctx.userId,
+      roomPhotoKey: ctx.roomPhotoKey,
+      renderId: ctx.renderId,
+      projectId: ctx.projectId,
+      items,
+    });
 
-  if (!result.storageKey) {
-    // stageMultipleProducts persists internally, but if persistComposite
-    // didn't return a key we don't have anything to append as a revision.
-    // Bail without throwing — the staged_images row may still have
-    // landed inside stageMultipleProducts, which is acceptable.
-    console.warn(`[auto-stage] composite landed but no storageKey for ${ctx.renderId}`);
-    return { staged: items.length, skipped: 0, reason: 'no storageKey' };
+    if (!result.storageKey) {
+      // staged_images row may still have landed inside
+      // stageMultipleProducts — but we can't append a revision
+      // without an image path. Bail with a structured 'failed'.
+      console.warn(`[auto-stage] composite landed but no storageKey for ${ctx.renderId}`);
+      return {
+        outcome: 'failed',
+        staged: items.length,
+        skipped: totalSkipped,
+        reason: 'composite returned no storageKey',
+      };
+    }
+
+    // Flip the revision pointer so the render page shows the staged
+    // composite as the canonical view. Label distinguishes auto-stage
+    // from a user-initiated multi-stage in the revision strip so the
+    // user can revert with one click if the auto-pick isn't what they
+    // wanted.
+    await appendRevision({
+      admin: ctx.admin,
+      renderId: ctx.renderId,
+      userId: ctx.userId,
+      kind: 'multi_staged',
+      imageBucket: 'renders',
+      imagePath: result.storageKey,
+      sourceStagedImageId: result.stagedImageId,
+      label: `+ ${items.length} products (auto)`,
+    });
+
+    return {
+      outcome: 'completed',
+      staged: items.length,
+      skipped: totalSkipped,
+      reason: totalSkipped > 0 ? `+ ${totalSkipped} items skipped during filter` : undefined,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Truncate to fit comfortably in the DB column without bloating
+    // page-load payloads that read renders.* with `.select('*')`.
+    const trimmed = msg.length > 400 ? msg.slice(0, 400) + '…' : msg;
+    return {
+      outcome: 'failed',
+      staged: 0,
+      skipped: totalSkipped,
+      reason: `${trimmed}`,
+    };
   }
-
-  // Flip the revision pointer so the render page shows the staged
-  // composite as the canonical view. Label distinguishes auto-stage
-  // from a user-initiated multi-stage in the revision strip so the
-  // user can revert with one click if the auto-pick isn't what they
-  // wanted.
-  await appendRevision({
-    admin: ctx.admin,
-    renderId: ctx.renderId,
-    userId: ctx.userId,
-    kind: 'multi_staged',
-    imageBucket: 'renders',
-    imagePath: result.storageKey,
-    sourceStagedImageId: result.stagedImageId,
-    label: `+ ${items.length} products (auto)`,
-  });
-
-  return { staged: items.length, skipped: skippedPaint + skippedNoMatch + skippedNoImage + skippedBadBbox };
 }
