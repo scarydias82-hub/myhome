@@ -74,6 +74,15 @@ export async function POST(request: NextRequest, ctx: RouteCtx) {
 
   const admin = createAdminClient() as unknown as SupabaseClient;
 
+  // Wall-clock instrumentation. The route has a 60s Vercel budget;
+  // when it times out we want the logs to tell us which stage ate
+  // the budget (storage upload / Claude identify / catalogue match /
+  // DB insert).
+  const t0 = Date.now();
+  console.log(
+    `[vision-board-upload] start boardId=${boardId} sizeBytes=${file.size} type=${file.type}`,
+  );
+
   // 1. Upload to Storage. Path: <user_id>/<uuid>.<ext> — the RLS
   //    policy on storage.objects checks the user_id prefix.
   const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
@@ -88,9 +97,11 @@ export async function POST(request: NextRequest, ctx: RouteCtx) {
       upsert: false,
     });
   if (uploadRes.error) {
-    console.error('vision board upload failed', uploadRes.error);
+    console.error('[vision-board-upload] storage failed', uploadRes.error);
     return NextResponse.json({ error: 'Could not store the image.' }, { status: 500 });
   }
+  const tStorage = Date.now();
+  console.log(`[vision-board-upload] storage done in ${tStorage - t0}ms`);
 
   // 2. Identify the product with Claude vision.
   const base64 = buffer.toString('base64');
@@ -101,17 +112,24 @@ export async function POST(request: NextRequest, ctx: RouteCtx) {
       file.type as 'image/jpeg' | 'image/png' | 'image/webp',
     );
   } catch (err) {
+    const elapsed = Date.now() - tStorage;
     // Clean up the upload — leaving orphan blobs costs storage.
     await admin.storage.from('vision-board-uploads').remove([objectKey]);
-    console.error('image identify failed', err);
+    console.error(`[vision-board-upload] identify failed after ${elapsed}ms`, err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Identification failed.' },
       { status: 500 },
     );
   }
+  const tIdentify = Date.now();
+  console.log(`[vision-board-upload] identify done in ${tIdentify - tStorage}ms`);
 
   // 3. Match against the catalogue.
   const matches = await matchCatalogue(admin, identification);
+  const tMatch = Date.now();
+  console.log(
+    `[vision-board-upload] match done in ${tMatch - tIdentify}ms (${matches.length} matches)`,
+  );
 
   // 4. Persist as an 'image' board item with the storage key +
   //    matched product IDs in payload. The detail page renders this
@@ -133,9 +151,10 @@ export async function POST(request: NextRequest, ctx: RouteCtx) {
   if (insertRes.error || !row) {
     // Roll back the storage upload.
     await admin.storage.from('vision-board-uploads').remove([objectKey]);
-    console.error('vision_board_items image insert failed', insertRes.error);
+    console.error('[vision-board-upload] db insert failed', insertRes.error);
     return NextResponse.json({ error: 'Could not save the image.' }, { status: 500 });
   }
+  console.log(`[vision-board-upload] complete in ${Date.now() - t0}ms total`);
 
   return NextResponse.json({
     itemId: row.id,

@@ -141,36 +141,46 @@ export async function identifyImage(
   imageBase64: string,
   mediaType: 'image/jpeg' | 'image/png' | 'image/webp',
 ): Promise<ClaudeImageIdentification> {
+  // Bound the wall-clock against Vercel's 60s function budget. The
+  // Anthropic SDK defaults to a 600s timeout, so a hung call would
+  // burn the entire function budget before any retry kicks in. The
+  // 30s per-call cap + tight [0, 2s, 5s] retry schedule means worst-
+  // case ~95s (3 × 30s + 7s waits) — but in practice a timeout aborts
+  // and isn't retried (AbortError isn't in the retryable set), so the
+  // route fails fast and the user can re-try.
   let message: Anthropic.Message;
   try {
     message = await withAnthropicRetry(
       () =>
-        getAnthropic().messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 400,
-          temperature: 0.2,
-          system: IDENTIFY_SYSTEM,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: mediaType,
-                    data: imageBase64,
+        getAnthropic().messages.create(
+          {
+            model: 'claude-sonnet-4-6',
+            max_tokens: 400,
+            temperature: 0.2,
+            system: IDENTIFY_SYSTEM,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: mediaType,
+                      data: imageBase64,
+                    },
                   },
-                },
-                {
-                  type: 'text',
-                  text: 'Identify the primary product in this image. Return JSON only.',
-                },
-              ],
-            },
-          ],
-        }),
-      { label: 'vision-board-image-identify' },
+                  {
+                    type: 'text',
+                    text: 'Identify the primary product in this image. Return JSON only.',
+                  },
+                ],
+              },
+            ],
+          },
+          { timeout: 30_000 },
+        ),
+      { label: 'vision-board-image-identify', delaysMs: [0, 2000, 5000] },
     );
   } catch (err) {
     throw new Error(
