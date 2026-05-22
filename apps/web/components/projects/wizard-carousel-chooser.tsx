@@ -97,6 +97,21 @@ export function WizardCarouselChooser({
 
   const [paletteId, setPaletteId] = useState<string>(recommended.palette_id);
   const [direction, setDirection] = useState<DirectionChoice>(recommendedDirection);
+  // Carousel ① defaults to the curated "popular" subset so the user
+  // isn't scrolling past 50+ cards on the most important pick. Toggle
+  // expands to the full catalogue. Claude's recommendation + the
+  // currently-selected palette are always kept visible so the user
+  // never loses sight of either.
+  const [showAllPalettes, setShowAllPalettes] = useState(false);
+  const featuredPalettes = useMemo(() => {
+    if (showAllPalettes) return palettes;
+    return palettes.filter((p) => {
+      if (p.tags?.includes('popular')) return true;
+      if (p.id === recommended.palette_id) return true;
+      if (p.id === paletteId) return true;
+      return false;
+    });
+  }, [palettes, showAllPalettes, recommended.palette_id, paletteId]);
 
   // Avoid-set used for the confirmation modal in #127. We surface it
   // here too as a small "Designer flagged this" pill on greyed cards
@@ -163,8 +178,12 @@ export function WizardCarouselChooser({
         anchor="palette"
         label="① Colour palette"
         required
-        intro="The colour story for your render. Pick one — Claude's recommendation is highlighted."
-        palettes={palettes}
+        intro={
+          showAllPalettes
+            ? `All ${palettes.length} palettes. Claude's recommendation is highlighted; greyed cards are lower-fit for your brief.`
+            : `The most-loved palettes for your brief — Claude's recommendation is highlighted. Switch to all ${palettes.length} for the full catalogue.`
+        }
+        palettes={featuredPalettes}
         selectedId={paletteId}
         recommendedId={recommended.palette_id}
         avoidIds={avoidPaletteIds}
@@ -173,6 +192,11 @@ export function WizardCarouselChooser({
         trendCardImages={trendCardImages}
         onPick={onPickPalette}
         disabled={false}
+        toggle={{
+          showAll: showAllPalettes,
+          onToggle: () => setShowAllPalettes((s) => !s),
+          totalCount: palettes.length,
+        }}
       />
 
       <PaletteCarousel
@@ -317,6 +341,14 @@ interface CarouselProps {
   /** When true, render the room-visual variant (uses trendCardImages).
    *  When false, render the colour-swatch variant. */
   showVariant?: boolean;
+  /** Optional "Show all / Show featured" toggle for carousel ①. The
+   *  parent owns the toggle state — this just renders the button and
+   *  the total count. */
+  toggle?: {
+    showAll: boolean;
+    onToggle: () => void;
+    totalCount: number;
+  };
 }
 
 function PaletteCarousel({
@@ -335,6 +367,7 @@ function PaletteCarousel({
   disabledReason,
   required,
   showVariant,
+  toggle,
 }: CarouselProps) {
   return (
     <section id={`carousel-${anchor}`}>
@@ -347,6 +380,14 @@ function PaletteCarousel({
           <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
             {disabledReason ?? 'Mutually exclusive'}
           </p>
+        ) : toggle ? (
+          <button
+            type="button"
+            onClick={toggle.onToggle}
+            className="font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:underline"
+          >
+            {toggle.showAll ? '← Show featured only' : `Show all ${toggle.totalCount} →`}
+          </button>
         ) : null}
       </div>
 

@@ -588,6 +588,7 @@ export default async function DashboardPage() {
             timelessness: p.timelessness,
             personaFit: p.persona_fit,
             recommendedRooms: p.recommended_rooms,
+            tags: p.tags,
           }))}
         />
 

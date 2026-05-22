@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "generated": "2026-05-20",
-  "description": "myMaison interior design colour palettes — 10 trend-forward 2026 picks (WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU et al.) + 6 timeless persona/era frameworks (Federation, Hamptons Heritage, Mid-Century Walnut, Coastal Whitewash, English Country, Modernist Restraint). Each palette carries persona_fit + timelessness so the brief synthesiser can match palette to person, not just to trend.",
+  "version": "1.1.0",
+  "generated": "2026-05-22",
+  "description": "myMaison interior design colour palettes — 56 options across modern neutrals, naturals, soft pastels, heritage frameworks and bold accents. Each palette carries persona_fit + timelessness so the brief synthesiser can match palette to person, not just to trend. Palettes tagged \"popular\" surface in the dashboard carousel + the wizard's featured chooser; the full set is browseable at /palettes.",
   "palettes": [
     {
       "id": "warm-grounded-earth",
@@ -12,7 +12,8 @@
         "neutral",
         "earthy",
         "broad-appeal",
-        "default"
+        "default",
+        "popular"
       ],
       "recommended_rooms": [
         "living_room",
@@ -242,7 +243,8 @@
         "neutral",
         "whole-home",
         "timeless",
-        "sherwin-williams"
+        "sherwin-williams",
+        "popular"
       ],
       "recommended_rooms": [
         "open_plan",
@@ -1842,6 +1844,4642 @@
             232
           ]
         }
+      ]
+    },
+    {
+      "id": "white-dove-calm",
+      "name": "White Dove Calm",
+      "vibe": "Bright · Modern · Calm",
+      "trend_source": "Benjamin Moore White Dove — most-specified modern white",
+      "tags": [
+        "neutral",
+        "modern",
+        "light",
+        "popular",
+        "broad-appeal"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "kitchen",
+        "bathroom"
+      ],
+      "pairs_with_materials": [
+        "light_oak",
+        "natural_linen",
+        "matte_black",
+        "aged_brass"
+      ],
+      "app_note": "Modern white-on-white — the safest popular pick. Pairs with almost any furniture.",
+      "style_tags": [
+        "modern-farmhouse",
+        "minimalist",
+        "scandinavian",
+        "organic-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "White Dove",
+          "hex": "#F0EDE5"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E4DDD0"
+        },
+        "floor": {
+          "name": "Light Oak",
+          "hex": "#C9B393"
+        },
+        "accent": {
+          "name": "Soft Black",
+          "hex": "#2C2A26"
+        },
+        "trim": {
+          "name": "Warm Cream",
+          "hex": "#F5F0E6"
+        }
+      },
+      "colors": [
+        {
+          "id": "wdc-white-dove",
+          "name": "White Dove",
+          "hex": "#F0EDE5",
+          "role": "wall",
+          "rgb": [
+            240,
+            237,
+            229
+          ]
+        },
+        {
+          "id": "wdc-bone",
+          "name": "Bone",
+          "hex": "#E4DDD0",
+          "role": "sofa",
+          "rgb": [
+            228,
+            221,
+            208
+          ]
+        },
+        {
+          "id": "wdc-light-oak",
+          "name": "Light Oak",
+          "hex": "#C9B393",
+          "role": "floor",
+          "rgb": [
+            201,
+            179,
+            147
+          ]
+        },
+        {
+          "id": "wdc-soft-black",
+          "name": "Soft Black",
+          "hex": "#2C2A26",
+          "role": "accent",
+          "rgb": [
+            44,
+            42,
+            38
+          ]
+        },
+        {
+          "id": "wdc-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#F5F0E6",
+          "role": "trim",
+          "rgb": [
+            245,
+            240,
+            230
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "swiss-coffee-warm",
+      "name": "Swiss Coffee Warm",
+      "vibe": "Warm · Honest · Welcoming",
+      "trend_source": "Benjamin Moore Swiss Coffee — warm-white classic",
+      "tags": [
+        "neutral",
+        "warm",
+        "modern",
+        "popular",
+        "broad-appeal"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "dining_room",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "warm_walnut",
+        "natural_linen",
+        "aged_brass",
+        "rattan"
+      ],
+      "app_note": "Warm-cream alternative to White Dove — better with timber-heavy interiors.",
+      "style_tags": [
+        "modern-farmhouse",
+        "organic-modern",
+        "coastal-australian"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Swiss Coffee",
+          "hex": "#EEE6D7"
+        },
+        "sofa": {
+          "name": "Camel",
+          "hex": "#B89968"
+        },
+        "floor": {
+          "name": "Warm Walnut",
+          "hex": "#6E513A"
+        },
+        "accent": {
+          "name": "Greige",
+          "hex": "#B8AC9C"
+        },
+        "trim": {
+          "name": "Soft Black",
+          "hex": "#2A251F"
+        }
+      },
+      "colors": [
+        {
+          "id": "scw-swiss-coffee",
+          "name": "Swiss Coffee",
+          "hex": "#EEE6D7",
+          "role": "wall",
+          "rgb": [
+            238,
+            230,
+            215
+          ]
+        },
+        {
+          "id": "scw-camel",
+          "name": "Camel",
+          "hex": "#B89968",
+          "role": "sofa",
+          "rgb": [
+            184,
+            153,
+            104
+          ]
+        },
+        {
+          "id": "scw-warm-walnut",
+          "name": "Warm Walnut",
+          "hex": "#6E513A",
+          "role": "floor",
+          "rgb": [
+            110,
+            81,
+            58
+          ]
+        },
+        {
+          "id": "scw-greige",
+          "name": "Greige",
+          "hex": "#B8AC9C",
+          "role": "accent",
+          "rgb": [
+            184,
+            172,
+            156
+          ]
+        },
+        {
+          "id": "scw-soft-black",
+          "name": "Soft Black",
+          "hex": "#2A251F",
+          "role": "trim",
+          "rgb": [
+            42,
+            37,
+            31
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "heritage"
+      ]
+    },
+    {
+      "id": "greige-sanctuary",
+      "name": "Greige Sanctuary",
+      "vibe": "Soft · Grounded · Liveable",
+      "trend_source": "Greige — most-painted wall family 2022-2026",
+      "tags": [
+        "neutral",
+        "modern",
+        "popular",
+        "broad-appeal",
+        "default"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "open_plan"
+      ],
+      "pairs_with_materials": [
+        "natural_oak",
+        "linen",
+        "wool",
+        "aged_brass"
+      ],
+      "app_note": "Warm grey-beige — the most broadly liveable neutral. Excellent default.",
+      "style_tags": [
+        "transitional",
+        "organic-modern",
+        "modern-farmhouse"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Warm Greige",
+          "hex": "#C5BCAC"
+        },
+        "sofa": {
+          "name": "Mushroom",
+          "hex": "#A89C8A"
+        },
+        "floor": {
+          "name": "Bone",
+          "hex": "#E2DACE"
+        },
+        "accent": {
+          "name": "Oak",
+          "hex": "#C2A982"
+        },
+        "trim": {
+          "name": "Chocolate",
+          "hex": "#4A3B2E"
+        }
+      },
+      "colors": [
+        {
+          "id": "gs-warm-greige",
+          "name": "Warm Greige",
+          "hex": "#C5BCAC",
+          "role": "wall",
+          "rgb": [
+            197,
+            188,
+            172
+          ]
+        },
+        {
+          "id": "gs-mushroom",
+          "name": "Mushroom",
+          "hex": "#A89C8A",
+          "role": "sofa",
+          "rgb": [
+            168,
+            156,
+            138
+          ]
+        },
+        {
+          "id": "gs-bone",
+          "name": "Bone",
+          "hex": "#E2DACE",
+          "role": "floor",
+          "rgb": [
+            226,
+            218,
+            206
+          ]
+        },
+        {
+          "id": "gs-oak",
+          "name": "Oak",
+          "hex": "#C2A982",
+          "role": "accent",
+          "rgb": [
+            194,
+            169,
+            130
+          ]
+        },
+        {
+          "id": "gs-chocolate",
+          "name": "Chocolate",
+          "hex": "#4A3B2E",
+          "role": "trim",
+          "rgb": [
+            74,
+            59,
+            46
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "mushroom-and-bone",
+      "name": "Mushroom & Bone",
+      "vibe": "Quiet · Luxurious · Considered",
+      "trend_source": "Quiet luxury palette — 2024-2026 dominant aesthetic",
+      "tags": [
+        "neutral",
+        "modern",
+        "popular",
+        "quiet-luxury",
+        "light"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "raw_silk",
+        "natural_linen",
+        "pale_oak",
+        "travertine"
+      ],
+      "app_note": "Quiet luxury palette — works hard at the high end without trying.",
+      "style_tags": [
+        "quiet-luxury",
+        "organic-modern",
+        "minimalist"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Mushroom",
+          "hex": "#B8AC9A"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E8E0CF"
+        },
+        "floor": {
+          "name": "Warm Putty",
+          "hex": "#9B8C78"
+        },
+        "accent": {
+          "name": "Chalk",
+          "hex": "#F2EDE2"
+        },
+        "trim": {
+          "name": "Smoky Brown",
+          "hex": "#4F4337"
+        }
+      },
+      "colors": [
+        {
+          "id": "mab-mushroom",
+          "name": "Mushroom",
+          "hex": "#B8AC9A",
+          "role": "wall",
+          "rgb": [
+            184,
+            172,
+            154
+          ]
+        },
+        {
+          "id": "mab-bone",
+          "name": "Bone",
+          "hex": "#E8E0CF",
+          "role": "sofa",
+          "rgb": [
+            232,
+            224,
+            207
+          ]
+        },
+        {
+          "id": "mab-warm-putty",
+          "name": "Warm Putty",
+          "hex": "#9B8C78",
+          "role": "floor",
+          "rgb": [
+            155,
+            140,
+            120
+          ]
+        },
+        {
+          "id": "mab-chalk",
+          "name": "Chalk",
+          "hex": "#F2EDE2",
+          "role": "accent",
+          "rgb": [
+            242,
+            237,
+            226
+          ]
+        },
+        {
+          "id": "mab-smoky-brown",
+          "name": "Smoky Brown",
+          "hex": "#4F4337",
+          "role": "trim",
+          "rgb": [
+            79,
+            67,
+            55
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "oat-and-linen",
+      "name": "Oat & Linen",
+      "vibe": "Soft · Natural · Light Japandi",
+      "trend_source": "Japandi-inflected natural neutral, 2025-2026 lookbooks",
+      "tags": [
+        "neutral",
+        "natural",
+        "light",
+        "modern",
+        "popular"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "living_room",
+        "study",
+        "nursery"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "raw_linen",
+        "rattan",
+        "pale_ceramic"
+      ],
+      "app_note": "Light Japandi — gentle warm neutrals, lots of natural texture.",
+      "style_tags": [
+        "japandi",
+        "scandinavian",
+        "organic-modern",
+        "wabi-sabi"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Oat",
+          "hex": "#E0D6BF"
+        },
+        "sofa": {
+          "name": "Flax",
+          "hex": "#C9B898"
+        },
+        "floor": {
+          "name": "Natural Linen",
+          "hex": "#D8CCB2"
+        },
+        "accent": {
+          "name": "Soft Taupe",
+          "hex": "#A89878"
+        },
+        "trim": {
+          "name": "Warm Ink",
+          "hex": "#3A2F22"
+        }
+      },
+      "colors": [
+        {
+          "id": "oal-oat",
+          "name": "Oat",
+          "hex": "#E0D6BF",
+          "role": "wall",
+          "rgb": [
+            224,
+            214,
+            191
+          ]
+        },
+        {
+          "id": "oal-flax",
+          "name": "Flax",
+          "hex": "#C9B898",
+          "role": "sofa",
+          "rgb": [
+            201,
+            184,
+            152
+          ]
+        },
+        {
+          "id": "oal-natural-linen",
+          "name": "Natural Linen",
+          "hex": "#D8CCB2",
+          "role": "floor",
+          "rgb": [
+            216,
+            204,
+            178
+          ]
+        },
+        {
+          "id": "oal-soft-taupe",
+          "name": "Soft Taupe",
+          "hex": "#A89878",
+          "role": "accent",
+          "rgb": [
+            168,
+            152,
+            120
+          ]
+        },
+        {
+          "id": "oal-warm-ink",
+          "name": "Warm Ink",
+          "hex": "#3A2F22",
+          "role": "trim",
+          "rgb": [
+            58,
+            47,
+            34
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "pebble-grey-modern",
+      "name": "Pebble Grey Modern",
+      "vibe": "Cool · Clean · Refined",
+      "trend_source": "Cool greige — modern minimalist staple",
+      "tags": [
+        "neutral",
+        "modern",
+        "cool",
+        "popular",
+        "light"
+      ],
+      "recommended_rooms": [
+        "kitchen",
+        "bathroom",
+        "living_room",
+        "open_plan"
+      ],
+      "pairs_with_materials": [
+        "concrete",
+        "pale_oak",
+        "matte_steel",
+        "opaque_glass"
+      ],
+      "app_note": "Cooler counterpart to Greige Sanctuary — for cleaner, more architectural rooms.",
+      "style_tags": [
+        "minimalist",
+        "modernist",
+        "contemporary"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Pebble",
+          "hex": "#C9C5BD"
+        },
+        "sofa": {
+          "name": "Chalk",
+          "hex": "#E8E4DB"
+        },
+        "floor": {
+          "name": "Slate",
+          "hex": "#6E6B65"
+        },
+        "accent": {
+          "name": "Warm White",
+          "hex": "#F2EFE8"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#1F1D1A"
+        }
+      },
+      "colors": [
+        {
+          "id": "pgm-pebble",
+          "name": "Pebble",
+          "hex": "#C9C5BD",
+          "role": "wall",
+          "rgb": [
+            201,
+            197,
+            189
+          ]
+        },
+        {
+          "id": "pgm-chalk",
+          "name": "Chalk",
+          "hex": "#E8E4DB",
+          "role": "sofa",
+          "rgb": [
+            232,
+            228,
+            219
+          ]
+        },
+        {
+          "id": "pgm-slate",
+          "name": "Slate",
+          "hex": "#6E6B65",
+          "role": "floor",
+          "rgb": [
+            110,
+            107,
+            101
+          ]
+        },
+        {
+          "id": "pgm-warm-white",
+          "name": "Warm White",
+          "hex": "#F2EFE8",
+          "role": "accent",
+          "rgb": [
+            242,
+            239,
+            232
+          ]
+        },
+        {
+          "id": "pgm-ink",
+          "name": "Ink",
+          "hex": "#1F1D1A",
+          "role": "trim",
+          "rgb": [
+            31,
+            29,
+            26
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "safe",
+        "contemporary",
+        "quiet",
+        "timeless"
+      ]
+    },
+    {
+      "id": "limewash-plaster",
+      "name": "Limewash Plaster",
+      "vibe": "Mediterranean · Tactile · Modern",
+      "trend_source": "Limewash + venetian plaster trend — 2024-2026 surge",
+      "tags": [
+        "neutral",
+        "natural",
+        "modern",
+        "popular",
+        "tactile"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "feature_wall",
+        "dining_room"
+      ],
+      "pairs_with_materials": [
+        "venetian_plaster",
+        "pale_oak",
+        "natural_linen",
+        "travertine"
+      ],
+      "app_note": "Mediterranean-modern hero — let the wall texture do the work.",
+      "style_tags": [
+        "mediterranean-modern",
+        "organic-modern",
+        "wabi-sabi"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Limewash",
+          "hex": "#DBC9B0"
+        },
+        "sofa": {
+          "name": "Plaster",
+          "hex": "#CFB89A"
+        },
+        "floor": {
+          "name": "Warm Cream",
+          "hex": "#ECE0CA"
+        },
+        "accent": {
+          "name": "Smoky Umber",
+          "hex": "#6B5440"
+        },
+        "trim": {
+          "name": "Bone",
+          "hex": "#EAE0CB"
+        }
+      },
+      "colors": [
+        {
+          "id": "lwp-limewash",
+          "name": "Limewash",
+          "hex": "#DBC9B0",
+          "role": "wall",
+          "rgb": [
+            219,
+            201,
+            176
+          ]
+        },
+        {
+          "id": "lwp-plaster",
+          "name": "Plaster",
+          "hex": "#CFB89A",
+          "role": "sofa",
+          "rgb": [
+            207,
+            184,
+            154
+          ]
+        },
+        {
+          "id": "lwp-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#ECE0CA",
+          "role": "floor",
+          "rgb": [
+            236,
+            224,
+            202
+          ]
+        },
+        {
+          "id": "lwp-smoky-umber",
+          "name": "Smoky Umber",
+          "hex": "#6B5440",
+          "role": "accent",
+          "rgb": [
+            107,
+            84,
+            64
+          ]
+        },
+        {
+          "id": "lwp-bone",
+          "name": "Bone",
+          "hex": "#EAE0CB",
+          "role": "trim",
+          "rgb": [
+            234,
+            224,
+            203
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "contemporary",
+        "quiet",
+        "of-the-moment",
+        "timeless"
+      ]
+    },
+    {
+      "id": "bone-and-black",
+      "name": "Bone & Black",
+      "vibe": "Minimalist · Refined · Architectural",
+      "trend_source": "Modern monochrome — Japandi + Scandi crossover",
+      "tags": [
+        "neutral",
+        "modern",
+        "minimalist",
+        "popular",
+        "high-contrast"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "study",
+        "kitchen",
+        "gallery_wall"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "matte_black_steel",
+        "natural_linen",
+        "opaque_glass"
+      ],
+      "app_note": "Modern bone-on-black — quiet drama without colour commitment.",
+      "style_tags": [
+        "minimalist",
+        "japandi",
+        "modernist",
+        "scandinavian"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Bone",
+          "hex": "#ECE4D2"
+        },
+        "sofa": {
+          "name": "Ivory",
+          "hex": "#F2EBD9"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F6F0E3"
+        },
+        "accent": {
+          "name": "Soft Black",
+          "hex": "#25221E"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#14120F"
+        }
+      },
+      "colors": [
+        {
+          "id": "bab-bone",
+          "name": "Bone",
+          "hex": "#ECE4D2",
+          "role": "wall",
+          "rgb": [
+            236,
+            228,
+            210
+          ]
+        },
+        {
+          "id": "bab-ivory",
+          "name": "Ivory",
+          "hex": "#F2EBD9",
+          "role": "sofa",
+          "rgb": [
+            242,
+            235,
+            217
+          ]
+        },
+        {
+          "id": "bab-warm-white",
+          "name": "Warm White",
+          "hex": "#F6F0E3",
+          "role": "floor",
+          "rgb": [
+            246,
+            240,
+            227
+          ]
+        },
+        {
+          "id": "bab-soft-black",
+          "name": "Soft Black",
+          "hex": "#25221E",
+          "role": "accent",
+          "rgb": [
+            37,
+            34,
+            30
+          ]
+        },
+        {
+          "id": "bab-ink",
+          "name": "Ink",
+          "hex": "#14120F",
+          "role": "trim",
+          "rgb": [
+            20,
+            18,
+            15
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "contemporary",
+        "quiet",
+        "safe",
+        "timeless"
+      ]
+    },
+    {
+      "id": "soft-blush-bone",
+      "name": "Soft Blush & Bone",
+      "vibe": "Romantic · Soft · Modern feminine",
+      "trend_source": "Soft pink revival 2025-2026 — Dulux & Sherwin-Williams",
+      "tags": [
+        "soft",
+        "feminine",
+        "modern",
+        "popular",
+        "light"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "nursery",
+        "dressing_room",
+        "living_room"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "raw_silk",
+        "aged_brass",
+        "pink_marble"
+      ],
+      "app_note": "Modern blush — neutralised, not sweet. Reads as a warm neutral with rose undertones.",
+      "style_tags": [
+        "organic-modern",
+        "modern-romantic",
+        "quiet-luxury"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Soft Blush",
+          "hex": "#E8D4CC"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#EBE2D2"
+        },
+        "floor": {
+          "name": "Warm Cream",
+          "hex": "#F1EADC"
+        },
+        "accent": {
+          "name": "Camel",
+          "hex": "#B89876"
+        },
+        "trim": {
+          "name": "Dusty Rose",
+          "hex": "#C39E96"
+        }
+      },
+      "colors": [
+        {
+          "id": "sbb-soft-blush",
+          "name": "Soft Blush",
+          "hex": "#E8D4CC",
+          "role": "wall",
+          "rgb": [
+            232,
+            212,
+            204
+          ]
+        },
+        {
+          "id": "sbb-bone",
+          "name": "Bone",
+          "hex": "#EBE2D2",
+          "role": "sofa",
+          "rgb": [
+            235,
+            226,
+            210
+          ]
+        },
+        {
+          "id": "sbb-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#F1EADC",
+          "role": "floor",
+          "rgb": [
+            241,
+            234,
+            220
+          ]
+        },
+        {
+          "id": "sbb-camel",
+          "name": "Camel",
+          "hex": "#B89876",
+          "role": "accent",
+          "rgb": [
+            184,
+            152,
+            118
+          ]
+        },
+        {
+          "id": "sbb-dusty-rose",
+          "name": "Dusty Rose",
+          "hex": "#C39E96",
+          "role": "trim",
+          "rgb": [
+            195,
+            158,
+            150
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "safe",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "dusty-sage-cream",
+      "name": "Dusty Sage & Cream",
+      "vibe": "Calming · Verdant · Light",
+      "trend_source": "Sage green — top-3 trending wall colour 2024-2026",
+      "tags": [
+        "natural",
+        "green",
+        "soft",
+        "light",
+        "modern"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "living_room",
+        "kitchen",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "aged_brass",
+        "travertine"
+      ],
+      "app_note": "Light sage — calmer than Mossy Green & Ochre, easier to live with.",
+      "style_tags": [
+        "organic-modern",
+        "modern-farmhouse",
+        "english-country-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Dusty Sage",
+          "hex": "#B8BFA8"
+        },
+        "sofa": {
+          "name": "Warm Cream",
+          "hex": "#E8DDC6"
+        },
+        "floor": {
+          "name": "Bone",
+          "hex": "#E2D8C4"
+        },
+        "accent": {
+          "name": "Warm White",
+          "hex": "#F1EAD8"
+        },
+        "trim": {
+          "name": "Olive",
+          "hex": "#6F7A5A"
+        }
+      },
+      "colors": [
+        {
+          "id": "dsc-dusty-sage",
+          "name": "Dusty Sage",
+          "hex": "#B8BFA8",
+          "role": "wall",
+          "rgb": [
+            184,
+            191,
+            168
+          ]
+        },
+        {
+          "id": "dsc-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#E8DDC6",
+          "role": "sofa",
+          "rgb": [
+            232,
+            221,
+            198
+          ]
+        },
+        {
+          "id": "dsc-bone",
+          "name": "Bone",
+          "hex": "#E2D8C4",
+          "role": "floor",
+          "rgb": [
+            226,
+            216,
+            196
+          ]
+        },
+        {
+          "id": "dsc-warm-white",
+          "name": "Warm White",
+          "hex": "#F1EAD8",
+          "role": "accent",
+          "rgb": [
+            241,
+            234,
+            216
+          ]
+        },
+        {
+          "id": "dsc-olive",
+          "name": "Olive",
+          "hex": "#6F7A5A",
+          "role": "trim",
+          "rgb": [
+            111,
+            122,
+            90
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "safe",
+        "quiet",
+        "timeless",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "powder-blue-linen",
+      "name": "Powder Blue & Linen",
+      "vibe": "Coastal · Light · Modern",
+      "trend_source": "Soft blue revival — Pantone palettes 2026",
+      "tags": [
+        "light",
+        "modern",
+        "coastal",
+        "popular",
+        "soft"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "bathroom",
+        "living_room",
+        "nursery"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "brushed_nickel",
+        "white_oak"
+      ],
+      "app_note": "Light coastal modern — fresher and less expected than Hamptons blues.",
+      "style_tags": [
+        "coastal-australian",
+        "modern-coastal",
+        "scandinavian"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Powder Blue",
+          "hex": "#C8D4DC"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E4DCC8"
+        },
+        "floor": {
+          "name": "Linen",
+          "hex": "#D8CFBC"
+        },
+        "accent": {
+          "name": "Soft Grey",
+          "hex": "#B0AFA6"
+        },
+        "trim": {
+          "name": "Deep Ink",
+          "hex": "#1E2128"
+        }
+      },
+      "colors": [
+        {
+          "id": "pbl-powder-blue",
+          "name": "Powder Blue",
+          "hex": "#C8D4DC",
+          "role": "wall",
+          "rgb": [
+            200,
+            212,
+            220
+          ]
+        },
+        {
+          "id": "pbl-bone",
+          "name": "Bone",
+          "hex": "#E4DCC8",
+          "role": "sofa",
+          "rgb": [
+            228,
+            220,
+            200
+          ]
+        },
+        {
+          "id": "pbl-linen",
+          "name": "Linen",
+          "hex": "#D8CFBC",
+          "role": "floor",
+          "rgb": [
+            216,
+            207,
+            188
+          ]
+        },
+        {
+          "id": "pbl-soft-grey",
+          "name": "Soft Grey",
+          "hex": "#B0AFA6",
+          "role": "accent",
+          "rgb": [
+            176,
+            175,
+            166
+          ]
+        },
+        {
+          "id": "pbl-deep-ink",
+          "name": "Deep Ink",
+          "hex": "#1E2128",
+          "role": "trim",
+          "rgb": [
+            30,
+            33,
+            40
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "safe",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "butter-and-bone",
+      "name": "Butter & Bone",
+      "vibe": "Cheerful · Soft · Sunny",
+      "trend_source": "Butter yellow — Sherwin-Williams + Dulux 2025-2026",
+      "tags": [
+        "soft",
+        "warm",
+        "light",
+        "cheerful",
+        "modern"
+      ],
+      "recommended_rooms": [
+        "kitchen",
+        "breakfast_nook",
+        "nursery",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "warm_oak",
+        "natural_linen",
+        "aged_brass",
+        "cream_ceramic"
+      ],
+      "app_note": "Soft buttery yellow — modern not nostalgic. Pairs with cream walls beautifully.",
+      "style_tags": [
+        "modern-farmhouse",
+        "organic-modern",
+        "english-country-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Butter Cream",
+          "hex": "#F0E5BC"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#EBE2CE"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F5EFE0"
+        },
+        "accent": {
+          "name": "Camel",
+          "hex": "#B69870"
+        },
+        "trim": {
+          "name": "Chocolate",
+          "hex": "#4A3829"
+        }
+      },
+      "colors": [
+        {
+          "id": "bub-butter-cream",
+          "name": "Butter Cream",
+          "hex": "#F0E5BC",
+          "role": "wall",
+          "rgb": [
+            240,
+            229,
+            188
+          ]
+        },
+        {
+          "id": "bub-bone",
+          "name": "Bone",
+          "hex": "#EBE2CE",
+          "role": "sofa",
+          "rgb": [
+            235,
+            226,
+            206
+          ]
+        },
+        {
+          "id": "bub-warm-white",
+          "name": "Warm White",
+          "hex": "#F5EFE0",
+          "role": "floor",
+          "rgb": [
+            245,
+            239,
+            224
+          ]
+        },
+        {
+          "id": "bub-camel",
+          "name": "Camel",
+          "hex": "#B69870",
+          "role": "accent",
+          "rgb": [
+            182,
+            152,
+            112
+          ]
+        },
+        {
+          "id": "bub-chocolate",
+          "name": "Chocolate",
+          "hex": "#4A3829",
+          "role": "trim",
+          "rgb": [
+            74,
+            56,
+            41
+          ]
+        }
+      ],
+      "timelessness": 6,
+      "persona_fit": [
+        "safe",
+        "quiet",
+        "of-the-moment"
+      ]
+    },
+    {
+      "id": "smoky-lavender",
+      "name": "Smoky Lavender",
+      "vibe": "Refined · Moody · Returning trend",
+      "trend_source": "Mauve revival — WGSN + Pantone 2025-2026",
+      "tags": [
+        "soft",
+        "modern",
+        "unexpected",
+        "trend-forward"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "study",
+        "powder_room",
+        "dressing_room"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "raw_silk",
+        "antique_brass",
+        "velvet"
+      ],
+      "app_note": "Smoky lavender — modernised mauve. Not sweet — reads as a warm purple-grey.",
+      "style_tags": [
+        "modern-romantic",
+        "art-deco-revival",
+        "organic-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Smoky Lavender",
+          "hex": "#C7BBCC"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E2DBCC"
+        },
+        "floor": {
+          "name": "Warm Grey",
+          "hex": "#B0A9A0"
+        },
+        "accent": {
+          "name": "Plum",
+          "hex": "#6B5060"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#2A2226"
+        }
+      },
+      "colors": [
+        {
+          "id": "slv-smoky-lavender",
+          "name": "Smoky Lavender",
+          "hex": "#C7BBCC",
+          "role": "wall",
+          "rgb": [
+            199,
+            187,
+            204
+          ]
+        },
+        {
+          "id": "slv-bone",
+          "name": "Bone",
+          "hex": "#E2DBCC",
+          "role": "sofa",
+          "rgb": [
+            226,
+            219,
+            204
+          ]
+        },
+        {
+          "id": "slv-warm-grey",
+          "name": "Warm Grey",
+          "hex": "#B0A9A0",
+          "role": "floor",
+          "rgb": [
+            176,
+            169,
+            160
+          ]
+        },
+        {
+          "id": "slv-plum",
+          "name": "Plum",
+          "hex": "#6B5060",
+          "role": "accent",
+          "rgb": [
+            107,
+            80,
+            96
+          ]
+        },
+        {
+          "id": "slv-ink",
+          "name": "Ink",
+          "hex": "#2A2226",
+          "role": "trim",
+          "rgb": [
+            42,
+            34,
+            38
+          ]
+        }
+      ],
+      "timelessness": 5,
+      "persona_fit": [
+        "adventurous",
+        "of-the-moment",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "almond-milk",
+      "name": "Almond Milk",
+      "vibe": "Subtle · Warm · Liveable",
+      "trend_source": "Almond / oat neutrals — most-saved Pinterest 2026",
+      "tags": [
+        "neutral",
+        "natural",
+        "light",
+        "modern",
+        "popular"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "open_plan",
+        "kitchen"
+      ],
+      "pairs_with_materials": [
+        "natural_oak",
+        "wool",
+        "aged_brass",
+        "rattan"
+      ],
+      "app_note": "Warm pale neutral — friendlier than Bone & Black, softer than Greige.",
+      "style_tags": [
+        "organic-modern",
+        "modern-farmhouse",
+        "japandi"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Almond",
+          "hex": "#E8DEC8"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E0D5BD"
+        },
+        "floor": {
+          "name": "Chalk",
+          "hex": "#ECE4D2"
+        },
+        "accent": {
+          "name": "Warm Taupe",
+          "hex": "#A89878"
+        },
+        "trim": {
+          "name": "Soft Brown",
+          "hex": "#5E4A38"
+        }
+      },
+      "colors": [
+        {
+          "id": "amk-almond",
+          "name": "Almond",
+          "hex": "#E8DEC8",
+          "role": "wall",
+          "rgb": [
+            232,
+            222,
+            200
+          ]
+        },
+        {
+          "id": "amk-bone",
+          "name": "Bone",
+          "hex": "#E0D5BD",
+          "role": "sofa",
+          "rgb": [
+            224,
+            213,
+            189
+          ]
+        },
+        {
+          "id": "amk-chalk",
+          "name": "Chalk",
+          "hex": "#ECE4D2",
+          "role": "floor",
+          "rgb": [
+            236,
+            228,
+            210
+          ]
+        },
+        {
+          "id": "amk-warm-taupe",
+          "name": "Warm Taupe",
+          "hex": "#A89878",
+          "role": "accent",
+          "rgb": [
+            168,
+            152,
+            120
+          ]
+        },
+        {
+          "id": "amk-soft-brown",
+          "name": "Soft Brown",
+          "hex": "#5E4A38",
+          "role": "trim",
+          "rgb": [
+            94,
+            74,
+            56
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "chocolate-brown-modern",
+      "name": "Chocolate Brown Modern",
+      "vibe": "Rich · Confident · 2026 statement",
+      "trend_source": "Chocolate brown comeback — WGSN + Vogue Living 2026",
+      "tags": [
+        "warm",
+        "rich",
+        "modern",
+        "popular",
+        "statement"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "dining_room",
+        "study",
+        "bedroom"
+      ],
+      "pairs_with_materials": [
+        "walnut",
+        "natural_linen",
+        "aged_brass",
+        "cream_velvet"
+      ],
+      "app_note": "The 2026 dark horse — chocolate brown is back. Read as warm-modern, not 70s.",
+      "style_tags": [
+        "modern-classic",
+        "mid-century-modern",
+        "quiet-luxury"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Warm Cream",
+          "hex": "#E6DAC4"
+        },
+        "sofa": {
+          "name": "Chocolate Brown",
+          "hex": "#5E4536"
+        },
+        "floor": {
+          "name": "Camel",
+          "hex": "#BA9670"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#EAE0CE"
+        },
+        "trim": {
+          "name": "Warm Black",
+          "hex": "#221A14"
+        }
+      },
+      "colors": [
+        {
+          "id": "cbm-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#E6DAC4",
+          "role": "wall",
+          "rgb": [
+            230,
+            218,
+            196
+          ]
+        },
+        {
+          "id": "cbm-chocolate-brown",
+          "name": "Chocolate Brown",
+          "hex": "#5E4536",
+          "role": "sofa",
+          "rgb": [
+            94,
+            69,
+            54
+          ]
+        },
+        {
+          "id": "cbm-camel",
+          "name": "Camel",
+          "hex": "#BA9670",
+          "role": "floor",
+          "rgb": [
+            186,
+            150,
+            112
+          ]
+        },
+        {
+          "id": "cbm-bone",
+          "name": "Bone",
+          "hex": "#EAE0CE",
+          "role": "accent",
+          "rgb": [
+            234,
+            224,
+            206
+          ]
+        },
+        {
+          "id": "cbm-warm-black",
+          "name": "Warm Black",
+          "hex": "#221A14",
+          "role": "trim",
+          "rgb": [
+            34,
+            26,
+            20
+          ]
+        }
+      ],
+      "timelessness": 6,
+      "persona_fit": [
+        "adventurous",
+        "of-the-moment",
+        "contemporary",
+        "vibrant"
+      ]
+    },
+    {
+      "id": "burgundy-and-bone",
+      "name": "Burgundy & Bone",
+      "vibe": "Sophisticated · Wine · Moody",
+      "trend_source": "Wine red — Pantone + Vogue Living 2025-2026",
+      "tags": [
+        "warm",
+        "rich",
+        "statement",
+        "moody"
+      ],
+      "recommended_rooms": [
+        "dining_room",
+        "study",
+        "bedroom",
+        "powder_room"
+      ],
+      "pairs_with_materials": [
+        "walnut",
+        "raw_silk",
+        "antique_brass",
+        "velvet"
+      ],
+      "app_note": "Wine-dark accent palette — sophisticated rather than gothic.",
+      "style_tags": [
+        "modern-classic",
+        "art-deco-revival",
+        "english-country-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Bone",
+          "hex": "#EAE0CC"
+        },
+        "sofa": {
+          "name": "Burgundy",
+          "hex": "#6E2D34"
+        },
+        "floor": {
+          "name": "Warm Cream",
+          "hex": "#F0E6D0"
+        },
+        "accent": {
+          "name": "Camel",
+          "hex": "#B89570"
+        },
+        "trim": {
+          "name": "Deep Ink",
+          "hex": "#2A1F1B"
+        }
+      },
+      "colors": [
+        {
+          "id": "bgb-bone",
+          "name": "Bone",
+          "hex": "#EAE0CC",
+          "role": "wall",
+          "rgb": [
+            234,
+            224,
+            204
+          ]
+        },
+        {
+          "id": "bgb-burgundy",
+          "name": "Burgundy",
+          "hex": "#6E2D34",
+          "role": "sofa",
+          "rgb": [
+            110,
+            45,
+            52
+          ]
+        },
+        {
+          "id": "bgb-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#F0E6D0",
+          "role": "floor",
+          "rgb": [
+            240,
+            230,
+            208
+          ]
+        },
+        {
+          "id": "bgb-camel",
+          "name": "Camel",
+          "hex": "#B89570",
+          "role": "accent",
+          "rgb": [
+            184,
+            149,
+            112
+          ]
+        },
+        {
+          "id": "bgb-deep-ink",
+          "name": "Deep Ink",
+          "hex": "#2A1F1B",
+          "role": "trim",
+          "rgb": [
+            42,
+            31,
+            27
+          ]
+        }
+      ],
+      "timelessness": 6,
+      "persona_fit": [
+        "adventurous",
+        "contemporary",
+        "heritage"
+      ]
+    },
+    {
+      "id": "slate-blue-modern",
+      "name": "Slate Blue Modern",
+      "vibe": "Cool · Considered · Refined",
+      "trend_source": "Slate blue — Benjamin Moore + Farrow & Ball 2025-2026",
+      "tags": [
+        "cool",
+        "modern",
+        "popular",
+        "refined"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "study",
+        "bedroom",
+        "kitchen"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "brushed_nickel",
+        "concrete"
+      ],
+      "app_note": "Modern slate blue — sophisticated grey-blue, neither cold nor sad.",
+      "style_tags": [
+        "modernist",
+        "contemporary",
+        "modern-classic"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Slate Blue",
+          "hex": "#889AAA"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E4DCC8"
+        },
+        "floor": {
+          "name": "Warm Grey",
+          "hex": "#ADA89E"
+        },
+        "accent": {
+          "name": "Chalk",
+          "hex": "#ECE6D8"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#1E222A"
+        }
+      },
+      "colors": [
+        {
+          "id": "sbm-slate-blue",
+          "name": "Slate Blue",
+          "hex": "#889AAA",
+          "role": "wall",
+          "rgb": [
+            136,
+            154,
+            170
+          ]
+        },
+        {
+          "id": "sbm-bone",
+          "name": "Bone",
+          "hex": "#E4DCC8",
+          "role": "sofa",
+          "rgb": [
+            228,
+            220,
+            200
+          ]
+        },
+        {
+          "id": "sbm-warm-grey",
+          "name": "Warm Grey",
+          "hex": "#ADA89E",
+          "role": "floor",
+          "rgb": [
+            173,
+            168,
+            158
+          ]
+        },
+        {
+          "id": "sbm-chalk",
+          "name": "Chalk",
+          "hex": "#ECE6D8",
+          "role": "accent",
+          "rgb": [
+            236,
+            230,
+            216
+          ]
+        },
+        {
+          "id": "sbm-ink",
+          "name": "Ink",
+          "hex": "#1E222A",
+          "role": "trim",
+          "rgb": [
+            30,
+            34,
+            42
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "safe",
+        "quiet",
+        "contemporary",
+        "timeless"
+      ]
+    },
+    {
+      "id": "navy-and-linen",
+      "name": "Navy & Linen",
+      "vibe": "Classic · Modern · Tailored",
+      "trend_source": "Classic navy — perennial top 5 paint colour",
+      "tags": [
+        "cool",
+        "modern",
+        "popular",
+        "classic",
+        "tailored"
+      ],
+      "recommended_rooms": [
+        "study",
+        "dining_room",
+        "living_room",
+        "powder_room"
+      ],
+      "pairs_with_materials": [
+        "oak",
+        "natural_linen",
+        "aged_brass",
+        "leather"
+      ],
+      "app_note": "Tailored navy with linen warmth — classic that never dates.",
+      "style_tags": [
+        "modern-classic",
+        "hamptons-modern",
+        "english-country-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Linen",
+          "hex": "#DDD3BC"
+        },
+        "sofa": {
+          "name": "Deep Navy",
+          "hex": "#1E2A40"
+        },
+        "floor": {
+          "name": "Bone",
+          "hex": "#E2D8C4"
+        },
+        "accent": {
+          "name": "Camel",
+          "hex": "#B89876"
+        },
+        "trim": {
+          "name": "Warm Taupe",
+          "hex": "#8C7C68"
+        }
+      },
+      "colors": [
+        {
+          "id": "nal-linen",
+          "name": "Linen",
+          "hex": "#DDD3BC",
+          "role": "wall",
+          "rgb": [
+            221,
+            211,
+            188
+          ]
+        },
+        {
+          "id": "nal-deep-navy",
+          "name": "Deep Navy",
+          "hex": "#1E2A40",
+          "role": "sofa",
+          "rgb": [
+            30,
+            42,
+            64
+          ]
+        },
+        {
+          "id": "nal-bone",
+          "name": "Bone",
+          "hex": "#E2D8C4",
+          "role": "floor",
+          "rgb": [
+            226,
+            216,
+            196
+          ]
+        },
+        {
+          "id": "nal-camel",
+          "name": "Camel",
+          "hex": "#B89876",
+          "role": "accent",
+          "rgb": [
+            184,
+            152,
+            118
+          ]
+        },
+        {
+          "id": "nal-warm-taupe",
+          "name": "Warm Taupe",
+          "hex": "#8C7C68",
+          "role": "trim",
+          "rgb": [
+            140,
+            124,
+            104
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "heritage",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "forest-green-classic",
+      "name": "Forest Green Classic",
+      "vibe": "Deep · Classic · Library",
+      "trend_source": "Deep green — Farrow & Ball Studio Green territory",
+      "tags": [
+        "green",
+        "rich",
+        "classic",
+        "moody"
+      ],
+      "recommended_rooms": [
+        "study",
+        "library",
+        "dining_room",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "walnut",
+        "raw_silk",
+        "aged_brass",
+        "leather"
+      ],
+      "app_note": "Deep forest green — library energy. Pairs with warm cream and brass.",
+      "style_tags": [
+        "english-country-modern",
+        "modern-classic",
+        "art-deco-revival"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Warm Cream",
+          "hex": "#ECDFC2"
+        },
+        "sofa": {
+          "name": "Forest Green",
+          "hex": "#2F4538"
+        },
+        "floor": {
+          "name": "Walnut",
+          "hex": "#6B4D38"
+        },
+        "accent": {
+          "name": "Brass",
+          "hex": "#B89868"
+        },
+        "trim": {
+          "name": "Bone",
+          "hex": "#E8DEC6"
+        }
+      },
+      "colors": [
+        {
+          "id": "fgc-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#ECDFC2",
+          "role": "wall",
+          "rgb": [
+            236,
+            223,
+            194
+          ]
+        },
+        {
+          "id": "fgc-forest-green",
+          "name": "Forest Green",
+          "hex": "#2F4538",
+          "role": "sofa",
+          "rgb": [
+            47,
+            69,
+            56
+          ]
+        },
+        {
+          "id": "fgc-walnut",
+          "name": "Walnut",
+          "hex": "#6B4D38",
+          "role": "floor",
+          "rgb": [
+            107,
+            77,
+            56
+          ]
+        },
+        {
+          "id": "fgc-brass",
+          "name": "Brass",
+          "hex": "#B89868",
+          "role": "accent",
+          "rgb": [
+            184,
+            152,
+            104
+          ]
+        },
+        {
+          "id": "fgc-bone",
+          "name": "Bone",
+          "hex": "#E8DEC6",
+          "role": "trim",
+          "rgb": [
+            232,
+            222,
+            198
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "timeless",
+        "heritage",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "charcoal-and-oak",
+      "name": "Charcoal & Oak",
+      "vibe": "Industrial · Modern · Considered",
+      "trend_source": "Industrial-modern crossover — Dulux Night Watch",
+      "tags": [
+        "cool",
+        "modern",
+        "high-contrast",
+        "industrial"
+      ],
+      "recommended_rooms": [
+        "kitchen",
+        "living_room",
+        "study",
+        "open_plan"
+      ],
+      "pairs_with_materials": [
+        "oak",
+        "concrete",
+        "matte_black_steel",
+        "leather"
+      ],
+      "app_note": "Industrial-modern — softened by oak warmth so it doesn't go cold.",
+      "style_tags": [
+        "industrial-modern",
+        "modernist",
+        "contemporary"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Warm White",
+          "hex": "#F0EAE0"
+        },
+        "sofa": {
+          "name": "Charcoal",
+          "hex": "#3F3D38"
+        },
+        "floor": {
+          "name": "Oak",
+          "hex": "#BB9C75"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E4DACA"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#1A1815"
+        }
+      },
+      "colors": [
+        {
+          "id": "cao-warm-white",
+          "name": "Warm White",
+          "hex": "#F0EAE0",
+          "role": "wall",
+          "rgb": [
+            240,
+            234,
+            224
+          ]
+        },
+        {
+          "id": "cao-charcoal",
+          "name": "Charcoal",
+          "hex": "#3F3D38",
+          "role": "sofa",
+          "rgb": [
+            63,
+            61,
+            56
+          ]
+        },
+        {
+          "id": "cao-oak",
+          "name": "Oak",
+          "hex": "#BB9C75",
+          "role": "floor",
+          "rgb": [
+            187,
+            156,
+            117
+          ]
+        },
+        {
+          "id": "cao-bone",
+          "name": "Bone",
+          "hex": "#E4DACA",
+          "role": "accent",
+          "rgb": [
+            228,
+            218,
+            202
+          ]
+        },
+        {
+          "id": "cao-ink",
+          "name": "Ink",
+          "hex": "#1A1815",
+          "role": "trim",
+          "rgb": [
+            26,
+            24,
+            21
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "safe",
+        "contemporary",
+        "quiet",
+        "timeless"
+      ]
+    },
+    {
+      "id": "japandi-quiet",
+      "name": "Japandi Quiet",
+      "vibe": "Calm · Minimal · East-meets-West",
+      "trend_source": "Japandi — most-saved interior style 2023-2026",
+      "tags": [
+        "neutral",
+        "modern",
+        "minimalist",
+        "popular",
+        "natural"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "study",
+        "kitchen"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "matte_black_steel",
+        "rattan"
+      ],
+      "app_note": "Japandi — Scandinavian restraint with Japanese warmth. Always reads expensive.",
+      "style_tags": [
+        "japandi",
+        "scandinavian",
+        "wabi-sabi",
+        "minimalist"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Bone",
+          "hex": "#E6DDCB"
+        },
+        "sofa": {
+          "name": "Warm Cream",
+          "hex": "#F0E8D6"
+        },
+        "floor": {
+          "name": "Natural Oak",
+          "hex": "#C5A47B"
+        },
+        "accent": {
+          "name": "Soft Black",
+          "hex": "#292621"
+        },
+        "trim": {
+          "name": "Light Grey",
+          "hex": "#B5AEA1"
+        }
+      },
+      "colors": [
+        {
+          "id": "jpq-bone",
+          "name": "Bone",
+          "hex": "#E6DDCB",
+          "role": "wall",
+          "rgb": [
+            230,
+            221,
+            203
+          ]
+        },
+        {
+          "id": "jpq-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#F0E8D6",
+          "role": "sofa",
+          "rgb": [
+            240,
+            232,
+            214
+          ]
+        },
+        {
+          "id": "jpq-natural-oak",
+          "name": "Natural Oak",
+          "hex": "#C5A47B",
+          "role": "floor",
+          "rgb": [
+            197,
+            164,
+            123
+          ]
+        },
+        {
+          "id": "jpq-soft-black",
+          "name": "Soft Black",
+          "hex": "#292621",
+          "role": "accent",
+          "rgb": [
+            41,
+            38,
+            33
+          ]
+        },
+        {
+          "id": "jpq-light-grey",
+          "name": "Light Grey",
+          "hex": "#B5AEA1",
+          "role": "trim",
+          "rgb": [
+            181,
+            174,
+            161
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "scandinavian-white",
+      "name": "Scandinavian White",
+      "vibe": "Crisp · Clean · Nordic",
+      "trend_source": "Scandinavian minimalism — perennial reference",
+      "tags": [
+        "neutral",
+        "modern",
+        "light",
+        "minimalist"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "open_plan",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "wool",
+        "birch"
+      ],
+      "app_note": "Pure Scandi — white-on-white with light timber. Bright Nordic light.",
+      "style_tags": [
+        "scandinavian",
+        "minimalist",
+        "modernist"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Pure White",
+          "hex": "#F6F2E9"
+        },
+        "sofa": {
+          "name": "Warm White",
+          "hex": "#ECE5D4"
+        },
+        "floor": {
+          "name": "Light Oak",
+          "hex": "#D4B888"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E0D7C5"
+        },
+        "trim": {
+          "name": "Dove Grey",
+          "hex": "#B0ACA2"
+        }
+      },
+      "colors": [
+        {
+          "id": "sca-pure-white",
+          "name": "Pure White",
+          "hex": "#F6F2E9",
+          "role": "wall",
+          "rgb": [
+            246,
+            242,
+            233
+          ]
+        },
+        {
+          "id": "sca-warm-white",
+          "name": "Warm White",
+          "hex": "#ECE5D4",
+          "role": "sofa",
+          "rgb": [
+            236,
+            229,
+            212
+          ]
+        },
+        {
+          "id": "sca-light-oak",
+          "name": "Light Oak",
+          "hex": "#D4B888",
+          "role": "floor",
+          "rgb": [
+            212,
+            184,
+            136
+          ]
+        },
+        {
+          "id": "sca-bone",
+          "name": "Bone",
+          "hex": "#E0D7C5",
+          "role": "accent",
+          "rgb": [
+            224,
+            215,
+            197
+          ]
+        },
+        {
+          "id": "sca-dove-grey",
+          "name": "Dove Grey",
+          "hex": "#B0ACA2",
+          "role": "trim",
+          "rgb": [
+            176,
+            172,
+            162
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "safe",
+        "contemporary",
+        "quiet",
+        "timeless"
+      ]
+    },
+    {
+      "id": "modern-mediterranean",
+      "name": "Modern Mediterranean",
+      "vibe": "Sun-baked · Mediterranean · Warm",
+      "trend_source": "Mediterranean modern — Pinterest top-5 search 2025-2026",
+      "tags": [
+        "warm",
+        "natural",
+        "modern",
+        "earthy"
+      ],
+      "recommended_rooms": [
+        "kitchen",
+        "dining_room",
+        "living_room",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "venetian_plaster",
+        "terracotta_tile",
+        "olive_wood",
+        "aged_brass"
+      ],
+      "app_note": "Mediterranean modern — plaster walls, terracotta, olive, sun-baked palette.",
+      "style_tags": [
+        "mediterranean-modern",
+        "organic-modern",
+        "tuscan-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Plaster",
+          "hex": "#E0CFB3"
+        },
+        "sofa": {
+          "name": "Terracotta",
+          "hex": "#B96E45"
+        },
+        "floor": {
+          "name": "Cream",
+          "hex": "#ECDEC0"
+        },
+        "accent": {
+          "name": "Olive",
+          "hex": "#6F7449"
+        },
+        "trim": {
+          "name": "Warm Cognac",
+          "hex": "#8B5A38"
+        }
+      },
+      "colors": [
+        {
+          "id": "mmd-plaster",
+          "name": "Plaster",
+          "hex": "#E0CFB3",
+          "role": "wall",
+          "rgb": [
+            224,
+            207,
+            179
+          ]
+        },
+        {
+          "id": "mmd-terracotta",
+          "name": "Terracotta",
+          "hex": "#B96E45",
+          "role": "sofa",
+          "rgb": [
+            185,
+            110,
+            69
+          ]
+        },
+        {
+          "id": "mmd-cream",
+          "name": "Cream",
+          "hex": "#ECDEC0",
+          "role": "floor",
+          "rgb": [
+            236,
+            222,
+            192
+          ]
+        },
+        {
+          "id": "mmd-olive",
+          "name": "Olive",
+          "hex": "#6F7449",
+          "role": "accent",
+          "rgb": [
+            111,
+            116,
+            73
+          ]
+        },
+        {
+          "id": "mmd-warm-cognac",
+          "name": "Warm Cognac",
+          "hex": "#8B5A38",
+          "role": "trim",
+          "rgb": [
+            139,
+            90,
+            56
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "timeless",
+        "heritage",
+        "contemporary",
+        "of-the-moment"
+      ]
+    },
+    {
+      "id": "tuscan-cream",
+      "name": "Tuscan Cream",
+      "vibe": "Sun-drenched · Earthen · Traditional",
+      "trend_source": "Tuscan revival — heritage Mediterranean",
+      "tags": [
+        "warm",
+        "natural",
+        "heritage",
+        "earthy"
+      ],
+      "recommended_rooms": [
+        "kitchen",
+        "dining_room",
+        "living_room"
+      ],
+      "pairs_with_materials": [
+        "terracotta_tile",
+        "aged_oak",
+        "wrought_iron",
+        "natural_stone"
+      ],
+      "app_note": "Heritage Tuscan — read carefully, can tip into 90s if overdone. Use as accents.",
+      "style_tags": [
+        "tuscan-modern",
+        "mediterranean-modern",
+        "french-provincial"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Warm Cream",
+          "hex": "#EDDFB8"
+        },
+        "sofa": {
+          "name": "Ochre",
+          "hex": "#BC8A4E"
+        },
+        "floor": {
+          "name": "Terracotta",
+          "hex": "#B26A40"
+        },
+        "accent": {
+          "name": "Olive",
+          "hex": "#7B7848"
+        },
+        "trim": {
+          "name": "Walnut",
+          "hex": "#5E4128"
+        }
+      },
+      "colors": [
+        {
+          "id": "tcr-warm-cream",
+          "name": "Warm Cream",
+          "hex": "#EDDFB8",
+          "role": "wall",
+          "rgb": [
+            237,
+            223,
+            184
+          ]
+        },
+        {
+          "id": "tcr-ochre",
+          "name": "Ochre",
+          "hex": "#BC8A4E",
+          "role": "sofa",
+          "rgb": [
+            188,
+            138,
+            78
+          ]
+        },
+        {
+          "id": "tcr-terracotta",
+          "name": "Terracotta",
+          "hex": "#B26A40",
+          "role": "floor",
+          "rgb": [
+            178,
+            106,
+            64
+          ]
+        },
+        {
+          "id": "tcr-olive",
+          "name": "Olive",
+          "hex": "#7B7848",
+          "role": "accent",
+          "rgb": [
+            123,
+            120,
+            72
+          ]
+        },
+        {
+          "id": "tcr-walnut",
+          "name": "Walnut",
+          "hex": "#5E4128",
+          "role": "trim",
+          "rgb": [
+            94,
+            65,
+            40
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "heritage",
+        "timeless",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "desert-modern",
+      "name": "Desert Modern",
+      "vibe": "Sun-baked · Sedona · Modern",
+      "trend_source": "Desert modern — Arizona/Australian outback crossover",
+      "tags": [
+        "warm",
+        "natural",
+        "modern",
+        "earthy"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "open_plan"
+      ],
+      "pairs_with_materials": [
+        "natural_oak",
+        "natural_linen",
+        "aged_leather",
+        "sandstone"
+      ],
+      "app_note": "Desert modern — sandstone, clay, bone. Australian outback meets Sedona.",
+      "style_tags": [
+        "organic-modern",
+        "desert-modern",
+        "coastal-australian"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Sandstone",
+          "hex": "#DDC9A8"
+        },
+        "sofa": {
+          "name": "Clay",
+          "hex": "#B68563"
+        },
+        "floor": {
+          "name": "Bone",
+          "hex": "#E8DCC4"
+        },
+        "accent": {
+          "name": "Warm White",
+          "hex": "#F2EBD8"
+        },
+        "trim": {
+          "name": "Chocolate",
+          "hex": "#4A3625"
+        }
+      },
+      "colors": [
+        {
+          "id": "dmd-sandstone",
+          "name": "Sandstone",
+          "hex": "#DDC9A8",
+          "role": "wall",
+          "rgb": [
+            221,
+            201,
+            168
+          ]
+        },
+        {
+          "id": "dmd-clay",
+          "name": "Clay",
+          "hex": "#B68563",
+          "role": "sofa",
+          "rgb": [
+            182,
+            133,
+            99
+          ]
+        },
+        {
+          "id": "dmd-bone",
+          "name": "Bone",
+          "hex": "#E8DCC4",
+          "role": "floor",
+          "rgb": [
+            232,
+            220,
+            196
+          ]
+        },
+        {
+          "id": "dmd-warm-white",
+          "name": "Warm White",
+          "hex": "#F2EBD8",
+          "role": "accent",
+          "rgb": [
+            242,
+            235,
+            216
+          ]
+        },
+        {
+          "id": "dmd-chocolate",
+          "name": "Chocolate",
+          "hex": "#4A3625",
+          "role": "trim",
+          "rgb": [
+            74,
+            54,
+            37
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "contemporary",
+        "of-the-moment",
+        "adventurous"
+      ]
+    },
+    {
+      "id": "boho-earth",
+      "name": "Boho Earth",
+      "vibe": "Layered · Earthy · Free-spirited",
+      "trend_source": "Boho earth — Anthropologie / Free People aesthetic",
+      "tags": [
+        "warm",
+        "earthy",
+        "eclectic",
+        "bold"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "living_room",
+        "study"
+      ],
+      "pairs_with_materials": [
+        "rattan",
+        "natural_linen",
+        "aged_brass",
+        "wool_kilim"
+      ],
+      "app_note": "Boho earth — rust, olive, mustard. Layered + lived-in.",
+      "style_tags": [
+        "bohemian",
+        "eclectic",
+        "tuscan-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EBD9B7"
+        },
+        "sofa": {
+          "name": "Rust",
+          "hex": "#B05E3A"
+        },
+        "floor": {
+          "name": "Olive",
+          "hex": "#807240"
+        },
+        "accent": {
+          "name": "Mustard",
+          "hex": "#C39440"
+        },
+        "trim": {
+          "name": "Cocoa",
+          "hex": "#503824"
+        }
+      },
+      "colors": [
+        {
+          "id": "bho-cream",
+          "name": "Cream",
+          "hex": "#EBD9B7",
+          "role": "wall",
+          "rgb": [
+            235,
+            217,
+            183
+          ]
+        },
+        {
+          "id": "bho-rust",
+          "name": "Rust",
+          "hex": "#B05E3A",
+          "role": "sofa",
+          "rgb": [
+            176,
+            94,
+            58
+          ]
+        },
+        {
+          "id": "bho-olive",
+          "name": "Olive",
+          "hex": "#807240",
+          "role": "floor",
+          "rgb": [
+            128,
+            114,
+            64
+          ]
+        },
+        {
+          "id": "bho-mustard",
+          "name": "Mustard",
+          "hex": "#C39440",
+          "role": "accent",
+          "rgb": [
+            195,
+            148,
+            64
+          ]
+        },
+        {
+          "id": "bho-cocoa",
+          "name": "Cocoa",
+          "hex": "#503824",
+          "role": "trim",
+          "rgb": [
+            80,
+            56,
+            36
+          ]
+        }
+      ],
+      "timelessness": 5,
+      "persona_fit": [
+        "adventurous",
+        "vibrant",
+        "of-the-moment"
+      ]
+    },
+    {
+      "id": "tropical-modern",
+      "name": "Tropical Modern",
+      "vibe": "Lush · Modern · Calm tropical",
+      "trend_source": "Tropical modern — Queensland + Bali crossover",
+      "tags": [
+        "green",
+        "natural",
+        "modern",
+        "soft"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "sunroom",
+        "bedroom",
+        "open_plan"
+      ],
+      "pairs_with_materials": [
+        "teak",
+        "rattan",
+        "natural_linen",
+        "travertine"
+      ],
+      "app_note": "Tropical modern — calm not jungle. Sage, soft green, warm cream.",
+      "style_tags": [
+        "coastal-australian",
+        "organic-modern",
+        "tropical-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EFE4CB"
+        },
+        "sofa": {
+          "name": "Sage",
+          "hex": "#99A582"
+        },
+        "floor": {
+          "name": "Soft Green",
+          "hex": "#BAC5A4"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E0D6C0"
+        },
+        "trim": {
+          "name": "Warm Brown",
+          "hex": "#5C4736"
+        }
+      },
+      "colors": [
+        {
+          "id": "tmd-cream",
+          "name": "Cream",
+          "hex": "#EFE4CB",
+          "role": "wall",
+          "rgb": [
+            239,
+            228,
+            203
+          ]
+        },
+        {
+          "id": "tmd-sage",
+          "name": "Sage",
+          "hex": "#99A582",
+          "role": "sofa",
+          "rgb": [
+            153,
+            165,
+            130
+          ]
+        },
+        {
+          "id": "tmd-soft-green",
+          "name": "Soft Green",
+          "hex": "#BAC5A4",
+          "role": "floor",
+          "rgb": [
+            186,
+            197,
+            164
+          ]
+        },
+        {
+          "id": "tmd-bone",
+          "name": "Bone",
+          "hex": "#E0D6C0",
+          "role": "accent",
+          "rgb": [
+            224,
+            214,
+            192
+          ]
+        },
+        {
+          "id": "tmd-warm-brown",
+          "name": "Warm Brown",
+          "hex": "#5C4736",
+          "role": "trim",
+          "rgb": [
+            92,
+            71,
+            54
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "contemporary",
+        "quiet",
+        "of-the-moment"
+      ]
+    },
+    {
+      "id": "wabi-sabi-cream",
+      "name": "Wabi-Sabi Cream",
+      "vibe": "Imperfect · Tactile · Quiet",
+      "trend_source": "Wabi-sabi aesthetic — Axel Vervoordt influence",
+      "tags": [
+        "neutral",
+        "natural",
+        "modern",
+        "popular",
+        "tactile"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "bedroom",
+        "study",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "venetian_plaster",
+        "raw_linen",
+        "pale_oak",
+        "patinaed_brass"
+      ],
+      "app_note": "Wabi-sabi cream — celebrates imperfection. Pair with hand-thrown ceramics.",
+      "style_tags": [
+        "wabi-sabi",
+        "japandi",
+        "organic-modern",
+        "quiet-luxury"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EFE5D0"
+        },
+        "sofa": {
+          "name": "Parchment",
+          "hex": "#E8DCC0"
+        },
+        "floor": {
+          "name": "Bone",
+          "hex": "#E2D8C2"
+        },
+        "accent": {
+          "name": "Soft Black",
+          "hex": "#2A2520"
+        },
+        "trim": {
+          "name": "Warm Taupe",
+          "hex": "#998970"
+        }
+      },
+      "colors": [
+        {
+          "id": "wsc-cream",
+          "name": "Cream",
+          "hex": "#EFE5D0",
+          "role": "wall",
+          "rgb": [
+            239,
+            229,
+            208
+          ]
+        },
+        {
+          "id": "wsc-parchment",
+          "name": "Parchment",
+          "hex": "#E8DCC0",
+          "role": "sofa",
+          "rgb": [
+            232,
+            220,
+            192
+          ]
+        },
+        {
+          "id": "wsc-bone",
+          "name": "Bone",
+          "hex": "#E2D8C2",
+          "role": "floor",
+          "rgb": [
+            226,
+            216,
+            194
+          ]
+        },
+        {
+          "id": "wsc-soft-black",
+          "name": "Soft Black",
+          "hex": "#2A2520",
+          "role": "accent",
+          "rgb": [
+            42,
+            37,
+            32
+          ]
+        },
+        {
+          "id": "wsc-warm-taupe",
+          "name": "Warm Taupe",
+          "hex": "#998970",
+          "role": "trim",
+          "rgb": [
+            153,
+            137,
+            112
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "timeless",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "art-deco-jewel",
+      "name": "Art Deco Jewel",
+      "vibe": "Glamorous · Jewelled · Period",
+      "trend_source": "Art Deco revival — Vogue Living 2025-2026",
+      "tags": [
+        "heritage",
+        "bold",
+        "rich",
+        "period"
+      ],
+      "recommended_rooms": [
+        "dining_room",
+        "powder_room",
+        "bar",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "black_lacquer",
+        "antique_brass",
+        "velvet",
+        "marble"
+      ],
+      "app_note": "Art Deco — jewelled emerald, brass, blush. High-glamour period palette.",
+      "style_tags": [
+        "art-deco-revival",
+        "maximalist",
+        "modern-classic"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EEE2BE"
+        },
+        "sofa": {
+          "name": "Deep Emerald",
+          "hex": "#1F4A38"
+        },
+        "floor": {
+          "name": "Warm Black",
+          "hex": "#28201A"
+        },
+        "accent": {
+          "name": "Brass",
+          "hex": "#BFA060"
+        },
+        "trim": {
+          "name": "Blush",
+          "hex": "#DABBA8"
+        }
+      },
+      "colors": [
+        {
+          "id": "adj-cream",
+          "name": "Cream",
+          "hex": "#EEE2BE",
+          "role": "wall",
+          "rgb": [
+            238,
+            226,
+            190
+          ]
+        },
+        {
+          "id": "adj-deep-emerald",
+          "name": "Deep Emerald",
+          "hex": "#1F4A38",
+          "role": "sofa",
+          "rgb": [
+            31,
+            74,
+            56
+          ]
+        },
+        {
+          "id": "adj-warm-black",
+          "name": "Warm Black",
+          "hex": "#28201A",
+          "role": "floor",
+          "rgb": [
+            40,
+            32,
+            26
+          ]
+        },
+        {
+          "id": "adj-brass",
+          "name": "Brass",
+          "hex": "#BFA060",
+          "role": "accent",
+          "rgb": [
+            191,
+            160,
+            96
+          ]
+        },
+        {
+          "id": "adj-blush",
+          "name": "Blush",
+          "hex": "#DABBA8",
+          "role": "trim",
+          "rgb": [
+            218,
+            187,
+            168
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "heritage",
+        "vibrant",
+        "adventurous"
+      ]
+    },
+    {
+      "id": "french-provincial",
+      "name": "French Provincial",
+      "vibe": "Romantic · Pastoral · French",
+      "trend_source": "French country — perennial heritage reference",
+      "tags": [
+        "heritage",
+        "soft",
+        "romantic",
+        "period"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "dining_room",
+        "kitchen",
+        "living_room"
+      ],
+      "pairs_with_materials": [
+        "limewashed_oak",
+        "natural_linen",
+        "antique_brass",
+        "aged_iron"
+      ],
+      "app_note": "French provincial — soft blue, cream, faded gold. Pastoral and romantic.",
+      "style_tags": [
+        "french-provincial",
+        "english-country-modern",
+        "modern-romantic"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Soft Blue",
+          "hex": "#CCD5DA"
+        },
+        "sofa": {
+          "name": "Cream",
+          "hex": "#EDE0C2"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F0E8D5"
+        },
+        "accent": {
+          "name": "Faded Gold",
+          "hex": "#B89A60"
+        },
+        "trim": {
+          "name": "Dove Grey",
+          "hex": "#B6B0A6"
+        }
+      },
+      "colors": [
+        {
+          "id": "frp-soft-blue",
+          "name": "Soft Blue",
+          "hex": "#CCD5DA",
+          "role": "wall",
+          "rgb": [
+            204,
+            213,
+            218
+          ]
+        },
+        {
+          "id": "frp-cream",
+          "name": "Cream",
+          "hex": "#EDE0C2",
+          "role": "sofa",
+          "rgb": [
+            237,
+            224,
+            194
+          ]
+        },
+        {
+          "id": "frp-warm-white",
+          "name": "Warm White",
+          "hex": "#F0E8D5",
+          "role": "floor",
+          "rgb": [
+            240,
+            232,
+            213
+          ]
+        },
+        {
+          "id": "frp-faded-gold",
+          "name": "Faded Gold",
+          "hex": "#B89A60",
+          "role": "accent",
+          "rgb": [
+            184,
+            154,
+            96
+          ]
+        },
+        {
+          "id": "frp-dove-grey",
+          "name": "Dove Grey",
+          "hex": "#B6B0A6",
+          "role": "trim",
+          "rgb": [
+            182,
+            176,
+            166
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "heritage",
+        "timeless",
+        "quiet"
+      ]
+    },
+    {
+      "id": "industrial-loft",
+      "name": "Industrial Loft",
+      "vibe": "Urban · Raw · Architectural",
+      "trend_source": "Industrial loft — perennial urban reference",
+      "tags": [
+        "heritage",
+        "urban",
+        "raw",
+        "modern"
+      ],
+      "recommended_rooms": [
+        "open_plan",
+        "kitchen",
+        "study",
+        "living_room"
+      ],
+      "pairs_with_materials": [
+        "concrete",
+        "reclaimed_walnut",
+        "matte_black_steel",
+        "brass"
+      ],
+      "app_note": "Industrial loft — concrete and warm timber. Urban texture.",
+      "style_tags": [
+        "industrial-modern",
+        "modernist",
+        "mid-century-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Concrete",
+          "hex": "#B5B0A6"
+        },
+        "sofa": {
+          "name": "Warm White",
+          "hex": "#EAE2D1"
+        },
+        "floor": {
+          "name": "Warm Black",
+          "hex": "#1F1C18"
+        },
+        "accent": {
+          "name": "Walnut",
+          "hex": "#6E4F38"
+        },
+        "trim": {
+          "name": "Brass",
+          "hex": "#B5945E"
+        }
+      },
+      "colors": [
+        {
+          "id": "ind-concrete",
+          "name": "Concrete",
+          "hex": "#B5B0A6",
+          "role": "wall",
+          "rgb": [
+            181,
+            176,
+            166
+          ]
+        },
+        {
+          "id": "ind-warm-white",
+          "name": "Warm White",
+          "hex": "#EAE2D1",
+          "role": "sofa",
+          "rgb": [
+            234,
+            226,
+            209
+          ]
+        },
+        {
+          "id": "ind-warm-black",
+          "name": "Warm Black",
+          "hex": "#1F1C18",
+          "role": "floor",
+          "rgb": [
+            31,
+            28,
+            24
+          ]
+        },
+        {
+          "id": "ind-walnut",
+          "name": "Walnut",
+          "hex": "#6E4F38",
+          "role": "accent",
+          "rgb": [
+            110,
+            79,
+            56
+          ]
+        },
+        {
+          "id": "ind-brass",
+          "name": "Brass",
+          "hex": "#B5945E",
+          "role": "trim",
+          "rgb": [
+            181,
+            148,
+            94
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "contemporary",
+        "adventurous",
+        "heritage"
+      ]
+    },
+    {
+      "id": "cottage-english",
+      "name": "Cottage English",
+      "vibe": "Pastoral · Quaint · English garden",
+      "trend_source": "English cottage — Farrow & Ball / British country",
+      "tags": [
+        "heritage",
+        "soft",
+        "pastoral",
+        "period"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "kitchen",
+        "living_room",
+        "dining_room"
+      ],
+      "pairs_with_materials": [
+        "oak",
+        "natural_linen",
+        "aged_brass",
+        "cotton_chintz"
+      ],
+      "app_note": "English cottage — soft yellow, sage, faded red. Garden-meets-parlour energy.",
+      "style_tags": [
+        "english-country-modern",
+        "modern-romantic",
+        "french-provincial"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Soft Yellow",
+          "hex": "#EDDCB0"
+        },
+        "sofa": {
+          "name": "Cream",
+          "hex": "#ECDFC0"
+        },
+        "floor": {
+          "name": "Sage",
+          "hex": "#94A082"
+        },
+        "accent": {
+          "name": "Warm White",
+          "hex": "#F0E8D2"
+        },
+        "trim": {
+          "name": "Soft Red",
+          "hex": "#B05548"
+        }
+      },
+      "colors": [
+        {
+          "id": "cte-soft-yellow",
+          "name": "Soft Yellow",
+          "hex": "#EDDCB0",
+          "role": "wall",
+          "rgb": [
+            237,
+            220,
+            176
+          ]
+        },
+        {
+          "id": "cte-cream",
+          "name": "Cream",
+          "hex": "#ECDFC0",
+          "role": "sofa",
+          "rgb": [
+            236,
+            223,
+            192
+          ]
+        },
+        {
+          "id": "cte-sage",
+          "name": "Sage",
+          "hex": "#94A082",
+          "role": "floor",
+          "rgb": [
+            148,
+            160,
+            130
+          ]
+        },
+        {
+          "id": "cte-warm-white",
+          "name": "Warm White",
+          "hex": "#F0E8D2",
+          "role": "accent",
+          "rgb": [
+            240,
+            232,
+            210
+          ]
+        },
+        {
+          "id": "cte-soft-red",
+          "name": "Soft Red",
+          "hex": "#B05548",
+          "role": "trim",
+          "rgb": [
+            176,
+            85,
+            72
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "heritage",
+        "timeless",
+        "quiet"
+      ]
+    },
+    {
+      "id": "bauhaus-primary",
+      "name": "Bauhaus Primary",
+      "vibe": "Bold · Geometric · Bauhaus",
+      "trend_source": "Bauhaus revival — Pantone + WGSN 2026",
+      "tags": [
+        "heritage",
+        "bold",
+        "modern",
+        "statement"
+      ],
+      "recommended_rooms": [
+        "study",
+        "living_room",
+        "feature_wall",
+        "kitchen"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "matte_black_steel",
+        "opaque_glass",
+        "concrete"
+      ],
+      "app_note": "Bauhaus — cream + primary red + ink. Geometric, considered. Not maximalist.",
+      "style_tags": [
+        "modernist",
+        "mid-century-modern",
+        "art-deco-revival"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#ECE4CE"
+        },
+        "sofa": {
+          "name": "Primary Red",
+          "hex": "#B23A2E"
+        },
+        "floor": {
+          "name": "Ink",
+          "hex": "#25201A"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E0D6BE"
+        },
+        "trim": {
+          "name": "Warm Grey",
+          "hex": "#A6A29A"
+        }
+      },
+      "colors": [
+        {
+          "id": "bhp-cream",
+          "name": "Cream",
+          "hex": "#ECE4CE",
+          "role": "wall",
+          "rgb": [
+            236,
+            228,
+            206
+          ]
+        },
+        {
+          "id": "bhp-primary-red",
+          "name": "Primary Red",
+          "hex": "#B23A2E",
+          "role": "sofa",
+          "rgb": [
+            178,
+            58,
+            46
+          ]
+        },
+        {
+          "id": "bhp-ink",
+          "name": "Ink",
+          "hex": "#25201A",
+          "role": "floor",
+          "rgb": [
+            37,
+            32,
+            26
+          ]
+        },
+        {
+          "id": "bhp-bone",
+          "name": "Bone",
+          "hex": "#E0D6BE",
+          "role": "accent",
+          "rgb": [
+            224,
+            214,
+            190
+          ]
+        },
+        {
+          "id": "bhp-warm-grey",
+          "name": "Warm Grey",
+          "hex": "#A6A29A",
+          "role": "trim",
+          "rgb": [
+            166,
+            162,
+            154
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "heritage",
+        "adventurous",
+        "vibrant",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "victorian-refined",
+      "name": "Victorian Refined",
+      "vibe": "Period · Layered · Considered",
+      "trend_source": "Victorian revival — heritage colour deep cuts",
+      "tags": [
+        "heritage",
+        "rich",
+        "period",
+        "moody"
+      ],
+      "recommended_rooms": [
+        "dining_room",
+        "study",
+        "living_room",
+        "powder_room"
+      ],
+      "pairs_with_materials": [
+        "walnut",
+        "velvet",
+        "antique_brass",
+        "marble"
+      ],
+      "app_note": "Victorian — deep teal, burgundy, brass. Layered period without going gothic.",
+      "style_tags": [
+        "art-deco-revival",
+        "english-country-modern",
+        "modern-classic"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EBDEBA"
+        },
+        "sofa": {
+          "name": "Deep Teal",
+          "hex": "#1F4A48"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#ECE3CC"
+        },
+        "accent": {
+          "name": "Burgundy",
+          "hex": "#6E2D34"
+        },
+        "trim": {
+          "name": "Brass",
+          "hex": "#B49562"
+        }
+      },
+      "colors": [
+        {
+          "id": "vrf-cream",
+          "name": "Cream",
+          "hex": "#EBDEBA",
+          "role": "wall",
+          "rgb": [
+            235,
+            222,
+            186
+          ]
+        },
+        {
+          "id": "vrf-deep-teal",
+          "name": "Deep Teal",
+          "hex": "#1F4A48",
+          "role": "sofa",
+          "rgb": [
+            31,
+            74,
+            72
+          ]
+        },
+        {
+          "id": "vrf-warm-white",
+          "name": "Warm White",
+          "hex": "#ECE3CC",
+          "role": "floor",
+          "rgb": [
+            236,
+            227,
+            204
+          ]
+        },
+        {
+          "id": "vrf-burgundy",
+          "name": "Burgundy",
+          "hex": "#6E2D34",
+          "role": "accent",
+          "rgb": [
+            110,
+            45,
+            52
+          ]
+        },
+        {
+          "id": "vrf-brass",
+          "name": "Brass",
+          "hex": "#B49562",
+          "role": "trim",
+          "rgb": [
+            180,
+            149,
+            98
+          ]
+        }
+      ],
+      "timelessness": 9,
+      "persona_fit": [
+        "heritage",
+        "timeless",
+        "adventurous"
+      ]
+    },
+    {
+      "id": "mustard-and-cream",
+      "name": "Mustard & Cream",
+      "vibe": "Cheerful · Mid-century · Warm",
+      "trend_source": "Mustard yellow revival — Sherwin-Williams + Dulux 2025",
+      "tags": [
+        "warm",
+        "bold",
+        "modern",
+        "cheerful"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "kitchen",
+        "study",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "walnut",
+        "natural_linen",
+        "aged_brass",
+        "wool"
+      ],
+      "app_note": "Mustard accent palette — mid-century cheerful without being twee.",
+      "style_tags": [
+        "mid-century-modern",
+        "modern-classic",
+        "eclectic"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#ECE2C0"
+        },
+        "sofa": {
+          "name": "Mustard",
+          "hex": "#C39440"
+        },
+        "floor": {
+          "name": "Walnut",
+          "hex": "#6F4F38"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E2D8BE"
+        },
+        "trim": {
+          "name": "Ink",
+          "hex": "#261F18"
+        }
+      },
+      "colors": [
+        {
+          "id": "msc-cream",
+          "name": "Cream",
+          "hex": "#ECE2C0",
+          "role": "wall",
+          "rgb": [
+            236,
+            226,
+            192
+          ]
+        },
+        {
+          "id": "msc-mustard",
+          "name": "Mustard",
+          "hex": "#C39440",
+          "role": "sofa",
+          "rgb": [
+            195,
+            148,
+            64
+          ]
+        },
+        {
+          "id": "msc-walnut",
+          "name": "Walnut",
+          "hex": "#6F4F38",
+          "role": "floor",
+          "rgb": [
+            111,
+            79,
+            56
+          ]
+        },
+        {
+          "id": "msc-bone",
+          "name": "Bone",
+          "hex": "#E2D8BE",
+          "role": "accent",
+          "rgb": [
+            226,
+            216,
+            190
+          ]
+        },
+        {
+          "id": "msc-ink",
+          "name": "Ink",
+          "hex": "#261F18",
+          "role": "trim",
+          "rgb": [
+            38,
+            31,
+            24
+          ]
+        }
+      ],
+      "timelessness": 6,
+      "persona_fit": [
+        "vibrant",
+        "of-the-moment",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "coral-and-cream",
+      "name": "Coral & Cream",
+      "vibe": "Sunset · Warm · Spring 2026",
+      "trend_source": "Soft coral — Pantone Spring 2026 forecast",
+      "tags": [
+        "warm",
+        "soft",
+        "trend-forward",
+        "spring"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "nursery",
+        "living_room",
+        "dressing_room"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "natural_linen",
+        "aged_brass",
+        "cream_ceramic"
+      ],
+      "app_note": "Soft coral — sunset warmth. Reads as a warm neutral with peach lift.",
+      "style_tags": [
+        "modern-romantic",
+        "organic-modern",
+        "mid-century-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#ECE0C5"
+        },
+        "sofa": {
+          "name": "Soft Coral",
+          "hex": "#DC8868"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F0E8D5"
+        },
+        "accent": {
+          "name": "Camel",
+          "hex": "#B89878"
+        },
+        "trim": {
+          "name": "Bone",
+          "hex": "#E2D8C2"
+        }
+      },
+      "colors": [
+        {
+          "id": "crc-cream",
+          "name": "Cream",
+          "hex": "#ECE0C5",
+          "role": "wall",
+          "rgb": [
+            236,
+            224,
+            197
+          ]
+        },
+        {
+          "id": "crc-soft-coral",
+          "name": "Soft Coral",
+          "hex": "#DC8868",
+          "role": "sofa",
+          "rgb": [
+            220,
+            136,
+            104
+          ]
+        },
+        {
+          "id": "crc-warm-white",
+          "name": "Warm White",
+          "hex": "#F0E8D5",
+          "role": "floor",
+          "rgb": [
+            240,
+            232,
+            213
+          ]
+        },
+        {
+          "id": "crc-camel",
+          "name": "Camel",
+          "hex": "#B89878",
+          "role": "accent",
+          "rgb": [
+            184,
+            152,
+            120
+          ]
+        },
+        {
+          "id": "crc-bone",
+          "name": "Bone",
+          "hex": "#E2D8C2",
+          "role": "trim",
+          "rgb": [
+            226,
+            216,
+            194
+          ]
+        }
+      ],
+      "timelessness": 4,
+      "persona_fit": [
+        "of-the-moment",
+        "vibrant",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "sage-and-terracotta",
+      "name": "Sage & Terracotta",
+      "vibe": "Earthy · Modern · Layered",
+      "trend_source": "Sage + terracotta — Pinterest 2026 trending combo",
+      "tags": [
+        "warm",
+        "natural",
+        "modern",
+        "earthy"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "kitchen",
+        "dining_room",
+        "sunroom"
+      ],
+      "pairs_with_materials": [
+        "terracotta_tile",
+        "pale_oak",
+        "natural_linen",
+        "aged_brass"
+      ],
+      "app_note": "Sage + terracotta — Mediterranean garden energy. Modern earthen.",
+      "style_tags": [
+        "mediterranean-modern",
+        "organic-modern",
+        "tuscan-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EADFBE"
+        },
+        "sofa": {
+          "name": "Sage",
+          "hex": "#95A682"
+        },
+        "floor": {
+          "name": "Terracotta",
+          "hex": "#B86F48"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E2D6BC"
+        },
+        "trim": {
+          "name": "Warm Cognac",
+          "hex": "#8C5638"
+        }
+      },
+      "colors": [
+        {
+          "id": "sat-cream",
+          "name": "Cream",
+          "hex": "#EADFBE",
+          "role": "wall",
+          "rgb": [
+            234,
+            223,
+            190
+          ]
+        },
+        {
+          "id": "sat-sage",
+          "name": "Sage",
+          "hex": "#95A682",
+          "role": "sofa",
+          "rgb": [
+            149,
+            166,
+            130
+          ]
+        },
+        {
+          "id": "sat-terracotta",
+          "name": "Terracotta",
+          "hex": "#B86F48",
+          "role": "floor",
+          "rgb": [
+            184,
+            111,
+            72
+          ]
+        },
+        {
+          "id": "sat-bone",
+          "name": "Bone",
+          "hex": "#E2D6BC",
+          "role": "accent",
+          "rgb": [
+            226,
+            214,
+            188
+          ]
+        },
+        {
+          "id": "sat-warm-cognac",
+          "name": "Warm Cognac",
+          "hex": "#8C5638",
+          "role": "trim",
+          "rgb": [
+            140,
+            86,
+            56
+          ]
+        }
+      ],
+      "timelessness": 7,
+      "persona_fit": [
+        "contemporary",
+        "timeless",
+        "of-the-moment"
+      ]
+    },
+    {
+      "id": "soft-lilac",
+      "name": "Soft Lilac",
+      "vibe": "Soft · Romantic · Spring 2026",
+      "trend_source": "Lilac revival — Pantone Spring 2026",
+      "tags": [
+        "soft",
+        "light",
+        "trend-forward",
+        "spring"
+      ],
+      "recommended_rooms": [
+        "bedroom",
+        "nursery",
+        "powder_room",
+        "dressing_room"
+      ],
+      "pairs_with_materials": [
+        "pale_oak",
+        "raw_silk",
+        "brushed_nickel",
+        "pink_marble"
+      ],
+      "app_note": "Soft lilac — modernised pastel. Pair with bone + deep plum for grown-up read.",
+      "style_tags": [
+        "modern-romantic",
+        "art-deco-revival",
+        "organic-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Soft Lilac",
+          "hex": "#D6CDD8"
+        },
+        "sofa": {
+          "name": "Bone",
+          "hex": "#E4DBCB"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F0E8D5"
+        },
+        "accent": {
+          "name": "Dove Grey",
+          "hex": "#B0AAA0"
+        },
+        "trim": {
+          "name": "Deep Plum",
+          "hex": "#50384B"
+        }
+      },
+      "colors": [
+        {
+          "id": "sli-soft-lilac",
+          "name": "Soft Lilac",
+          "hex": "#D6CDD8",
+          "role": "wall",
+          "rgb": [
+            214,
+            205,
+            216
+          ]
+        },
+        {
+          "id": "sli-bone",
+          "name": "Bone",
+          "hex": "#E4DBCB",
+          "role": "sofa",
+          "rgb": [
+            228,
+            219,
+            203
+          ]
+        },
+        {
+          "id": "sli-warm-white",
+          "name": "Warm White",
+          "hex": "#F0E8D5",
+          "role": "floor",
+          "rgb": [
+            240,
+            232,
+            213
+          ]
+        },
+        {
+          "id": "sli-dove-grey",
+          "name": "Dove Grey",
+          "hex": "#B0AAA0",
+          "role": "accent",
+          "rgb": [
+            176,
+            170,
+            160
+          ]
+        },
+        {
+          "id": "sli-deep-plum",
+          "name": "Deep Plum",
+          "hex": "#50384B",
+          "role": "trim",
+          "rgb": [
+            80,
+            56,
+            75
+          ]
+        }
+      ],
+      "timelessness": 4,
+      "persona_fit": [
+        "of-the-moment",
+        "quiet",
+        "contemporary"
+      ]
+    },
+    {
+      "id": "sunset-ochre",
+      "name": "Sunset Ochre",
+      "vibe": "Warm · Mediterranean · Sun-soaked",
+      "trend_source": "Ochre + clay — Mediterranean modern crossover",
+      "tags": [
+        "warm",
+        "rich",
+        "earthy",
+        "modern"
+      ],
+      "recommended_rooms": [
+        "living_room",
+        "dining_room",
+        "kitchen",
+        "feature_wall"
+      ],
+      "pairs_with_materials": [
+        "warm_oak",
+        "aged_brass",
+        "natural_linen",
+        "terracotta_tile"
+      ],
+      "app_note": "Sunset ochre — warmer, richer alternative to Tuscan Cream. Modern read.",
+      "style_tags": [
+        "mediterranean-modern",
+        "organic-modern",
+        "mid-century-modern"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Cream",
+          "hex": "#EEE2BA"
+        },
+        "sofa": {
+          "name": "Ochre",
+          "hex": "#C49044"
+        },
+        "floor": {
+          "name": "Warm White",
+          "hex": "#F0E8D5"
+        },
+        "accent": {
+          "name": "Terracotta",
+          "hex": "#B87048"
+        },
+        "trim": {
+          "name": "Chocolate",
+          "hex": "#4A3525"
+        }
+      },
+      "colors": [
+        {
+          "id": "snc-cream",
+          "name": "Cream",
+          "hex": "#EEE2BA",
+          "role": "wall",
+          "rgb": [
+            238,
+            226,
+            186
+          ]
+        },
+        {
+          "id": "snc-ochre",
+          "name": "Ochre",
+          "hex": "#C49044",
+          "role": "sofa",
+          "rgb": [
+            196,
+            144,
+            68
+          ]
+        },
+        {
+          "id": "snc-warm-white",
+          "name": "Warm White",
+          "hex": "#F0E8D5",
+          "role": "floor",
+          "rgb": [
+            240,
+            232,
+            213
+          ]
+        },
+        {
+          "id": "snc-terracotta",
+          "name": "Terracotta",
+          "hex": "#B87048",
+          "role": "accent",
+          "rgb": [
+            184,
+            112,
+            72
+          ]
+        },
+        {
+          "id": "snc-chocolate",
+          "name": "Chocolate",
+          "hex": "#4A3525",
+          "role": "trim",
+          "rgb": [
+            74,
+            53,
+            37
+          ]
+        }
+      ],
+      "timelessness": 6,
+      "persona_fit": [
+        "of-the-moment",
+        "vibrant",
+        "contemporary",
+        "heritage"
+      ]
+    },
+    {
+      "id": "aegean-blue-white",
+      "name": "Aegean Blue & White",
+      "vibe": "Coastal · Mediterranean · Crisp",
+      "trend_source": "Greek/Aegean coastal — heritage Mediterranean",
+      "tags": [
+        "cool",
+        "modern",
+        "coastal",
+        "crisp"
+      ],
+      "recommended_rooms": [
+        "bathroom",
+        "kitchen",
+        "living_room",
+        "bedroom"
+      ],
+      "pairs_with_materials": [
+        "white_oak",
+        "natural_linen",
+        "aged_brass",
+        "travertine"
+      ],
+      "app_note": "Aegean blue + crisp white — Greek-island coastal. Brighter than Hamptons.",
+      "style_tags": [
+        "mediterranean-modern",
+        "modern-coastal",
+        "french-provincial"
+      ],
+      "room_roles": {
+        "wall": {
+          "name": "Crisp White",
+          "hex": "#F0EBDD"
+        },
+        "sofa": {
+          "name": "Aegean Blue",
+          "hex": "#2A5A7A"
+        },
+        "floor": {
+          "name": "Sand",
+          "hex": "#DCC8A4"
+        },
+        "accent": {
+          "name": "Bone",
+          "hex": "#E4DAC2"
+        },
+        "trim": {
+          "name": "Warm Grey",
+          "hex": "#B0A89A"
+        }
+      },
+      "colors": [
+        {
+          "id": "abw-crisp-white",
+          "name": "Crisp White",
+          "hex": "#F0EBDD",
+          "role": "wall",
+          "rgb": [
+            240,
+            235,
+            221
+          ]
+        },
+        {
+          "id": "abw-aegean-blue",
+          "name": "Aegean Blue",
+          "hex": "#2A5A7A",
+          "role": "sofa",
+          "rgb": [
+            42,
+            90,
+            122
+          ]
+        },
+        {
+          "id": "abw-sand",
+          "name": "Sand",
+          "hex": "#DCC8A4",
+          "role": "floor",
+          "rgb": [
+            220,
+            200,
+            164
+          ]
+        },
+        {
+          "id": "abw-bone",
+          "name": "Bone",
+          "hex": "#E4DAC2",
+          "role": "accent",
+          "rgb": [
+            228,
+            218,
+            194
+          ]
+        },
+        {
+          "id": "abw-warm-grey",
+          "name": "Warm Grey",
+          "hex": "#B0A89A",
+          "role": "trim",
+          "rgb": [
+            176,
+            168,
+            154
+          ]
+        }
+      ],
+      "timelessness": 8,
+      "persona_fit": [
+        "timeless",
+        "contemporary",
+        "heritage"
       ]
     }
   ]

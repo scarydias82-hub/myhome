@@ -51,6 +51,10 @@ export interface DashboardPaletteCard {
   timelessness: number;
   personaFit: string[];
   recommendedRooms: string[];
+  /** Tags array from the palette source. The dashboard carousel filters
+   *  on `popular` so only the curated set surfaces here; the full
+   *  catalogue lives at /palettes. */
+  tags: string[];
 }
 
 interface TrendsSectionProps {
@@ -67,18 +71,22 @@ const TIMELESS_THRESHOLD = 9;
 export function TrendsSection({ trends, palettes }: TrendsSectionProps) {
   const trendForward = trends.filter((t) => (t.timelessness ?? 5) < TIMELESS_THRESHOLD);
   const timeless = trends.filter((t) => (t.timelessness ?? 5) >= TIMELESS_THRESHOLD);
+  // Curated dashboard set — only palettes tagged "popular" in
+  // palettes.json. The full catalogue (56+ palettes) lives at /palettes
+  // so the carousel stays scannable.
+  const popularPalettes = palettes.filter((p) => p.tags.includes('popular'));
 
   return (
     <section id="trends" className="py-10">
-      {/* ① Colour palette carousel — pure palette browsing, mirrors
-          the wizard Step 3 primary chooser. Lets users scan the 16
-          palette options without committing to a room-applied
-          visual. */}
+      {/* ① Colour palette carousel — surfaces only the "popular" subset
+          (~18 palettes). The full catalogue is at /palettes with filter
+          chips. Mirrors the wizard Step 3 featured chooser. */}
       <PaletteCarousel
         anchor="palettes"
         title="Colour palettes"
-        intro="The full 16-palette set behind every render. Hover a card to see the trend source; click through to use one as the basis for your next project."
-        palettes={palettes}
+        intro="The most-loved palettes from our catalogue — modern neutrals, naturals and a few statement directions. Browse the full set for more."
+        palettes={popularPalettes}
+        seeAllHref="/palettes"
       />
 
       {/* ② 2026 Design Trends carousel — what's hot this year, sourced
@@ -113,17 +121,22 @@ function PaletteCarousel({
   title,
   intro,
   palettes,
+  seeAllHref,
 }: {
   anchor: string;
   title: string;
   intro: string;
   palettes: DashboardPaletteCard[];
+  /** Where the "See all →" header CTA points. Defaults to anchor jump
+   *  for the legacy in-page carousels; the popular palette carousel
+   *  passes /palettes to deep-link into the full catalogue. */
+  seeAllHref?: string;
 }) {
   return (
     <section id={anchor} className="mb-12">
       <SectionHeader
         title={title}
-        action={{ label: 'See all →', href: '/palettes' }}
+        action={{ label: 'See all →', href: seeAllHref ?? `/dashboard#${anchor}` }}
       />
       <p className="mt-2 max-w-3xl font-dmsans text-[13px] leading-relaxed text-editorial-taupe">
         {intro}

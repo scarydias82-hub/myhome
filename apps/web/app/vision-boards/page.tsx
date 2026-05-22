@@ -49,6 +49,7 @@ export default async function VisionBoardsIndexPage() {
             <Link href="/dashboard" className="hover:text-ink">Dashboard</Link>
             <Link href="/projects" className="hover:text-ink">Projects</Link>
             <span className="text-ink">Vision boards</span>
+            <Link href="/palettes" className="hover:text-ink">Palettes</Link>
             <Link href="/catalogue" className="hover:text-ink">Catalogue</Link>
           </nav>
           <Link

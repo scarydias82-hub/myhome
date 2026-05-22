@@ -107,6 +107,7 @@ export default async function CataloguePage({
           <nav className="hidden gap-8 text-[14px] text-ink-soft md:flex">
             <Link href="/dashboard" className="hover:text-ink">Dashboard</Link>
             <Link href="/projects" className="hover:text-ink">Projects</Link>
+            <Link href="/palettes" className="hover:text-ink">Palettes</Link>
             <span className="text-ink">Catalogue</span>
           </nav>
           <form action="/auth/signout" method="post">

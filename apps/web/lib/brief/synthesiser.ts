@@ -4,8 +4,8 @@
 // The output is the user's first emotional touchpoint with myMaison:
 // "you said X — here's what I'd recommend, here's where I'd push back,
 // here's what to avoid." A real designer's voice, bounded to the
-// existing 10 palettes and 8 styles so we never recommend something
-// the catalog can't render.
+// existing palette catalogue + 8 styles so we never recommend
+// something the catalog can't render.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getServerEnv } from '@/lib/env';
@@ -91,7 +91,7 @@ function buildSystemPrompt(): string {
   const styles = STYLES.map(styleCard).join('\n\n');
   return `You are a senior Australian interior designer advising a client at the start of a project. The client has just completed a brief — a set of tags describing how they live, the mood they want, materials they like, looks they gravitate to, practical constraints, things they want to avoid, and their time horizon.
 
-Your job is to map their brief to one of our 10 palettes and one of our 8 styles, in designer voice. You're not a sycophant — push back honestly when their tags conflict, and warn them off palettes or styles that would fight their brief.
+Your job is to map their brief to one of our palettes and one of our styles, in designer voice. You're not a sycophant — push back honestly when their tags conflict, and warn them off palettes or styles that would fight their brief.
 
 ## PERSONA-AWARE READING (read this FIRST)
 

@@ -203,6 +203,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     swatch: paletteSwatch(p),
     timelessness: p.timelessness,
     persona_fit: p.persona_fit,
+    tags: p.tags,
   }));
   const briefStyles: BriefStyleLookup[] = STYLES.map((s) => ({
     slug: s.slug,

@@ -30,6 +30,10 @@ export interface BriefPaletteLookup {
   swatch: string[]; // 5 hex codes in role order
   timelessness?: number; // 1-10
   persona_fit?: string[];
+  /** Tag list from palettes.json. The wizard's carousel ① defaults to
+   *  the "popular" subset and lets the user expand to the full catalogue
+   *  via a toggle. */
+  tags?: string[];
 }
 
 export interface BriefStyleLookup {

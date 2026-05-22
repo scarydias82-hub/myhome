@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `499fab2` (will
+**Last verified:** 2026-05-22 · most recent material commit: `9ff4516` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -179,6 +179,30 @@ product, the system, or the business. Cross-reference SHAs with
   UX on the first impression. Frontend is forward-compatible: page
   loads cleanly pre-migration (picking_list_status fetched in a
   separate maybeSingle() query that tolerates missing column).
+- `2026-05-22` — **Palette catalogue expansion + featured/all split.**
+  Grew the palette set from 16 to 56 — 40 new entries covering the
+  modern-neutral / natural-light / popular-tone gaps the original
+  catalogue missed (warm whites, greige, mushroom, oat, limewash
+  plaster, bone & black, chocolate brown, slate blue, navy, japandi,
+  wabi-sabi, modern Mediterranean, plus heritage frameworks like
+  Art Deco, French provincial, Victorian). Each palette carries the
+  full persona_fit + timelessness metadata so the brief synthesiser
+  matches them like the existing ones. Introduced a `popular` tag
+  (18 curated picks) that drives a featured/full split: the dashboard
+  carousel surfaces only the popular subset (was: all 16), the wizard
+  Step 3 carousel ① defaults to popular with a "Show all 56 →"
+  toggle that always keeps Claude's recommendation + the current pick
+  visible, and a new `/palettes` browse page lists everything with
+  single-select filter chips by tag (popular / neutral / modern /
+  natural / light / warm / cool / bold / heritage). Carousels ②/③
+  in the wizard (2026 trends / Tried & tested) keep showing their
+  full timelessness-bucketed sets — that's the user's explicit
+  "browse all of one direction" path. Cherry-picked from the parallel
+  `claude/wizardly-chandrasekhar-9ad928` worktree where the work was
+  originally committed but never pushed; replaces the placeholder
+  `/palettes` page shipped earlier today in `b0287fd`. The shared
+  `components/palettes/palette-swatch-card.tsx` extraction from that
+  earlier commit is preserved since 431c122 didn't touch it.
 - `2026-05-22` — **Eval mirrors prod warmup + poll cadence.** The
   2026-05-22T00-39-18 eval surfaced a 42.7s Kontext inference time
   vs 24.7s the run before — same code, same fixture. Root cause was
@@ -1273,7 +1297,16 @@ The editorial dashboard at `/dashboard` is built from small primitives in
 - **HeroGreeting** — name + four quick-action cards.
 - **PinterestSection** — placeholder card; OAuth flow is on the roadmap (#55).
 - **ProjectsSection** — current projects grouped by status.
-- **TrendsSection** — `trend_cards` for (palette × room) — only renders if rows exist.
+- **TrendsSection** — three carousels: (1) Colour palettes — filtered to
+  the ~18 popular-tagged subset; "See all →" deep-links to `/palettes`
+  for the full 56-palette catalogue. (2) 2026 design trends — trend
+  cards keyed by (palette × room), timelessness < 9. (3) Tried &
+  tested directions — timelessness ≥ 9. Only renders if `trend_cards`
+  rows exist.
+- **`/palettes`** (separate page) — full browse with filter chips
+  (popular / neutral / modern / natural / light / warm / cool / bold /
+  heritage). Each card has shop / start-project / save-to-board CTAs
+  matching the dashboard carousel.
 - **ARSection** — catalogue cards with compat scoring (compat scoring is
   placeholder today; #56 lands the real version).
 - **NexusCTA** — dark editorial section linking to `/rooms/new`.
@@ -1428,6 +1461,12 @@ Stage 1 is live; the rest is sequenced.
      log starts from day one, no exceptions.
 
 ### 6.8 Recently shipped (for reference)
+- Palette catalogue 16 → 56 + popular/all split. New `/palettes`
+  browse page with filter chips. Dashboard carousel filtered to the
+  18 popular-tagged palettes. Wizard carousel ① defaults to popular
+  with a "Show all 56 →" toggle. Existing renders are unaffected —
+  no schema changes, all new palettes follow the same role-based
+  5-colour structure.
 - PWA enablement — manifest + service worker + apple-touch-icon
   shipped so the deployed app installs as a standalone shell from
   iOS Safari (Share → Add to Home Screen). No Capacitor / native
