@@ -36,7 +36,6 @@ export function TopNav({ initials, fullName }: TopNavProps) {
           <NavLink href="/dashboard">Discover</NavLink>
           <NavLink href="/projects">Projects</NavLink>
           <NavLink href="/catalogue">Catalogue</NavLink>
-          <NavLink href="/retailers">Retailers</NavLink>
         </nav>
 
         <div className="flex items-center gap-3">

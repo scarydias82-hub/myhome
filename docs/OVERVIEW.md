@@ -141,6 +141,13 @@ product, the system, or the business. Cross-reference SHAs with
   / stale (board drifted ≥2 items since the read). Wired into
   /vision-boards/[id] above VisionBoardDetail. Backfilled
   retroactively (commit 22e4ac3 didn't update the changelog inline).
+- `2026-05-22` — Removed dead `/retailers` link from the desktop
+  TopNav (route never existed; would 404 on click). Catalogue
+  page already surfaces retailer filtering via its chip row, so a
+  separate Retailers destination would be redundant rather than
+  worth stubbing. Also fixed a stale `< 7 / >= 7` comment in
+  `upload-form.tsx` that the previous threshold-raise commit
+  missed.
 - `2026-05-22` — Trend-vs-Tried-&-Tested threshold raised from
   `timelessness >= 7` to `>= 9` across all 5 consumers
   (`wizard-carousel-chooser.tsx`, `trends-section.tsx`,

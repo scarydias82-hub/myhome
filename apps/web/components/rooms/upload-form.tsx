@@ -115,8 +115,8 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         if (rec.palette_id) {
           setPaletteId(rec.palette_id);
           // Auto-derive direction from the recommended palette's
-          // timelessness. Trend-forward (< 7) → 2026 carousel
-          // selection. Heritage / classic (>= 7) → Tried & tested.
+          // timelessness. Trend-forward (< 9) → 2026 carousel
+          // selection. Heritage / classic (>= 9) → Tried & tested.
           // The user can still clear or swap; this just matches what
           // the brief synthesiser intended.
           const recommended = listPalettes().find((p) => p.id === rec.palette_id);
