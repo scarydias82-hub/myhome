@@ -1,0 +1,31 @@
+-- Canonical user-level brief (#153, §6.11 Phase A).
+--
+-- Today's product flow has a structural gap: the brief is captured at
+-- the PROJECT level via the wizard's tag picker. When a user uploads
+-- a photo outside a project (/rooms/new and similar surfaces), the
+-- analyse-room route has zero user context — Claude is recommending
+-- a direction off the room photo alone.
+--
+-- This column anchors the user's canonical taste signal. Inheritance
+-- rule (enforced by app code, not the DB):
+--   - First login → onboarding modal captures preferences, writes here.
+--   - Project create → project.brief.tags is snapshotted from
+--     users.preferences.tags at create time. Subsequent edits to the
+--     project's brief don't touch users.preferences.
+--   - Outside-project upload → /api/analyse-room reads
+--     users.preferences as the source of taste signal. A per-render
+--     override is allowed in the UI but doesn't persist back here.
+--   - Dashboard "My Preferences" surface is the ONLY way the canonical
+--     prefs change — explicit user action via the dashboard editor.
+--
+-- Shape (mirrors project.brief, kept as JSONB for forward compatibility):
+--   {
+--     "tags": ["modern-organic", "warm-grounded-earth", ...],
+--     "updated_at": "<iso8601>"
+--   }
+--
+-- Read/write by the user themselves only (RLS on public.users covers
+-- this — users.id = auth.uid()).
+
+alter table public.users
+  add column if not exists preferences jsonb;

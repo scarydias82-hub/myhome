@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `a59ae10` (will
+**Last verified:** 2026-05-22 · most recent material commit: `b994b42` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,37 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-22` — **#153 §6.11 Phase A shipped: user preferences
+  storage + onboarding + dashboard editor.** Closes the cold-start
+  gap when users upload a photo outside a project — previously
+  /api/analyse-room had zero user context, so Claude's room
+  recommendation was based on the photo alone. Now there's a
+  canonical user-level taste signal at `users.preferences jsonb`,
+  inherited by project briefs and outside-project uploads via
+  strict snapshot semantics (changes never cascade upward except
+  via explicit edits on the dashboard). Three pieces shipped:
+  1. Migration `20260522190000_users_preferences.sql` — `jsonb`
+     column on `public.users`. Read/write covered by existing RLS.
+  2. API `GET/PUT /api/preferences` — only the authenticated user
+     can read/write their own row. Body is `{ tags: string[] }`;
+     server de-dups, sorts, stamps `updated_at`.
+  3. UI:
+     - `PreferencesModal` (`components/dashboard/preferences-modal.tsx`)
+       — chip-picker over `BRIEF_TAG_GROUPS` (same taxonomy as the
+       project wizard, so vocab stays consistent). Two modes: first-
+       time (forced-open, no backdrop dismiss, "Skip for now"
+       allowed) and edit (standard modal UX).
+     - `PreferencesSection`
+       (`components/dashboard/sections/preferences-section.tsx`) —
+       dashboard surface. Option A placement: visible dedicated row
+       right below `HeroGreeting`, above featured products. Shows
+       current chips with "Edit →"; auto-opens the modal on first
+       visit when `preferences IS NULL`.
+     - `dashboard/page.tsx` extends the existing `profile` query to
+       pull preferences (no extra round-trip) and renders the section.
+  Inheritance into project briefs (#154 Phase B) and outside-project
+  uploads (#155 Phase C) is the next two phases — wiring exists, the
+  reads just haven't moved over yet. Foundation only in this PR.
 - `2026-05-22` — **#148 vision-grounded tag re-derivation shipped
   (catalogue intelligence Phase 4).** Now that vision_profile coverage
   hit 99.1% on imageable rows (1,387 of 1,400), the §6.9 sequencing
@@ -1356,7 +1387,7 @@ making sure each user has a great first render — concierge-style if needed.
 
 | Table              | Owns                                                                 |
 |--------------------|----------------------------------------------------------------------|
-| `users`            | Mirrors `auth.users` via trigger. Profile fields go here.            |
+| `users`            | Mirrors `auth.users` via trigger. Profile fields (`first_name`) + canonical taste signal (`preferences jsonb` — `{ tags: string[], updated_at }`, see §6.11). |
 | `projects`         | Top-level grouping. Status: `in_progress` → `in_review` → `completed`. |
 | `rooms`            | Uploaded room photos + `analysis` JSONB (Claude's room read).        |
 | `style_profiles`   | Descriptor + palette + materials + mood (per render, per board).     |
@@ -1850,6 +1881,83 @@ already shipped is the right hook for whichever option wins.
   and conversion mechanics — not before. Memoed now so the option
   stays visible while we're prioritising the catalogue-intelligence
   work (§6.9).
+
+### 6.11 User preferences (canonical brief)
+
+Closes the cold-start gap when users upload a photo outside a project.
+Today the project wizard captures a brief at project-creation time;
+outside-project uploads (/rooms/new, /api/analyse-room) have zero user
+context, so Claude's recommendation is based on the photo alone.
+
+**Three-layer model with snapshot semantics**
+
+```
+User Preferences      ← canonical, edited only on the dashboard
+       │
+       │ snapshotted on project create
+       ▼
+Project Brief         ← project-scoped, override cascades to all renders in project
+       │
+       │ snapshotted per render
+       ▼
+Per-render override   ← image-scoped, never persists back upward
+```
+
+Strict snapshot down the chain — changes to layer N don't affect
+already-snapshotted layers above. The ONLY way preferences propagate
+upward is by editing them on the dashboard. Explicit user action, never
+a side-effect of overriding a project or render.
+
+**Dashboard placement (Option A confirmed):** dedicated section between
+`HeroGreeting` and `FeaturedProductsSection`. Visible row, hard to miss,
+reinforces "your taste is the foundation of every render".
+
+**Phasing**
+
+- **#153 — Phase A: storage + onboarding + dashboard editor.**
+  *Shipped.* Migration `20260522190000_users_preferences.sql` adds the
+  `users.preferences jsonb` column. `GET/PUT /api/preferences` are the
+  only canonical-write paths. `PreferencesModal` is shared between
+  onboarding (first-time, forced-open, "Skip for now" allowed) and
+  edit (standard modal). `PreferencesSection` lives on the dashboard
+  right below `HeroGreeting` — auto-opens the modal on first visit
+  when `preferences IS NULL`. Vocabulary reuses the existing
+  `BRIEF_TAG_GROUPS` so user-level prefs and project briefs speak the
+  same chip language.
+
+- **#154 — Phase B: project wizard inherits + visible "inherited"
+  indicator.** Pre-fill the project brief from `users.preferences` at
+  create time. Render a banner "Pre-filled from your preferences —
+  adjust if this project is different." Save (existing behaviour)
+  creates a project.brief that is a SNAPSHOT; subsequent edits to the
+  brief don't touch `users.preferences`. Estimated: ~1 day, ~3 files.
+
+- **#155 — Phase C: outside-project upload inherits + per-render
+  override.** `/api/analyse-room` reads `users.preferences` as the
+  taste signal. UI banner on the analyse page: "Using your
+  preferences (warm-grounded-earth · modern-organic) · Customise for
+  this image →". Override modal saves into the render request only —
+  never persists back to `users.preferences` or any project.
+  Estimated: ~1 day, ~4 files.
+
+- **#156 — Phase D: edge cases + telemetry.** Closed-beta users with
+  no `preferences` yet trigger the onboarding modal next login.
+  Existing projects with existing briefs are untouched. Log frequency
+  of per-render overrides so we can see whether the default
+  inheritance is working or users are constantly overriding (signal
+  that the canonical prefs need a richer schema). Estimated: ~0.5
+  day.
+
+**Cross-references**
+- The deferred memory note on "minimal signup, onboarding wizard,
+  snapshot prefs onto rooms.analysis and inject into vision +
+  designer prompts" is this work — #153 is the first concrete piece.
+- The §6.10 sensor fusion path will eventually post scan + photo +
+  preferences as a single payload — preferences becomes a stable
+  identity layer across both vision-only and sensor-fused uploads.
+- The brief synthesiser (`lib/brief/synthesiser.ts`) consumes tags
+  today; once #155 lands it gets the same shape from outside-project
+  uploads too. No prompt change.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live
