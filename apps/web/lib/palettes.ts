@@ -92,6 +92,51 @@ export function paletteBrightness(p: Palette): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
+// -----------------------------------------------------------------
+// Trend vs timeless direction (#167)
+// -----------------------------------------------------------------
+//
+// Every palette carries a `timelessness: 1-10` score. The UI splits
+// the 56-palette catalogue into two carousels by this score:
+//   - 2026 Design Trends (carousel ②) — trend-forward, from sources
+//     like WGSN / Pantone / Sherwin-Williams / Benjamin Moore
+//     Colour-of-the-Year picks. Lower timelessness.
+//   - Tried & tested (carousel ③) — heritage / classical palettes
+//     grounded in Hamptons / Federation / Mid-Century / modernist
+//     frameworks. Higher timelessness.
+//
+// Before this constant the threshold was duplicated across the
+// codebase (`< 9` in two places, `< 7` in /api/recommend) which
+// produced a banner-label mismatch — a palette at timelessness 7 or 8
+// showed in carousel ② but /api/recommend's response said
+// direction='timeless'. Centralised here so future tuning happens
+// in one place.
+//
+// Numbers chosen so palettes 1-8 are trend-forward and 9-10 are
+// heritage. This matches the carousel split that was already live
+// in the picker.
+
+/** Palettes with `timelessness < TRENDS_CUTOFF` are trend-forward;
+ *  the rest are heritage / classical. */
+export const TRENDS_CUTOFF = 9;
+
+/** True when the palette belongs in the 2026 Design Trends carousel. */
+export function isTrendForward(palette: Palette): boolean {
+  return palette.timelessness < TRENDS_CUTOFF;
+}
+
+/** True when the palette belongs in the Tried & tested carousel. */
+export function isTimeless(palette: Palette): boolean {
+  return palette.timelessness >= TRENDS_CUTOFF;
+}
+
+/** Derived UI label for the inheritance banner / brief recommendation.
+ *  Returns null when palette is undefined (caller didn't resolve an id). */
+export function paletteDirection(palette: Palette | undefined | null): '2026' | 'timeless' | null {
+  if (!palette) return null;
+  return isTrendForward(palette) ? '2026' : 'timeless';
+}
+
 // Reverse-lookup a palette id from a hex array — used by the picking-list
 // builder to recover the palette id from style_profiles.palette (which
 // only stores hex codes). Match is exact-set-equality on lower-cased
