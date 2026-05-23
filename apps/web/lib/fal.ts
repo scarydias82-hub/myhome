@@ -371,15 +371,24 @@ export interface KontextRenderInput {
   // Image 2 — the palette swatch (style-source). Required for Kontext
   // — there's no point using this endpoint without a reference.
   paletteSwatchUrl: string;
+  // Images 3+ — optional product reference images (#173). When the
+  // matcher's hero products have catalogue image URLs we upload them
+  // to fal storage and pass here so Kontext renders the scene WITH
+  // those specific pieces baked in, skipping the post-render Sharp
+  // composite pipeline entirely. Cap at 4 to keep prompt + payload
+  // manageable; flux-pro/kontext/multi accepts arbitrary array
+  // lengths but quality degrades past 5-6 refs.
+  productImageUrls?: string[];
   // Optional aspect_ratio override (e.g. '4:3', '16:9'). When omitted
   // Kontext picks based on the input images.
   aspectRatio?: string;
 }
 
 function kontextRenderInput(input: KontextRenderInput) {
+  const products = (input.productImageUrls ?? []).slice(0, 4);
   return {
     prompt: input.prompt,
-    image_urls: [input.controlImageUrl, input.paletteSwatchUrl],
+    image_urls: [input.controlImageUrl, input.paletteSwatchUrl, ...products],
     // Bumped from default 3.5 → 4.5 to give prompt directives more
     // authority. We're now relying on the prompt for both palette
     // application AND structural preservation (no canny). Without
@@ -397,7 +406,7 @@ export async function submitKontextRender(input: KontextRenderInput): Promise<Su
   const client = getFal();
   console.log(
     `[fal-kontext] submitting: prompt=${input.prompt.slice(0, 80)}... ` +
-      `image_urls=[${input.controlImageUrl.slice(0, 50)}..., ${input.paletteSwatchUrl.slice(0, 50)}...]`,
+      `image_urls=[room, palette${(input.productImageUrls ?? []).length > 0 ? `, +${(input.productImageUrls ?? []).slice(0, 4).length} products` : ''}]`,
   );
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

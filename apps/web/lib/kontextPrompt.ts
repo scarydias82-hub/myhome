@@ -197,26 +197,54 @@ export function buildKontextPrompt({
   basePrompt,
   paletteName,
   roomFacts,
+  productRefs,
 }: {
   basePrompt: string;
   paletteName: string;
   roomFacts?: RoomAnalysis | null;
+  /** Heroes for the multi-image Kontext path (#173). Each entry's
+   *  image is appended to image_urls in order; the prompt references
+   *  them by index (image 3, image 4, …) and names what the model
+   *  should pull from each. */
+  productRefs?: Array<{ name: string; category: string; retailer: string }>;
 }): string {
   const preserves = roomFactsToArchitecturalPreserves(roomFacts);
   const transforms = roomFactsToTransformDirectives(roomFacts);
+  const heroes = (productRefs ?? []).slice(0, 4);
 
   const sections: string[] = [
     // Lead with the makeover framing + the swatch-visibility fix.
     `BOLD ROOM RESTYLE: transform the room shown in image 1 using the ${paletteName} palette from image 2.`,
     `Image 1 is the SOURCE ROOM to restyle. Image 2 is a COLOUR REFERENCE swatch — use its stripe colours to inform the palette, but DO NOT include the colour stripes as a visible element in the output. The output must show only the restyled room, no swatch, no bands, no colour reference panels.`,
     ``,
+  ];
+
+  // #173 — Product reference framing. Comes EARLY so Kontext weighs
+  // the product silhouettes / materials when planning the scene.
+  if (heroes.length > 0) {
+    sections.push(`FEATURED FURNITURE — render these specific pieces into the scene:`);
+    heroes.forEach((p, i) => {
+      const imageIndex = 3 + i; // image 1 = room, image 2 = palette
+      sections.push(
+        `- Image ${imageIndex} shows a ${p.category.toLowerCase()} (${p.name} from ${p.retailer}). ` +
+          `Render this exact silhouette, material and finish in the scene at its appropriate spot for a ${p.category.toLowerCase()}. ` +
+          `Match its colour family, fabric/timber/metal finish, and overall form factor — not a generic interpretation.`,
+      );
+    });
+    sections.push(
+      `Critical: the featured pieces should look natural in the room (correct scale, sitting on the actual floor, integrated lighting and shadows from image 1). Do not paste them flat — place them as if they live there.`,
+      ``,
+    );
+  }
+
+  sections.push(
     `PALETTE APPLICATION:`,
     `- Walls take the lighter stripe colours from image 2 as the dominant wall paint`,
     `- Soft furnishings (bedding, cushions, curtains, throws) use a mix of light + mid stripe tones`,
     `- Larger furniture upholstery + statement pieces use the deeper stripe tones`,
     `- The render should feel like a meaningful makeover, not a wall repaint`,
     ``,
-  ];
+  );
 
   if (transforms.length > 0) {
     sections.push(`ACTIVELY TRANSFORM (this is the makeover — be decisive):`);

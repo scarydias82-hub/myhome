@@ -68,8 +68,19 @@ export interface AutoStageResult {
 export async function autoStageAfterPickingList(
   ctx: AutoStageContext,
 ): Promise<AutoStageResult> {
-  if (process.env.AUTO_STAGE_ALL === 'false') {
-    return { outcome: 'skipped', staged: 0, skipped: 0, reason: 'kill-switch (AUTO_STAGE_ALL=false)' };
+  // #173 — auto-stage is now OPT-IN. Kontext multi-image conditioning
+  // (the new default render path) bakes product references directly
+  // into the initial Flux pass, so the Sharp composite step is
+  // redundant for the happy path. Auto-stage stays in the codebase
+  // as a fallback path we can re-enable per-env with AUTO_STAGE_ALL=true
+  // if Kontext underperforms on a specific render.
+  if (process.env.AUTO_STAGE_ALL !== 'true') {
+    return {
+      outcome: 'skipped',
+      staged: 0,
+      skipped: 0,
+      reason: 'opt-in only (AUTO_STAGE_ALL is not "true"); Kontext multi-image handles staging',
+    };
   }
   if (!ctx.roomPhotoKey) {
     return { outcome: 'skipped', staged: 0, skipped: 0, reason: 'no room photo key' };
