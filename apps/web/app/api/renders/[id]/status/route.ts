@@ -220,16 +220,21 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (upload.error) throw new Error(upload.error.message);
 
     // Step 2 (foreground): mark image-stage succeeded + flip
-    // picking_list_status to 'building'. The 'building' flag is what
-    // tells subsequent polls "image is ready, matching is in flight,
-    // keep polling but don't kick off another build."
+    // picking_list_status to 'building' unless the user already
+    // committed picks via the #179 curation step (in which case
+    // /api/render's featuredProductIds branch set picking_list +
+    // picking_list_status='ready' before submitting to fal). Don't
+    // overwrite 'ready' back to 'building' — the after() picking
+    // list build would then re-fire and either overwrite the user's
+    // picks or get stuck because Vercel's CLIP load is broken.
+    const userPicked = pickingListStatus === 'ready';
     await admin
       .from('renders')
       .update({
         status: 'succeeded',
         output_url: outKey,
         completed_at: new Date().toISOString(),
-        picking_list_status: 'building',
+        picking_list_status: userPicked ? 'ready' : 'building',
       })
       .eq('id', render.id);
 
