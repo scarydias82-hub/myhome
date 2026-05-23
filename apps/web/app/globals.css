@@ -143,6 +143,15 @@
     background-size: 4px 4px;
   }
 
+  /* Disable native iOS / Android pull-to-refresh + overscroll bounce
+     so our custom PullToRefresh component (#172) is the only thing
+     reacting to the gesture. `contain` keeps internal scrollables
+     working; `none` would also block scroll-chaining which we want
+     for the wishlist drawers etc. */
+  body {
+    overscroll-behavior-y: contain;
+  }
+
   /* Horizontal marquee — used by the photo overlay's scrolling palette
      ribbon while the designer is selecting (#169). Pair with a
      content list that's duplicated 2x so translateX(-50%) loops
