@@ -35,6 +35,13 @@ export function PullToRefresh({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  // #177 — track whether this is a touch device so we can also gate
+  // the JSX render (not just the effect). Previously the empty
+  // indicator div was always in the DOM on every device — even with
+  // pointer-events-none + opacity-0, that interacted oddly with
+  // macOS trackpad scrolling in some Safari configurations. Now the
+  // strip is only ever in the DOM on touch devices.
+  const [isTouch, setIsTouch] = useState(false);
   // Use a ref for the active gesture's start Y so we don't re-render
   // for every touchmove that doesn't change visual state.
   const startY = useRef<number | null>(null);
@@ -48,8 +55,9 @@ export function PullToRefresh({ children }: { children: ReactNode }) {
     // Coarse pointer = touch device (phone / tablet). Skip on desktops
     // where trackpads have their own pull-to-refresh behaviour that
     // we don't want to intercept.
-    const isTouch = window.matchMedia('(pointer: coarse)').matches;
-    if (!isTouch) return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    setIsTouch(mq.matches);
+    if (!mq.matches) return;
 
     function reset() {
       startY.current = null;
@@ -138,9 +146,14 @@ export function PullToRefresh({ children }: { children: ReactNode }) {
   }, [pullDistance, refreshing, router]);
 
   const ready = pullDistance >= TRIGGER_PX;
-  // Hide the strip entirely when we're at rest — avoids the strip
-  // taking up a 0-height-but-still-positioned spot in stacking order.
   const visible = pullDistance > 0 || refreshing;
+
+  // #177 — on desktops the strip never enters the DOM at all. Even
+  // with pointer-events-none + opacity-0, the always-rendered fixed
+  // element interfered with macOS trackpad scroll wheels in some
+  // browser configurations. The `visible` gate then handles the
+  // touch-device-but-at-rest case (no DOM cost when not gesturing).
+  if (!isTouch || !visible) return <>{children}</>;
 
   return (
     <>
@@ -150,9 +163,7 @@ export function PullToRefresh({ children }: { children: ReactNode }) {
         className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex items-end justify-center overflow-hidden border-b border-editorial-border bg-editorial-cream/95 backdrop-blur"
         style={{
           height: refreshing ? `${TRIGGER_PX}px` : `${pullDistance}px`,
-          opacity: visible ? 1 : 0,
-          // Snap-back uses a quick ease; while finger is on screen we
-          // skip the transition so the strip tracks the finger 1:1.
+          opacity: 1,
           transition:
             refreshing || pullDistance === 0
               ? 'height 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out'
