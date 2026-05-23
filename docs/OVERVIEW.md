@@ -25,6 +25,28 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-23` — **#166 shipped — fix auto-stage alpha-channel crash
+  + per-item fault tolerance.** First diagnostic-driven fix off the
+  back of #165 observability. Render `57bddf98` came back with
+  `auto_stage_status='failed'` and the error
+  `Cannot extract channel 3 from image with channels 0-2` — a Sharp
+  call expecting an alpha channel on a buffer that birefnet had
+  silently returned RGB-only for one product. The whole 4-item
+  batch crashed at the first bad cutout.
+  Two-part fix:
+  1. `lib/composite.ts` — added `.ensureAlpha()` to the resize chain
+     in `addCutoutToLayers` so the subsequent
+     `extractChannel('alpha')` is guaranteed an alpha channel. The
+     product without a real cutout renders as a rectangle in the
+     composite (still wrong-looking for that one item), but no
+     crash.
+  2. `lib/staging.ts` — switched the cutout step from `Promise.all`
+     to `Promise.allSettled`. One broken cutout (404, birefnet
+     timeout, malformed bytes) now logs `[staging] cutout failed`
+     and is filtered out; the surviving items still composite into
+     the render. Only fails the whole batch if EVERY cutout fails.
+  Next auto-staged render should land. Migration `20260522220000`
+  remains the only manual op needed.
 - `2026-05-22` — **#165 shipped — auto-stage observability + open-plan
   prompt fix.** Two changes from a real production diagnostic on
   carydias@gmail.com's render (`546d0534`):

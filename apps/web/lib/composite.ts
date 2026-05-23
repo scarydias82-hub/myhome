@@ -215,9 +215,21 @@ async function buildProductLayers(
   // through sharp's composite pipeline. Apply a slight blur to the
   // alpha channel (feathered edges) so the silhouette doesn't read as
   // hard-cropped — a few pixels of softness reads as anti-aliasing.
+  //
+  // .ensureAlpha() (#166) guards against the case where the upstream
+  // cutoutProduct returned an RGB-only buffer — birefnet has been
+  // observed (2026-05-22 render 57bddf98) returning a JPEG without an
+  // alpha channel for certain product images, which made the next
+  // extractChannel('alpha') call throw "Cannot extract channel 3 from
+  // image with channels 0-2" and tank the whole multi-stage batch.
+  // ensureAlpha() adds a fully-opaque alpha channel when one is
+  // missing — the composite then renders the product as a rectangle
+  // (no actual cutout) instead of crashing. Still imperfect for that
+  // one item, but the OTHER three in the batch land successfully.
   const featherRadius = Math.max(1, Math.round(Math.min(drawW, drawH) * 0.003));
   const resized = await sharp(cutoutBuf)
     .resize(drawW, drawH, { fit: 'inside', withoutEnlargement: false })
+    .ensureAlpha()
     .png()
     .toBuffer();
   const featheredAlpha = await sharp(resized)
