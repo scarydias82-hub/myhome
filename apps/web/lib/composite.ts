@@ -178,13 +178,19 @@ export async function compositeMultipleProducts({
   items: Array<{ productCutoutBuf: Buffer; bbox: PixelBbox }>;
 }): Promise<Buffer> {
   if (items.length === 0) throw new Error('compositeMultipleProducts: no items');
-  // #166-followup — wrap each per-item buildProductLayers call so one
-  // bad cutout (corrupted buffer, sharp throw, etc.) is skipped with
-  // a warning instead of killing the entire multi-stage batch. The
-  // cutout step in staging.ts is already protected by Promise.allSettled;
-  // this is the second layer of defence at the composite step.
+  // #166-followup + #170 — wrap each per-item buildProductLayers call
+  // so one bad cutout (corrupted buffer, sharp throw, etc.) is skipped
+  // with a warning instead of killing the entire multi-stage batch.
+  // The cutout step in staging.ts is already protected by
+  // Promise.allSettled; this is the second layer of defence at the
+  // composite step.
+  //
+  // Per-item error messages are aggregated into the thrown Error when
+  // every item fails — so the caller (autoStageAfterPickingList)
+  // surfaces real per-item detail in renders.auto_stage_error instead
+  // of the previous generic summary.
   const layers: sharp.OverlayOptions[] = [];
-  let failed = 0;
+  const failures: string[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (!item) continue;
@@ -192,14 +198,14 @@ export async function compositeMultipleProducts({
       const itemLayers = await buildProductLayers(item.productCutoutBuf, item.bbox);
       layers.push(...itemLayers);
     } catch (err) {
-      failed++;
       const msg = err instanceof Error ? err.message : String(err);
+      failures.push(`#${i}: ${msg}`);
       console.warn(`[composite] buildProductLayers failed for item ${i}: ${msg}`);
     }
   }
   if (layers.length === 0) {
     throw new Error(
-      `compositeMultipleProducts: all ${items.length} items failed to build layers (${failed} caught) — see [composite] warnings above`,
+      `compositeMultipleProducts: all ${items.length} items failed — ${failures.join(' || ')}`,
     );
   }
   return sharp(roomBuf).composite(layers).webp({ quality: 88 }).toBuffer();
@@ -213,24 +219,52 @@ async function buildProductLayers(
   cutoutBuf: Buffer,
   bbox: PixelBbox,
 ): Promise<sharp.OverlayOptions[]> {
+  // #170 — capture a buffer fingerprint up front so the catch below
+  // can attach real diagnostic detail (size, magic bytes, sharp
+  // metadata read, current error) when something throws. Sharp errors
+  // alone don't tell us if the input was a JPEG, HTML error page, a
+  // truncated download, or something else — and Vercel function logs
+  // aren't easily accessible from CLI, so we surface the detail
+  // through compositeMultipleProducts → autoStageAfterPickingList →
+  // renders.auto_stage_error.
+  const bufLen = cutoutBuf.length;
+  const magic = cutoutBuf.subarray(0, 8).toString('hex');
+  let cutoutMeta: sharp.Metadata | null = null;
+  try {
+    cutoutMeta = await sharp(cutoutBuf).metadata();
+  } catch (err) {
+    throw new Error(
+      `sharp.metadata() failed on cutout buffer (len=${bufLen} magic=${magic}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return buildProductLayersImpl(cutoutBuf, bbox, cutoutMeta, bufLen, magic);
+}
+
+async function buildProductLayersImpl(
+  cutoutBuf: Buffer,
+  bbox: PixelBbox,
+  initialMeta: sharp.Metadata,
+  bufLen: number,
+  magic: string,
+): Promise<sharp.OverlayOptions[]> {
   // #166-followup — explicitly normalise the cutout buffer to RGBA in
   // a dedicated sharp pipeline BEFORE any resize / extractChannel
-  // call. The chained `.resize().ensureAlpha().png()` form was shipped
-  // in PR #11 but the same "Cannot extract channel 3 from image with
-  // channels 0-2" error returned on the next render — Sharp's pipeline
-  // optimiser appears to drop the ensureAlpha step in some chained
-  // paths when the input is a 3-channel JPEG. Encoding to PNG with
-  // alpha as a SEPARATE pipeline pass guarantees the resulting buffer
-  // really is 4-channel, so the downstream resize + extractChannel
-  // operations work on a known-RGBA input.
-  let cutoutMeta = await sharp(cutoutBuf).metadata();
+  // call. Sharp's pipeline optimiser appears to drop the ensureAlpha
+  // step in some chained paths when the input is a 3-channel JPEG.
+  let cutoutMeta = initialMeta;
   if ((cutoutMeta.channels ?? 0) < 4) {
     console.warn(
       `[composite] cutout buffer arrived with ${cutoutMeta.channels} channels (no alpha) — normalising to RGBA before resize`,
     );
-    const normalised = await sharp(cutoutBuf).ensureAlpha().png().toBuffer();
-    cutoutBuf = normalised;
-    cutoutMeta = await sharp(cutoutBuf).metadata();
+    try {
+      const normalised = await sharp(cutoutBuf).ensureAlpha().png().toBuffer();
+      cutoutBuf = normalised;
+      cutoutMeta = await sharp(cutoutBuf).metadata();
+    } catch (err) {
+      throw new Error(
+        `ensureAlpha normalisation failed (len=${bufLen} magic=${magic} format=${initialMeta.format} channels=${initialMeta.channels}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
   const cw = cutoutMeta.width ?? bbox.w;
   const ch = cutoutMeta.height ?? bbox.h;

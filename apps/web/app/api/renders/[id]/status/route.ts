@@ -365,7 +365,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
               .from('renders')
               .update({
                 auto_stage_status: 'failed',
-                auto_stage_error: msg.length > 400 ? msg.slice(0, 400) + '…' : msg,
+                auto_stage_error: msg.length > 2000 ? msg.slice(0, 2000) + '…' : msg,
               })
               .eq('id', renderId)
               .then((r) => {

@@ -192,9 +192,11 @@ export async function autoStageAfterPickingList(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Truncate to fit comfortably in the DB column without bloating
-    // page-load payloads that read renders.* with `.select('*')`.
-    const trimmed = msg.length > 400 ? msg.slice(0, 400) + '…' : msg;
+    // #170 — bumped from 400 to 2000 chars so per-item failure
+    // details from compositeMultipleProducts (which aggregates up
+    // to 4 items × ~250 chars of magic-bytes / sharp metadata)
+    // survive the trim. Page payload impact negligible.
+    const trimmed = msg.length > 2000 ? msg.slice(0, 2000) + '…' : msg;
     return {
       outcome: 'failed',
       staged: 0,
