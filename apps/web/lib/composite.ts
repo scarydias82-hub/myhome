@@ -338,6 +338,48 @@ async function buildProductLayersImpl(
   // featheredResized came through a PNG encode and can lose alpha in
   // the same edge case (fully opaque → encoder strips).
   const alpha = await sharp(featheredResized).ensureAlpha().extractChannel('alpha').toBuffer();
+
+  // #178 — detect "no real alpha" cutouts and SKIP the drop shadow.
+  // When the cutout has no actual transparency (e.g. birefnet
+  // returned the source image as-is, or our ensureAlpha pass added
+  // a fully-opaque alpha layer to a 3-channel JPEG), the shadow code
+  // below blurs an all-255 alpha channel and produces a SOLID BLACK
+  // RECTANGLE the size of the cutout. The composite then renders
+  // that as a literal black box over the scene (see the curtain
+  // staging report on 2026-05-23).
+  //
+  // Detection: sharp.stats() returns per-channel min/max. For a real
+  // RGBA cutout, alpha min should be 0 (transparent pixels around
+  // the product). For a fully-opaque "fake alpha", min == max == 255.
+  // We use min < 250 as the "has real alpha" threshold — small
+  // tolerance for near-opaque cutouts that wouldn't shadow well anyway.
+  let hasRealAlpha = false;
+  try {
+    const stats = await sharp(alpha).stats();
+    const ch0 = stats.channels[0];
+    if (ch0 && typeof ch0.min === 'number' && ch0.min < 250) {
+      hasRealAlpha = true;
+    }
+  } catch {
+    // sharp.stats() rarely fails but defensively: if we can't tell,
+    // assume no shadow — better to render the cutout without a
+    // shadow than to risk the black-box failure mode.
+    hasRealAlpha = false;
+  }
+
+  const productLayer = {
+    input: featheredResized,
+    left: Math.max(0, drawX),
+    top: Math.max(0, drawY),
+  };
+
+  if (!hasRealAlpha) {
+    console.warn(
+      `[composite] cutout has no real transparency (alpha is fully opaque) — skipping drop shadow to avoid the black-box failure mode. The product will render as a rectangle.`,
+    );
+    return [productLayer];
+  }
+
   // Build a solid near-black layer the same size as the cutout, then
   // join the blurred alpha as its alpha channel → that's the shadow.
   const shadowBase = await sharp({
@@ -365,10 +407,6 @@ async function buildProductLayersImpl(
       top: Math.max(0, drawY + shadowOffsetY),
       blend: 'multiply',
     },
-    {
-      input: featheredResized,
-      left: Math.max(0, drawX),
-      top: Math.max(0, drawY),
-    },
+    productLayer,
   ];
 }
