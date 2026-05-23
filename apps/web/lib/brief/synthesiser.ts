@@ -142,7 +142,7 @@ Reply with a single JSON object — no markdown, no commentary outside the JSON.
   "recommendation": {
     "palette_id": "<one of the palette ids above>",
     "style_slug": "<one of the style slugs above>",
-    "reasoning": "A 2-3 sentence paragraph in first-person designer voice ('I'd lead with…'). Explain WHY this specific palette+style combination fits the brief. Reference at least two specific tags from their brief by their actual meaning, not the slug."
+    "reasoning": "Keep tight: ONE punchy sentence (max 30 words) in first-person designer voice ('I'd lead with…'). Name the palette + style choice in plain language and tie it to ONE specific tag or room fact. The UI renders this as the headline reason; longer detail belongs in the room-grounded follow-up the synthesiser doesn't emit here."
   },
   "push_back": {
     "concern": "If two or more tags conflict (e.g. 'calm' + 'dramatic', 'family-with-kids' + 'premium-quality marble'), name the conflict in one sentence.",

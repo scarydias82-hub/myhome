@@ -415,7 +415,9 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         file={file}
         preview={preview}
         converting={converting}
-        analysing={analysing}
+        // #169 — overlay spans vision + recommend so the user sees one
+        // continuous "designer is choosing" experience.
+        selecting={analysing || recommending}
         onPick={handleFile}
         onBrowseFiles={() => fileInput.current?.click()}
       />
@@ -508,17 +510,19 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           The relative wrapper anchors the overlay to this region
           only — photo overlay above stays in place during Phase 1,
           photo becomes interactive again in Phase 2. */}
+      {/* #169 — the photo overlay (DesignerSelectingOverlay) now
+          handles all "designer is at work" messaging across the
+          analyse + recommend phases. The carousel overlay was
+          redundant and visually noisy; removed. Step3Style mounts
+          underneath; while selecting=true the user can scroll the
+          chips/palette filters but the focus stays on the photo
+          overlay. */}
       {analysing || analysisConfirmed ? (
-        <div className="relative">
-          <Step3Style
-            paletteId={paletteId}
-            onPaletteChange={setPaletteId}
-            trendPreviews={trendPreviews}
-          />
-          {analysing || recommending ? (
-            <CarouselRecommendingOverlay phase={analysing ? 'analysing' : 'recommending'} />
-          ) : null}
-        </div>
+        <Step3Style
+          paletteId={paletteId}
+          onPaletteChange={setPaletteId}
+          trendPreviews={trendPreviews}
+        />
       ) : null}
 
       {/* Step 5 hero products picker removed in #128. The auto-feature
@@ -677,14 +681,18 @@ function Step1Upload({
   file,
   preview,
   converting,
-  analysing,
+  selecting,
   onPick,
   onBrowseFiles,
 }: {
   file: File | null;
   preview: string | null;
   converting: boolean;
-  analysing: boolean;
+  /** True while the designer is at work — covers both /api/analyse-room
+   *  (vision) AND /api/recommend (synthesis). Drives the photo overlay
+   *  end-to-end so the user sees one continuous "designer is choosing"
+   *  experience instead of two disjoint loading states. (#169) */
+  selecting: boolean;
   onPick: (f: File | null) => void;
   onBrowseFiles: () => void;
 }) {
@@ -717,26 +725,14 @@ function Step1Upload({
               className="block h-auto max-h-[600px] w-full object-contain bg-ink/5"
               unoptimized
             />
-            {/* Analysing overlay — sits ON the photo so the Claude
-                vision call feels like the designer leaning in to
-                inspect the room, rather than a generic "loading"
-                placeholder elsewhere on the page. */}
-            {analysing ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-ink/55 p-6 text-center backdrop-blur-sm">
-                <div className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream/40 bg-cream/10 backdrop-blur">
-                  <span aria-hidden className="animate-pulse text-cream text-[20px]">◎</span>
-                </div>
-                <p className="mt-4 font-display text-h3 leading-tight text-cream md:text-[24px]">
-                  We&rsquo;re waiting for the designer&rsquo;s opinion…
-                </p>
-                <p className="mt-2 max-w-sm font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
-                  Claude is reading the light, the flooring, the architecture and the colour
-                  story of this room — about 8 seconds.
-                </p>
-                <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-cream/20">
-                  <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
-                </div>
-              </div>
+            {/* Designer-selecting overlay — sits ON the photo and stays
+                visible across BOTH the vision pass and the recommend
+                pass so the user sees one continuous "designer is at
+                work" surface rather than two disjoint spinners. The
+                scrolling palette ribbon makes the wait feel like the
+                designer actively browsing options. (#169) */}
+            {selecting ? (
+              <DesignerSelectingOverlay />
             ) : (
               <button
                 type="button"
@@ -746,7 +742,7 @@ function Step1Upload({
                 Replace photo
               </button>
             )}
-            {file && !analysing ? (
+            {file && !selecting ? (
               <p className="absolute bottom-3 left-3 inline-flex items-center rounded-pill bg-ink/55 px-3 py-1 font-mono text-meta uppercase tracking-eyebrow text-cream backdrop-blur">
                 {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
               </p>
@@ -876,17 +872,13 @@ function DesignerSummaryCard({
       </p>
 
       {/* Commentary — Claude's punchy "why this direction" reasoning.
-          Sits directly under the room read so the editorial logic
-          reads as one breath: ROOM → WHY → WHAT. When the
-          recommendation hasn't landed yet (Phase 2 still running)
-          we show a placeholder line so the layout doesn't jump. */}
-      <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-ink md:text-[15px]">
-        {reasoning ?? (
-          <span className="text-ink-faint italic">
-            Designer&rsquo;s reasoning is coming together — watch the carousels below.
-          </span>
-        )}
-      </p>
+          ROOM → WHY → WHAT, one breath. The synthesiser prompt now
+          targets ~30 words (#169), but cached project briefs from
+          before that change can still be 2-3 sentences. The clamp
+          + "Read more" pattern handles both gracefully: shows the
+          first ~3 lines on mobile, expands on click, never crowds
+          the real-estate above the carousels. */}
+      <ReasoningBlock reasoning={reasoning ?? null} />
 
       {/* Recommendation block — once the synth has settled. Palette
           name + direction label sit alongside the swatch chip so
@@ -949,33 +941,110 @@ function capitalise(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
-function AnalysingPlaceholder() {
+// Truncate-with-expand commentary block used by DesignerSummaryCard
+// (#169). Reasoning was previously rendered as an unbounded <p> that
+// took 4-5 lines on mobile for typical Claude output. Synthesiser
+// prompt now targets ~30 words, but cached older briefs from
+// `projects.brief.response` can still be 2-3 sentences. Clamp to 3
+// lines by default + "Read more" toggle handles both cleanly.
+function ReasoningBlock({ reasoning }: { reasoning: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  // Heuristic: short enough that clamping wouldn't truncate → don't
+  // even render the toggle. ~160 chars maps to roughly 3 lines on a
+  // 360px viewport at our type scale.
+  const isLong = (reasoning?.length ?? 0) > 160;
   return (
-    <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-8 text-center">
-      <div className="mx-auto h-3 w-40 overflow-hidden rounded-full bg-ink/10">
-        <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
-      </div>
-      <p className="mt-4 font-display text-h4 text-ink">Claude is reading your room…</p>
-      <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-        Vision · ~8s
+    <div className="mt-3">
+      <p
+        className={cn(
+          'font-dmsans text-[14px] leading-relaxed text-ink md:text-[15px]',
+          isLong && !expanded ? 'line-clamp-3' : '',
+        )}
+      >
+        {reasoning ?? (
+          <span className="text-ink-faint italic">
+            Designer&rsquo;s reasoning is coming together…
+          </span>
+        )}
       </p>
+      {isLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:underline"
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Less ↑' : 'Read more ↓'}
+        </button>
+      ) : null}
     </div>
   );
 }
 
-// CarouselRecommendingOverlay (#143/#144) — sits over the 3
-// carousels across BOTH phases of the photo flow:
-//   phase='analysing'    → vision is still running; the carousels
-//                          are visible as the upcoming decision but
-//                          locked while Claude reads the room
-//   phase='recommending' → vision is done; synthesiser is picking
-//                          a palette + direction
+// DesignerSelectingOverlay (#169) — sits ON the photo while the
+// designer is at work, across both the vision and recommend phases.
+// Scrolling palette ribbon makes the wait feel like the designer is
+// actively browsing options. Replaces the earlier static "Claude is
+// reading the room" placeholder + the separate carousel-area
+// overlay; one continuous loading surface.
 //
-// Same visual treatment across both phases — only the headline copy
-// shifts — so the user sees one continuous "Claude is working"
-// overlay rather than two disjoint spinners. ink/55 + backdrop-blur
-// mirrors the photo overlay above so both surfaces read as one
-// design language.
+// The palette swatch list is duplicated 2x so the marquee animation
+// (defined in globals.css) translateX(-50%) loops seamlessly.
+function DesignerSelectingOverlay() {
+  const palettes = listPalettes();
+  // Double the list for seamless marquee loop. Memoise via
+  // useMemo so the doubled array isn't rebuilt every render.
+  const doubled = [...palettes, ...palettes];
+  return (
+    <div
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center overflow-hidden bg-ink/60 text-center backdrop-blur-sm"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      {/* Scrolling palette ribbon — runs behind the centred text. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden opacity-90"
+      >
+        <div className="flex w-max gap-3 animate-marquee px-4">
+          {doubled.map((p, i) => {
+            const swatch = paletteSwatch(p);
+            return (
+              <div
+                key={`${p.id}-${i}`}
+                className="shrink-0 grid h-10 w-32 grid-cols-5 overflow-hidden rounded-md border border-cream/30 shadow-md md:h-12 md:w-40"
+              >
+                {swatch.slice(0, 5).map((hex, j) => (
+                  <div key={`${hex}-${j}`} style={{ backgroundColor: hex }} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Centred copy — sits above the marquee with extra contrast. */}
+      <div className="relative z-10 max-w-md px-6">
+        <p className="font-dmmono text-[10px] uppercase tracking-eyebrow text-cream/80 md:text-[11px]">
+          ✦ Designer at work
+        </p>
+        <p className="mt-2 font-display text-[22px] leading-tight text-cream md:text-[26px]">
+          The designer is choosing a direction for you…
+        </p>
+        <p className="mt-2 font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
+          Reading the light, the flooring and the architecture — then choosing the palette that fits your taste signal.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// CarouselRecommendingOverlay — removed from active use 2026-05-23
+// (#169) in favour of the DesignerSelectingOverlay above which
+// covers both phases on the photo itself. The component is kept in
+// the file (dead but exported-less) so a future revert is a quick
+// re-add of the JSX call site rather than a re-implementation.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CarouselRecommendingOverlay({
   phase,
 }: {
