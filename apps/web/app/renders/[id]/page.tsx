@@ -34,6 +34,15 @@ interface RenderRow {
   picking_list_status: 'not_started' | 'building' | 'ready' | 'failed' | null;
   cost_estimate_aud: number | null;
   designer_read: DesignerAdvice | null;
+  /** #174 — pre-selected hero products written by /api/render at
+   *  submit time. Visible on the page from the moment the render is
+   *  queued, separate from the post-render Florence-2 picking_list. */
+  hero_products: Array<{
+    name: string;
+    category: string;
+    retailer: string;
+    imageUrl?: string | null;
+  }> | null;
 }
 
 interface RevisionRow {
@@ -77,6 +86,25 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
     .single();
   const render = renderRes.data as RenderRow | null;
   if (!render) notFound();
+  // Default hero_products to null until the secondary defensive fetch
+  // below (which tolerates a missing column for legacy schemas).
+  render.hero_products = null;
+
+  // #174 — hero_products (jsonb on renders). Fetched separately so
+  // the page still loads cleanly against the pre-migration schema —
+  // an error from a missing column just leaves hero_products null
+  // and the FeaturedPiecesStrip silently hides.
+  const heroRes = await supabase
+    .from('renders')
+    .select('hero_products')
+    .eq('id', id)
+    .maybeSingle();
+  if (!heroRes.error && heroRes.data) {
+    const raw = (heroRes.data as { hero_products: unknown }).hero_products;
+    render.hero_products = Array.isArray(raw)
+      ? (raw as RenderRow['hero_products'])
+      : null;
+  }
 
   // Optional designer_read — present after the
   // 20260520100000_renders_designer_read.sql migration. We fetch it
@@ -271,6 +299,16 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
       </header>
 
       <main className="container py-10 md:py-14">
+        {/* #174 — Featured pieces (the hero products preselected by
+            the matcher BEFORE Flux ran). Visible from the moment the
+            render is queued, separate from the post-render picking
+            list. Closes the polling-race gap the user reported on
+            day 5: now the page always shows "what's going into this
+            render" without waiting for the Florence-2 detection pass. */}
+        {render.hero_products && render.hero_products.length > 0 ? (
+          <FeaturedPiecesStrip pieces={render.hero_products} />
+        ) : null}
+
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <Eyebrow>
@@ -440,3 +478,47 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   );
 }
 
+// #174 — Featured pieces strip. Renders the hero_products array
+// (preselected by /api/render before Flux ran) as a row of chips so
+// the user can see WHAT went into the render from the moment the
+// page loads, without waiting for the post-render Florence-2 picking
+// list. Magazine-style label on the left, chips on the right.
+function FeaturedPiecesStrip({
+  pieces,
+}: {
+  pieces: Array<{
+    name: string;
+    category: string;
+    retailer: string;
+    imageUrl?: string | null;
+  }>;
+}) {
+  return (
+    <section className="mb-8 rounded-2xl border border-editorial-border bg-editorial-surface/60 p-4 md:p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe md:text-[11px]">
+          Featured pieces · {pieces.length}
+        </p>
+        <p className="font-dmsans text-[11px] text-editorial-taupe md:text-[12px]">
+          What we put into this render
+        </p>
+      </div>
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {pieces.map((p, i) => (
+          <li
+            key={`${p.retailer}-${p.name}-${i}`}
+            className="inline-flex items-center gap-2 rounded-pill border border-editorial-border bg-editorial-cream px-3 py-1.5 text-[12px] text-editorial-ink"
+          >
+            <span className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
+              {p.category}
+            </span>
+            <span className="font-dmsans">{p.name}</span>
+            <span className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-cognac">
+              {p.retailer}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

@@ -312,6 +312,30 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    // #174 — persist hero_products on the render row so the page can
+    // display the pre-selection immediately (no polling race) and the
+    // user can see WHAT went into the render the moment it's queued,
+    // separately from the post-render Florence-2 picking_list. Defensive:
+    // best-effort write — if the column doesn't exist (migration not
+    // applied) the update errors but the render still goes through.
+    if (heroProducts.length > 0) {
+      const heroUpd = await admin
+        .from('renders')
+        .update({ hero_products: heroProducts })
+        .eq('id', render.id);
+      if (heroUpd.error) {
+        console.warn(
+          `[render] hero_products persist failed — migration likely not applied yet: ${heroUpd.error.message}`,
+        );
+      } else {
+        console.log(
+          `[render] hero_products persisted: ${heroProducts
+            .map((p) => `${p.retailer}/${p.category}/${(p.name || '').slice(0, 30)}`)
+            .join(' · ')}`,
+        );
+      }
+    }
   }
 
   // Kick off the designer LLM in the background. It doesn't depend on
