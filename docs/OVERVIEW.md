@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-23 · most recent material commit: `dd0564f` (will
+**Last verified:** 2026-05-23 · most recent material commit: `a1b2f9c` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,36 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-23` — **Designer narrator gets a contemporary warm-
+  minimalist baseline POV.** Owner directive: make every room the
+  narrator describes feel calm, intentional, and contemporary —
+  push the products in any render toward feeling like a curated
+  contemporary interior rather than a catalogue stack. Scope is
+  deliberately narrow: only the narrator prompt
+  (`apps/web/lib/prompts/designer-system.md`) — render image
+  generation (`lib/styles.ts`, `lib/kontextPrompt.ts`) is unchanged,
+  so Flux still draws whatever style the user picked. What shifted:
+  (a) new `## YOUR DESIGN POINT OF VIEW` section near the top of
+  the prompt establishing warm minimalist contemporary as the
+  default aesthetic compass — materials (pale oak, lime-washed
+  plaster, sculptural travertine, oat linen, undyed bouclé), form
+  (clean lines, soft sculptural curves, generous proportion),
+  palette (warm neutrals + one considered accent, no jewel tones),
+  mood (considered, calm, intentional). When the user picked a
+  non-contemporary palette + product mix, the narrator still
+  narrates THAT room on its own terms but finds the contemporary
+  qualities inside it (restraint, considered proportion, material
+  honesty). (b) Australian context bullets rewritten with an
+  explicit contemporary lens — 2026 AU contemporary leans into
+  sculptural form (soft arches, organic plaster, travertine slabs)
+  and restrained palettes. (c) `lib/designer.ts` null-state palette
+  fallback updated to default toward warm-minimalist contemporary
+  when no palette has been selected, rather than the previous
+  style-agnostic "infer most suitable" wording. Preserved: the
+  3-section DESIGNER READ / PALETTE STORY / EXPLORE INVITE output
+  contract, the don't-critique-the-original directive, the 60-30-10
+  + scale + layering principles. Live on the next deploy — no DB
+  migration, no client work needed.
 - `2026-05-23` — **#158 Kmart scraper shipped — ultra-budget accent
   line, stools only (scope per owner).** Site is Next.js SSR fronted
   by Akamai's edge bot wall — homepage returns 200 but category pages
