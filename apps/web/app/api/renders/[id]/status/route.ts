@@ -304,6 +304,32 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         // a new active revision (progressive enhancement). Failures
         // are logged + swallowed — base render + picking list still
         // succeed. Kill-switch: AUTO_STAGE_ALL=false env var.
+        //
+        // #165 — outcome is persisted to renders.auto_stage_status +
+        // renders.auto_stage_error so the failure mode is visible from
+        // the DB (Vercel function logs aren't always accessible).
+        // 'started' is written eagerly so a function timeout / OOM
+        // leaves a non-null status to read.
+        //
+        // Defensive: if the migration `20260522220000_renders_auto_stage_status.sql`
+        // hasn't been applied yet, the column doesn't exist and the
+        // UPDATE will error with PGRST204. We log + swallow so a
+        // missing migration doesn't break the picking-list flow.
+        const autoStageStartedRes = await admin
+          .from('renders')
+          .update({ auto_stage_status: 'started', auto_stage_error: null })
+          .eq('id', renderId);
+        const autoStageColumnsExist =
+          !autoStageStartedRes.error ||
+          !/auto_stage_status|column .* does not exist|PGRST204/i.test(
+            autoStageStartedRes.error.message ?? '',
+          );
+        if (autoStageStartedRes.error) {
+          console.warn(
+            `[status:after] auto_stage_status pre-write failed for ${renderId} — migration likely not applied yet:`,
+            autoStageStartedRes.error.message,
+          );
+        }
         try {
           const autoStageRes = await autoStageAfterPickingList({
             admin,
@@ -314,13 +340,38 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
             pickingListItems: matchRes.items,
           });
           console.log(
-            `[status:after] auto-stage for ${renderId}: staged=${autoStageRes.staged} skipped=${autoStageRes.skipped}${autoStageRes.reason ? ` (${autoStageRes.reason})` : ''}`,
+            `[status:after] auto-stage for ${renderId}: outcome=${autoStageRes.outcome} staged=${autoStageRes.staged} skipped=${autoStageRes.skipped}${autoStageRes.reason ? ` (${autoStageRes.reason})` : ''}`,
           );
+          if (autoStageColumnsExist) {
+            const upd = await admin
+              .from('renders')
+              .update({
+                auto_stage_status: autoStageRes.outcome,
+                auto_stage_error: autoStageRes.reason ?? null,
+              })
+              .eq('id', renderId);
+            if (upd.error) {
+              console.warn(`[status:after] auto_stage_status final write failed for ${renderId}:`, upd.error.message);
+            }
+          }
         } catch (autoErr) {
+          const msg = autoErr instanceof Error ? autoErr.message : String(autoErr);
           console.warn(
             `[status:after] auto-stage failed for ${renderId} — base render + picking list still succeeded`,
-            autoErr instanceof Error ? autoErr.message : autoErr,
+            msg,
           );
+          if (autoStageColumnsExist) {
+            await admin
+              .from('renders')
+              .update({
+                auto_stage_status: 'failed',
+                auto_stage_error: msg.length > 400 ? msg.slice(0, 400) + '…' : msg,
+              })
+              .eq('id', renderId)
+              .then((r) => {
+                if (r.error) console.warn(`[status:after] auto_stage_status fail-write failed for ${renderId}:`, r.error.message);
+              });
+          }
         }
       } catch (err) {
         console.error(`[status:after] picking list build failed for ${renderId}`, err);
