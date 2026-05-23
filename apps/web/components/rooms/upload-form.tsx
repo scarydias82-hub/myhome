@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
-import { PaletteStrip } from '@/components/saltbush/palette-strip';
 import { Pill } from '@/components/saltbush/pill';
 import { type StyleSlug } from '@/lib/styles';
 import {
@@ -105,11 +104,11 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
 
   const [style, setStyle] = useState<StyleSlug>('japandi');
   const [paletteId, setPaletteId] = useState<string>(listPalettes()[0]?.id ?? '');
-  // Direction state — mirrors the dashboard's two extra carousels. The
-  // colour palette (above) is required; direction is optional. Picking
-  // in carousel ② sets direction='2026', picking in ③ sets
-  // direction='timeless'. Mutex: choosing one clears the other.
-  const [direction, setDirection] = useState<'2026' | 'timeless' | null>(null);
+  // Direction state was removed 2026-05-23 (#168). The three-carousel
+  // picker collapsed into a single carousel + filter chips, so
+  // direction is now a derived value (via paletteDirection() helper)
+  // — no longer needs its own React state. Where we previously read
+  // `direction` we now compute paletteDirection(palette) on the fly.
   // Reasoning string from Claude's room-grounded recommendation (#142).
   // Surfaced on the DesignerSummaryCard so the user sees WHY this
   // palette/direction was picked, not just THAT it was.
@@ -162,14 +161,9 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         if (rec.style_slug) setStyle(rec.style_slug as StyleSlug);
         if (rec.palette_id) {
           setPaletteId(rec.palette_id);
-          // Auto-derive direction from the recommended palette's
-          // timelessness via the shared paletteDirection() helper —
-          // single source of truth for the trend / heritage split
-          // (#167). The user can still clear or swap; this just
-          // matches what the brief synthesiser intended.
-          const recommended = listPalettes().find((p) => p.id === rec.palette_id);
-          const dir = paletteDirection(recommended);
-          if (dir) setDirection(dir);
+          // #168 — direction is derived from the selected palette,
+          // no separate state to set. The card label and banner
+          // compute paletteDirection() at render time.
         }
         setBriefPreFilled(true);
       })
@@ -347,7 +341,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       const rec = json.recommendation;
       setPaletteId(rec.paletteId);
       if (rec.styleSlug) setStyle(rec.styleSlug as StyleSlug);
-      setDirection(rec.direction);
+      // #168 — direction derived from paletteId; no separate state.
       setRecommendationReasoning(rec.reasoning);
       // Flip the "we have a designer's pick" flag so the summary
       // card shows the recommendation block + commentary even when
@@ -488,7 +482,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           analysis={analysis}
           briefPreFilled={briefPreFilled}
           paletteId={paletteId}
-          direction={direction}
           reasoning={recommendationReasoning}
         />
       ) : null}
@@ -520,16 +513,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           <Step3Style
             paletteId={paletteId}
             onPaletteChange={setPaletteId}
-            direction={direction}
-            onDirectionChange={(next) => {
-              // Mutex behaviour: setting direction='2026' clears any
-              // previous timeless pick (and vice versa). Setting to
-              // null clears either. The paletteId is updated by the
-              // caller via onPaletteChange when a direction card is
-              // tapped — those carousels are palette-backed, so
-              // picking a direction card IS picking that palette.
-              setDirection(next);
-            }}
             trendPreviews={trendPreviews}
           />
           {analysing || recommending ? (
@@ -838,19 +821,21 @@ function DesignerSummaryCard({
   analysis,
   briefPreFilled,
   paletteId,
-  direction,
   reasoning,
 }: {
   analysis: RoomAnalysis | null;
   briefPreFilled: boolean;
   paletteId: string;
-  direction: '2026' | 'timeless' | null;
   /** Optional 1-2 sentence "why" from Claude's room-grounded
    *  recommendation. Surfaced under the palette name so the user
    *  sees what drove the pick. */
   reasoning?: string | null;
 }) {
   const palette = listPalettes().find((p) => p.id === paletteId) ?? null;
+  // #168 — direction derived from the palette via the centralised
+  // helper (single source of truth, #167). Was a prop in the
+  // three-carousel era; now a derived value.
+  const direction = paletteDirection(palette);
 
   // Compose the room-read line. We pick the highest-value facts and
   // skip null/unknown values so the line reads tight rather than
@@ -1302,326 +1287,218 @@ interface TrendPreview {
   imageUrl: string;
 }
 
-// --- Step 3 · 3-carousel chooser ---------------------------------------
+// --- Step 3 · Single palette picker with filter chips ----------------
 //
-// Mirrors the dashboard's TrendsSection layout one-for-one so users see
-// the same affordance in both surfaces: pure palette swatches first,
-// then two optional direction carousels (2026 / Tried & tested).
+// 2026-05-23 #168 — replaced the previous 3-carousel design (palette +
+// 2026 trends + tried-and-tested with mutex) with one carousel and
+// three filter chips. Reason: the old structure implied three
+// independent choices when in reality all three carousels were
+// sliced views of the same 56-palette catalogue and picking from
+// the "trend" or "heritage" carousel just overwrote the pick from
+// the main one. UX now matches the data model — one palette
+// choice, filtered three ways. Trend-source provenance and the
+// trend / heritage label live on every card.
 //
-// Hierarchy is deliberate:
-//   ① Colour palettes      — required, sets walls/floors/tones
-//   ② 2026 Design Trends   — optional, sets decorative direction
-//   ③ Tried & tested       — optional, mutex with ②
-//
-// Picking in ② or ③ also updates the selected palette in ① (they're
-// palette-backed — a "2026 Trend" IS one of the 10 trend-forward
-// palettes presented with its trend-card hero image). The mutex
-// between ② and ③ enforces "one direction at most" so the prompt
-// doesn't get pulled in two heritage/contemporary directions.
+// The currently-selected palette is always included in the rendered
+// list, even when it's outside the active filter, so a user never
+// loses their selection by switching filters.
+type PaletteFilter = 'all' | 'trends' | 'timeless';
+
 function Step3Style({
   paletteId,
   onPaletteChange,
-  direction,
-  onDirectionChange,
   trendPreviews,
 }: {
   paletteId: string;
   onPaletteChange: (p: string) => void;
-  direction: '2026' | 'timeless' | null;
-  onDirectionChange: (d: '2026' | 'timeless' | null) => void;
   trendPreviews: Map<string, TrendPreview>;
 }) {
+  const [filter, setFilter] = useState<PaletteFilter>('all');
   const all = listPalettes();
-  // Carousel splits use the same single source of truth as
-  // paletteDirection() — `lib/palettes.ts` constant TRENDS_CUTOFF.
-  const trendForward = all.filter(isTrendForward);
-  const timeless = all.filter(isTimeless);
+  const filtered =
+    filter === 'trends'
+      ? all.filter(isTrendForward)
+      : filter === 'timeless'
+        ? all.filter(isTimeless)
+        : all;
+  // Always include the selected palette even when it sits outside the
+  // active filter — switching filters should never make the user's
+  // current pick vanish.
+  const selectedPalette = all.find((p) => p.id === paletteId);
+  const palettes =
+    selectedPalette && !filtered.find((p) => p.id === paletteId)
+      ? [selectedPalette, ...filtered]
+      : filtered;
 
-  return (
-    <>
-      {/* ① Colour palettes — required */}
-      <PaletteCarousel
-        eyebrow="Step 03 · Colour palette"
-        title="Pick the colour direction"
-        intro="The full 16-palette set behind every render. Walls, floors and overall room tone draw from this — required."
-        palettes={all}
-        selectedId={paletteId}
-        onSelect={(pid) => {
-          onPaletteChange(pid);
-          // If the user picks a palette that doesn't belong to the
-          // currently-active direction carousel, clear the direction
-          // — keeps state coherent rather than leaving an orphan
-          // selection in ② or ③.
-          if (direction === '2026' && !trendForward.find((p) => p.id === pid)) {
-            onDirectionChange(null);
-          } else if (direction === 'timeless' && !timeless.find((p) => p.id === pid)) {
-            onDirectionChange(null);
-          }
-        }}
-      />
-
-      {/* ② 2026 Design Trends — optional, mutex with ③ */}
-      <DirectionCarousel
-        eyebrow="Step 04 · 2026 Design Trends (optional)"
-        title="Add a 2026 trend direction"
-        intro="Curated from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU and the year's dominant designer voices. Pick one to seed the decorative direction — or skip."
-        palettes={trendForward}
-        trendPreviews={trendPreviews}
-        selectedPaletteId={direction === '2026' ? paletteId : null}
-        otherDirectionActive={direction === 'timeless'}
-        onSelect={(pid) => {
-          if (pid === null) {
-            onDirectionChange(null);
-          } else {
-            onPaletteChange(pid);
-            onDirectionChange('2026');
-          }
-        }}
-        emptyCopy="Loading trend previews…"
-      />
-
-      {/* ③ Tried & tested directions — optional, mutex with ② */}
-      <DirectionCarousel
-        eyebrow="Step 05 · Tried & tested (optional)"
-        title="Or pick a heritage / classic direction"
-        intro="Heritage, classic and modernist frameworks — durable colour stories grounded in Federation, Hamptons, Mid-Century and modernist principles. Choose this OR a 2026 trend, not both."
-        palettes={timeless}
-        trendPreviews={trendPreviews}
-        selectedPaletteId={direction === 'timeless' ? paletteId : null}
-        otherDirectionActive={direction === '2026'}
-        onSelect={(pid) => {
-          if (pid === null) {
-            onDirectionChange(null);
-          } else {
-            onPaletteChange(pid);
-            onDirectionChange('timeless');
-          }
-        }}
-        emptyCopy="Loading tried-and-tested previews…"
-      />
-    </>
-  );
-}
-
-// Pure colour palette carousel — swatch-led cards, no room hero image.
-// Mirrors the dashboard PaletteCarousel visually but the cards are
-// selectable buttons rather than navigation links.
-function PaletteCarousel({
-  eyebrow,
-  title,
-  intro,
-  palettes,
-  selectedId,
-  onSelect,
-}: {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  palettes: Palette[];
-  selectedId: string;
-  onSelect: (paletteId: string) => void;
-}) {
   return (
     <section>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-2 font-display text-h3 text-ink">{title}</h2>
-      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">{intro}</p>
+      <Eyebrow>Step 03 · Colour palette</Eyebrow>
+      <h2 className="mt-2 font-display text-h3 text-ink">
+        Pick the colour direction
+      </h2>
+      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
+        The full {all.length}-palette catalogue powers every render. Filter to a
+        curated subset — 2026&rsquo;s trend leaders or heritage / classical
+        frameworks — or browse them all. Pick one to set walls, floors, and the
+        overall colour story.
+      </p>
+
+      <div
+        className="mt-5 flex flex-wrap gap-2"
+        role="tablist"
+        aria-label="Palette filters"
+      >
+        <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>
+          All · {all.length}
+        </FilterChip>
+        <FilterChip
+          active={filter === 'trends'}
+          onClick={() => setFilter('trends')}
+        >
+          2026 trends · {all.filter(isTrendForward).length}
+        </FilterChip>
+        <FilterChip
+          active={filter === 'timeless'}
+          onClick={() => setFilter('timeless')}
+        >
+          Tried &amp; tested · {all.filter(isTimeless).length}
+        </FilterChip>
+      </div>
+
       <div className="-mx-2 mt-6 overflow-x-auto pb-3 [scrollbar-width:thin]">
         <ul className="flex snap-x snap-mandatory gap-4 px-2">
-          {palettes.map((p) => {
-            const selected = selectedId === p.id;
-            const swatch = paletteSwatch(p);
-            const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
-            return (
-              <li
-                key={p.id}
-                className="snap-start shrink-0 basis-[240px] md:basis-[280px]"
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelect(p.id)}
-                  aria-pressed={selected}
-                  style={{ background: tintCss }}
-                  className={cn(
-                    'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
-                    selected
-                      ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                      : 'border-ink/[0.06] hover:border-ink/20',
-                  )}
-                >
-                  <div className="grid h-32 grid-cols-5">
-                    {swatch.slice(0, 5).map((hex, i) => (
-                      <div key={`${hex}-${i}`} style={{ backgroundColor: hex }} />
-                    ))}
-                  </div>
-                  <div className="flex flex-1 flex-col gap-2 p-4">
-                    <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                      T {p.timelessness}/10 · {p.persona_fit.slice(0, 2).join(' · ')}
-                    </p>
-                    <p className="font-display text-[18px] leading-tight text-ink">
-                      {p.name}
-                    </p>
-                    <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
-                      {p.vibe}
-                    </p>
-                    {p.trend_source ? (
-                      <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                        {p.trend_source}
-                      </p>
-                    ) : null}
-                    {selected ? (
-                      <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-clay px-3 py-1 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
-                        ✓ Selected
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
+          {palettes.map((p) => (
+            <li
+              key={p.id}
+              className="snap-start shrink-0 basis-[280px] md:basis-[320px]"
+            >
+              <UnifiedPaletteCard
+                palette={p}
+                preview={trendPreviews.get(p.id)}
+                selected={paletteId === p.id}
+                onSelect={() => onPaletteChange(p.id)}
+              />
+            </li>
+          ))}
         </ul>
       </div>
     </section>
   );
 }
 
-// Direction carousel — palette-backed cards with the pre-rendered Flux
-// trend image as the hero. Used for both the 2026 carousel and the
-// Tried & tested carousel; the only difference is the slice of
-// palettes each gets.
-function DirectionCarousel({
-  eyebrow,
-  title,
-  intro,
-  palettes,
-  trendPreviews,
-  selectedPaletteId,
-  otherDirectionActive,
-  onSelect,
-  emptyCopy,
+function FilterChip({
+  active,
+  onClick,
+  children,
 }: {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  palettes: Palette[];
-  trendPreviews: Map<string, TrendPreview>;
-  selectedPaletteId: string | null;
-  otherDirectionActive: boolean;
-  onSelect: (paletteId: string | null) => void;
-  emptyCopy: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
   return (
-    <section>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Eyebrow>{eyebrow}</Eyebrow>
-          <h2 className="mt-2 font-display text-h3 text-ink">{title}</h2>
-          <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">{intro}</p>
-        </div>
-        {selectedPaletteId ? (
-          <button
-            type="button"
-            onClick={() => onSelect(null)}
-            className="rounded-pill border border-ink/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
-          >
-            Clear direction
-          </button>
-        ) : null}
-      </div>
-
-      {/* Greyed-out hint when the OTHER direction carousel is active.
-          Cards still scroll but interactions feel "locked" until the
-          user clears that direction, so they understand the mutex. */}
-      {otherDirectionActive ? (
-        <p className="mt-3 rounded-lg border border-ink/[0.06] bg-paper-warm bg-grain px-4 py-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          Another direction is selected. Clear it above to pick from this carousel.
-        </p>
-      ) : null}
-
-      {palettes.length === 0 ? (
-        <p className="mt-6 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          {emptyCopy}
-        </p>
-      ) : (
-        <div className="-mx-2 mt-6 overflow-x-auto pb-3 [scrollbar-width:thin]">
-          <ul className="flex snap-x snap-mandatory gap-4 px-2">
-            {palettes.map((p) => {
-              const selected = selectedPaletteId === p.id;
-              const preview = trendPreviews.get(p.id);
-              const swatch = paletteSwatch(p);
-              const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
-              return (
-                <li
-                  key={p.id}
-                  className="snap-start shrink-0 basis-[280px] md:basis-[320px]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelect(p.id)}
-                    aria-pressed={selected}
-                    disabled={otherDirectionActive}
-                    style={{ background: tintCss }}
-                    className={cn(
-                      'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
-                      selected
-                        ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                        : 'border-ink/[0.06] hover:border-ink/20',
-                      otherDirectionActive && !selected
-                        ? 'opacity-40 cursor-not-allowed hover:border-ink/[0.06]'
-                        : '',
-                    )}
-                  >
-                    <div className="relative aspect-[4/3] w-full overflow-hidden bg-ink/5">
-                      {preview?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={preview.imageUrl}
-                          alt={`${p.name} applied to a ${preview.roomType.replace(/_/g, ' ')}`}
-                          className="absolute inset-0 h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 grid place-items-center">
-                          <div className="w-2/3">
-                            <PaletteStrip colors={swatch} className="h-7" />
-                          </div>
-                        </div>
-                      )}
-                      {preview && !preview.matchedRoomType ? (
-                        <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-paper">
-                          {preview.roomType.replace(/_/g, ' ')} sample
-                        </span>
-                      ) : null}
-                      {selected ? (
-                        <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
-                          ✓ Selected
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-1 flex-col gap-2 p-4">
-                      <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                        T {p.timelessness}/10 · {p.persona_fit.slice(0, 2).join(' · ')}
-                      </p>
-                      <p className="font-display text-[18px] leading-tight text-ink">
-                        {p.name}
-                      </p>
-                      <PaletteStrip colors={swatch} className="mt-1 h-5" />
-                      <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
-                        {p.vibe}
-                      </p>
-                      {p.trend_source ? (
-                        <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                          {p.trend_source}
-                        </p>
-                      ) : null}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'rounded-pill border px-4 py-1.5 font-mono text-meta uppercase tracking-eyebrow transition',
+        active
+          ? 'border-clay bg-clay text-paper'
+          : 'border-ink/15 bg-cream text-ink-soft hover:border-ink/30 hover:text-ink',
       )}
-    </section>
+    >
+      {children}
+    </button>
   );
 }
+
+// Unified palette card — magazine-style. Hero is the pre-rendered
+// trend image when available (preview.imageUrl, generated by the
+// /api/trend-previews job), else falls back to a 5-column swatch
+// strip. Bottom block always carries the trend / heritage label,
+// palette name, vibe, and trend_source provenance line.
+function UnifiedPaletteCard({
+  palette: p,
+  preview,
+  selected,
+  onSelect,
+}: {
+  palette: Palette;
+  preview: TrendPreview | undefined;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const swatch = paletteSwatch(p);
+  const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
+  const isTrend = isTrendForward(p);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      style={{ background: tintCss }}
+      className={cn(
+        'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
+        selected
+          ? 'border-clay shadow-soft ring-1 ring-clay/40'
+          : 'border-ink/[0.06] hover:border-ink/20',
+      )}
+    >
+      {preview?.imageUrl ? (
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-ink/5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview.imageUrl}
+            alt={`${p.name} applied to a ${preview.roomType.replace(/_/g, ' ')}`}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+          {preview && !preview.matchedRoomType ? (
+            <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-paper">
+              {preview.roomType.replace(/_/g, ' ')} sample
+            </span>
+          ) : null}
+          {selected ? (
+            <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
+              ✓ Selected
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="relative grid h-32 grid-cols-5">
+          {swatch.slice(0, 5).map((hex, i) => (
+            <div key={`${hex}-${i}`} style={{ backgroundColor: hex }} />
+          ))}
+          {selected ? (
+            <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
+              ✓ Selected
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <p className="font-mono text-[10px] uppercase tracking-eyebrow text-clay">
+          {isTrend ? '2026 trend' : 'Tried & tested'} · T {p.timelessness}/10
+        </p>
+        <p className="font-display text-[18px] leading-tight text-ink">
+          {p.name}
+        </p>
+        <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
+          {p.vibe}
+        </p>
+        {p.trend_source ? (
+          <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+            {p.trend_source}
+          </p>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+// Legacy PaletteCarousel + DirectionCarousel removed 2026-05-23 (#168)
+// — replaced by Step3Style's single UnifiedPaletteCard with filter
+// chips above. Old structure implied three orthogonal choices when
+// all three carousels were filtered views of the same palette list.

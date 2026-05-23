@@ -47,6 +47,27 @@ product, the system, or the business. Cross-reference SHAs with
      the render. Only fails the whole batch if EVERY cutout fails.
   Next auto-staged render should land. Migration `20260522220000`
   remains the only manual op needed.
+- `2026-05-23` — **#168 shipped — collapse three palette carousels
+  into one + filter chips.** The Step 03 palette picker on
+  `/rooms/new` had three carousels that implied three independent
+  choices (Colour palette + 2026 trend + Tried & tested with mutex)
+  but were actually all sliced views of the same 56-palette list —
+  picking from carousels ②/③ just overwrote the carousel ① pick.
+  UX lied about the data model. Replaced with one carousel + three
+  filter chips (`All · 56 / 2026 trends · N / Tried & tested · M`)
+  and a single `UnifiedPaletteCard` that shows the trend-preview
+  image as hero when available (falls back to the 5-column swatch
+  strip) plus the trend / heritage label, palette name, vibe, and
+  `trend_source` provenance on every card. The currently-selected
+  palette is always pinned to the front of the visible list even
+  when outside the active filter so switching filters never makes
+  the user's pick disappear. Companion cleanup: removed the standalone
+  `direction` React state (`'2026' | 'timeless' | null`) — it's now
+  derived from the palette via the shared `paletteDirection()` helper
+  (#167) wherever needed (DesignerSummaryCard label, banner copy).
+  Net effect: less state to keep coherent, ~200 lines of duplicated
+  carousel code gone, picker tells the truth about what choice the
+  user is actually making.
 - `2026-05-22` — **#165 shipped — auto-stage observability + open-plan
   prompt fix.** Two changes from a real production diagnostic on
   carydias@gmail.com's render (`546d0534`):
