@@ -247,24 +247,24 @@ async function buildProductLayersImpl(
   bufLen: number,
   magic: string,
 ): Promise<sharp.OverlayOptions[]> {
-  // #166-followup — explicitly normalise the cutout buffer to RGBA in
-  // a dedicated sharp pipeline BEFORE any resize / extractChannel
-  // call. Sharp's pipeline optimiser appears to drop the ensureAlpha
-  // step in some chained paths when the input is a 3-channel JPEG.
+  // #171 — ALWAYS normalise the cutout to RGBA in a dedicated sharp
+  // pipeline before any downstream operation, regardless of what
+  // metadata() reports. Sharp's metadata read can claim channels=4
+  // for certain birefnet outputs where the encoded image actually
+  // strips alpha (e.g. PNG encoder collapses fully-opaque alpha for
+  // size). The conditional `if (channels < 4)` from #166 looked
+  // sound on paper but missed those cases — the same
+  // "Cannot extract channel 3 from image with channels 0-2" error
+  // returned on a manual single-product stage. Always-normalise is
+  // belt-and-braces, ~20ms per cutout, eliminates the failure mode.
   let cutoutMeta = initialMeta;
-  if ((cutoutMeta.channels ?? 0) < 4) {
-    console.warn(
-      `[composite] cutout buffer arrived with ${cutoutMeta.channels} channels (no alpha) — normalising to RGBA before resize`,
+  try {
+    cutoutBuf = await sharp(cutoutBuf).ensureAlpha().png().toBuffer();
+    cutoutMeta = await sharp(cutoutBuf).metadata();
+  } catch (err) {
+    throw new Error(
+      `ensureAlpha normalisation failed (len=${bufLen} magic=${magic} format=${initialMeta.format} channels=${initialMeta.channels}): ${err instanceof Error ? err.message : String(err)}`,
     );
-    try {
-      const normalised = await sharp(cutoutBuf).ensureAlpha().png().toBuffer();
-      cutoutBuf = normalised;
-      cutoutMeta = await sharp(cutoutBuf).metadata();
-    } catch (err) {
-      throw new Error(
-        `ensureAlpha normalisation failed (len=${bufLen} magic=${magic} format=${initialMeta.format} channels=${initialMeta.channels}): ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
   const cw = cutoutMeta.width ?? bbox.w;
   const ch = cutoutMeta.height ?? bbox.h;
@@ -303,7 +303,13 @@ async function buildProductLayersImpl(
     .ensureAlpha()
     .png()
     .toBuffer();
+  // #171 — double-belt ensureAlpha() right before each extractChannel
+  // call. Sharp's PNG encode/decode round-trip can drop the alpha
+  // channel when the alpha is fully opaque (size optimisation). The
+  // upstream normalisation gets us RGBA going in, this guarantees
+  // RGBA at the read boundary too.
   const featheredAlpha = await sharp(resized)
+    .ensureAlpha()
     .extractChannel('alpha')
     .blur(featherRadius)
     .toBuffer();
@@ -328,7 +334,10 @@ async function buildProductLayersImpl(
   const shadowOffsetX = Math.round(shadowRadius * 0.4);
   const shadowOffsetY = Math.round(shadowRadius * 0.7);
 
-  const alpha = await sharp(featheredResized).extractChannel('alpha').toBuffer();
+  // #171 — defensive ensureAlpha at this extractChannel boundary too;
+  // featheredResized came through a PNG encode and can lose alpha in
+  // the same edge case (fully opaque → encoder strips).
+  const alpha = await sharp(featheredResized).ensureAlpha().extractChannel('alpha').toBuffer();
   // Build a solid near-black layer the same size as the cutout, then
   // join the blurred alpha as its alpha channel → that's the shadow.
   const shadowBase = await sharp({

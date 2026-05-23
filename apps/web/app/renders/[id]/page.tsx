@@ -390,6 +390,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               renderId={render.id}
               initialStatus={render.status}
               initialPickingListStatus={render.picking_list_status}
+              initialAutoStageStatus={(render as { auto_stage_status?: 'started' | 'completed' | 'failed' | 'skipped' | null }).auto_stage_status ?? null}
               createdAt={render.created_at}
             />
             {/* During the wait the designer read lives directly below
