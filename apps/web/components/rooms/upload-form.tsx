@@ -8,7 +8,14 @@ import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { PaletteStrip } from '@/components/saltbush/palette-strip';
 import { Pill } from '@/components/saltbush/pill';
 import { type StyleSlug } from '@/lib/styles';
-import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
+import {
+  isTrendForward,
+  isTimeless,
+  listPalettes,
+  paletteDirection,
+  paletteSwatch,
+  type Palette,
+} from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
 import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
@@ -156,14 +163,13 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         if (rec.palette_id) {
           setPaletteId(rec.palette_id);
           // Auto-derive direction from the recommended palette's
-          // timelessness. Trend-forward (< 9) → 2026 carousel
-          // selection. Heritage / classic (>= 9) → Tried & tested.
-          // The user can still clear or swap; this just matches what
-          // the brief synthesiser intended.
+          // timelessness via the shared paletteDirection() helper —
+          // single source of truth for the trend / heritage split
+          // (#167). The user can still clear or swap; this just
+          // matches what the brief synthesiser intended.
           const recommended = listPalettes().find((p) => p.id === rec.palette_id);
-          if (recommended) {
-            setDirection(recommended.timelessness < 9 ? '2026' : 'timeless');
-          }
+          const dir = paletteDirection(recommended);
+          if (dir) setDirection(dir);
         }
         setBriefPreFilled(true);
       })
@@ -1326,8 +1332,10 @@ function Step3Style({
   trendPreviews: Map<string, TrendPreview>;
 }) {
   const all = listPalettes();
-  const trendForward = all.filter((p) => p.timelessness < 9);
-  const timeless = all.filter((p) => p.timelessness >= 9);
+  // Carousel splits use the same single source of truth as
+  // paletteDirection() — `lib/palettes.ts` constant TRENDS_CUTOFF.
+  const trendForward = all.filter(isTrendForward);
+  const timeless = all.filter(isTimeless);
 
   return (
     <>

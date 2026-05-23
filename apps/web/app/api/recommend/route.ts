@@ -22,7 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { synthesiseBrief } from '@/lib/brief/synthesiser';
-import { listPalettes } from '@/lib/palettes';
+import { listPalettes, paletteDirection } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 
 export const runtime = 'nodejs';
@@ -137,12 +137,13 @@ export async function POST(request: NextRequest) {
       `[recommend] synth done in ${Date.now() - synthStart}ms (source=${source}, tags=${briefTags.length})`,
     );
 
+    // Use the shared paletteDirection() helper (#167) so the
+    // recommendation's direction label matches the carousel the
+    // palette appears in. Previously this checked < 7 while the
+    // carousel slices used < 9, producing a banner mismatch on
+    // palettes with timelessness 7 or 8.
     const palette = listPalettes().find((p) => p.id === synth.recommendation.palette_id);
-    const direction: '2026' | 'timeless' | null = palette
-      ? palette.timelessness < 7
-        ? '2026'
-        : 'timeless'
-      : null;
+    const direction = paletteDirection(palette);
 
     return NextResponse.json({
       recommendation: {
