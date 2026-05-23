@@ -436,53 +436,30 @@ export async function POST(request: NextRequest) {
 
     let submission: { requestId: string };
     if (provider === 'kontext-multi' && palette && paletteSwatchUrl) {
-      // Kontext path — round 14 broke the 5.0 average ceiling using
-      // [roomPhoto, paletteSwatch] + a prompt that names each image's
-      // role and pipes per-fixture preserve directives from vision.
+      // Kontext path — [roomPhoto, paletteSwatch] + a prompt that
+      // names each image's role and pipes per-fixture preserve
+      // directives from vision.
       //
-      // #173 — also upload the top 2 hero product images (when
-      // available) so Kontext renders the scene WITH those specific
-      // pieces baked in. Replaces the Sharp composite + auto-stage
-      // pipeline that was repeatedly failing on alpha-channel /
-      // drop-shadow edge cases. Best-effort: if a product image fails
-      // to fetch / resize / upload, we drop it from the array and
-      // proceed with whatever remains.
-      const productCandidates = heroProducts.filter(
-        (p) => typeof p.imageUrl === 'string' && p.imageUrl.length > 0,
-      );
-      const productUploads = await Promise.allSettled(
-        productCandidates.slice(0, 2).map(async (p) => {
-          const buf = await fetchAndResizeProductImage(p.imageUrl as string);
-          const url = await uploadImageBuffer(
-            buf,
-            `product-${render.id}-${slugifyName(p.name)}.jpg`,
-            'image/jpeg',
-          );
-          return { url, ref: { name: p.name, category: p.category, retailer: p.retailer } };
-        }),
-      );
-      const successfulProducts: Array<{
-        url: string;
-        ref: { name: string; category: string; retailer: string };
-      }> = [];
-      for (const r of productUploads) {
-        if (r.status === 'fulfilled') successfulProducts.push(r.value);
-        else console.warn('[render] product image upload failed:', r.reason instanceof Error ? r.reason.message : r.reason);
-      }
-      console.log(
-        `[render] kontext multi-image refs: ${successfulProducts.length} products (${successfulProducts.map((p) => p.ref.category).join(', ')})`,
-      );
+      // #175 — REVERTED the #173 product-image multi-input. Adding
+      // product reference images to image_urls caused Kontext to
+      // compose them as visible layout elements in the output rather
+      // than treat them as visual references. Result: a collage with
+      // the palette swatch panel and product images stitched into
+      // the render. Reverted to the previous [room, palette]-only
+      // signature; product references via Kontext multi need a
+      // different endpoint OR a different model (gpt-image-1) which
+      // we'll evaluate next. HeroProductDescriptor.imageUrl stays in
+      // the type so we can re-light the path quickly if/when we find
+      // the right approach.
       const kontextPrompt = buildKontextPrompt({
         basePrompt: groundedPrompt,
         paletteName: palette.name,
         roomFacts: room.analysis as RoomAnalysis | null,
-        productRefs: successfulProducts.map((p) => p.ref),
       });
       submission = await submitKontextRender({
         prompt: kontextPrompt,
         controlImageUrl,
         paletteSwatchUrl,
-        productImageUrls: successfulProducts.map((p) => p.url),
       });
     } else {
       // flux-general path. Used when:
