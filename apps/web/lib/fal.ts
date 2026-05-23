@@ -462,12 +462,18 @@ export async function fetchKontextResult(requestId: string): Promise<DepthRender
 // killed every flux-general production render. Production now uses
 // Kontext by default. Set FLUX_PROVIDER=flux-general to roll back.
 
-export type FluxProvider = 'flux-general' | 'kontext-multi';
+export type FluxProvider = 'flux-general' | 'kontext-multi' | 'openai-image-1';
 
 export function getActiveProvider(): FluxProvider {
   const raw = (process.env.FLUX_PROVIDER ?? 'kontext-multi').toLowerCase();
   if (raw === 'flux-general') return 'flux-general';
   if (raw === 'kontext' || raw === 'kontext-multi') return 'kontext-multi';
+  // #176 — gpt-image-1 path. Pivot after Flux Kontext multi-image
+  // produced collage outputs on product reference input. Opt-in via
+  // FLUX_PROVIDER=openai-image-1; requires OPENAI_API_KEY.
+  if (raw === 'openai' || raw === 'openai-image-1' || raw === 'gpt-image-1') {
+    return 'openai-image-1';
+  }
   return 'kontext-multi';
 }
 

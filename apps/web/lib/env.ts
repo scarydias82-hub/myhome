@@ -12,6 +12,12 @@ const serverEnvSchema = z.object({
   // vectors when the local @huggingface/transformers binary can't load
   // (e.g. on Vercel serverless). Optional; falls back to local in dev.
   HF_TOKEN: z.string().min(1).optional(),
+  // OpenAI API key — used for the gpt-image-1 render path (#176) which
+  // is the alternative to Flux Kontext after Kontext multi-image
+  // produced collage outputs on product reference input. When unset,
+  // /api/render falls through to the Flux Kontext path. Required for
+  // FLUX_PROVIDER='openai-image-1'.
+  OPENAI_API_KEY: z.string().min(1).optional(),
 });
 
 // In dev we let the app boot without Supabase so you can render the landing page
@@ -49,5 +55,6 @@ export function getServerEnv() {
     FAL_KEY: process.env.FAL_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     HF_TOKEN: process.env.HF_TOKEN,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   });
 }
