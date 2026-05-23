@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 type RenderStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 type PickingListStatus = 'not_started' | 'building' | 'ready' | 'failed';
+type AutoStageStatus = 'started' | 'completed' | 'failed' | 'skipped' | null;
 
 interface RenderPollProps {
   renderId: string;
@@ -14,6 +15,11 @@ interface RenderPollProps {
   // (pre-2026-05-22 migration) — treat as 'ready' if the page already
   // has picking list content, otherwise 'not_started'.
   initialPickingListStatus?: PickingListStatus | null;
+  // #171 — initial auto-stage state from the server-rendered page.
+  // Polling continues until this is terminal so the staged composite
+  // (which lands ~20-30s after picking_list flips ready) doesn't
+  // require a manual refresh to appear.
+  initialAutoStageStatus?: AutoStageStatus;
   createdAt: string;
 }
 
@@ -31,6 +37,16 @@ function isRenderTerminal(s: RenderStatus): boolean {
 function isPickingListTerminal(s: PickingListStatus): boolean {
   return s === 'ready' || s === 'failed';
 }
+// #171 — auto-stage hook (#82) runs AFTER the picking list flips to
+// 'ready'; we need to keep polling through it so the staged composite
+// revision appears without the user manually refreshing.
+//   null     → migration not applied yet (legacy row) → treat as
+//              terminal so we don't poll forever on old data
+//   started  → in flight
+//   completed/failed/skipped → terminal
+function isAutoStageTerminal(s: AutoStageStatus): boolean {
+  return s === null || s === 'completed' || s === 'failed' || s === 'skipped';
+}
 
 // Lightweight client poller. Two-stage completion model (2026-05-22):
 // the render image and the picking list resolve independently. Image
@@ -41,6 +57,7 @@ export function RenderPoll({
   renderId,
   initialStatus,
   initialPickingListStatus,
+  initialAutoStageStatus,
   createdAt,
 }: RenderPollProps) {
   const router = useRouter();
@@ -51,16 +68,24 @@ export function RenderPoll({
   const [error, setError] = useState<string | null>(null);
 
   const initialPLS: PickingListStatus = initialPickingListStatus ?? 'not_started';
+  const initialAS: AutoStageStatus = initialAutoStageStatus ?? null;
 
   useEffect(() => {
     // Don't poll if everything is already done at mount.
-    if (isRenderTerminal(initialStatus) && isPickingListTerminal(initialPLS)) return;
+    if (
+      isRenderTerminal(initialStatus) &&
+      isPickingListTerminal(initialPLS) &&
+      isAutoStageTerminal(initialAS)
+    ) {
+      return;
+    }
     let cancelled = false;
     let polls = 0;
     // Track last-seen states locally so we can detect transitions and
     // call router.refresh() exactly once per transition.
     let lastRender: RenderStatus = initialStatus;
     let lastPicking: PickingListStatus = initialPLS;
+    let lastAutoStage: AutoStageStatus = initialAS;
 
     const tick = () => setSeconds((s) => s + 1);
     const secondTimer = setInterval(tick, 1000);
@@ -74,6 +99,7 @@ export function RenderPoll({
           status?: RenderStatus;
           falStatus?: string;
           pickingListStatus?: PickingListStatus;
+          autoStageStatus?: AutoStageStatus;
           error?: string;
         };
         if (cancelled) return;
@@ -81,6 +107,8 @@ export function RenderPoll({
 
         const nextRender = json.status ?? lastRender;
         const nextPicking = json.pickingListStatus ?? lastPicking;
+        const nextAutoStage =
+          json.autoStageStatus === undefined ? lastAutoStage : json.autoStageStatus;
 
         // Image-done transition: render flipped to terminal. Refresh
         // so the page server-component re-fetches and shows the
@@ -96,10 +124,22 @@ export function RenderPoll({
           router.refresh();
         }
 
+        // #171 — auto-stage-done transition: refresh so the staged
+        // composite revision appears as the active view without the
+        // user having to manually reload the page.
+        if (!isAutoStageTerminal(lastAutoStage) && isAutoStageTerminal(nextAutoStage)) {
+          router.refresh();
+        }
+
         lastRender = nextRender;
         lastPicking = nextPicking;
+        lastAutoStage = nextAutoStage;
 
-        if (isRenderTerminal(nextRender) && isPickingListTerminal(nextPicking)) {
+        if (
+          isRenderTerminal(nextRender) &&
+          isPickingListTerminal(nextPicking) &&
+          isAutoStageTerminal(nextAutoStage)
+        ) {
           return;
         }
         if (json.error) setError(json.error);
@@ -120,7 +160,7 @@ export function RenderPoll({
       cancelled = true;
       clearInterval(secondTimer);
     };
-  }, [renderId, initialStatus, initialPLS, router]);
+  }, [renderId, initialStatus, initialPLS, initialAS, router]);
 
   // The "Restyling your room..." placeholder only shows while the
   // image itself is still rendering. Once status flips to terminal,

@@ -52,6 +52,7 @@ export const maxDuration = 120;
 const PICKING_LIST_BUILD_TTL_MS = 120_000;
 
 type PickingListStatus = 'not_started' | 'building' | 'ready' | 'failed';
+type AutoStageStatus = 'started' | 'completed' | 'failed' | 'skipped' | null;
 
 interface RenderRow {
   id: string;
@@ -68,6 +69,11 @@ interface RenderRow {
   /** Needed by the auto-stage hook (#82) so the staged_images row +
    *  multi_staged revision land on the right project. */
   project_id: string | null;
+  /** #171 — surfaced so the polling client can wait for auto-stage
+   *  to be terminal too. Without this the client stops polling when
+   *  picking_list_status flips to 'ready' and never picks up the
+   *  staged composite that lands ~20-30s later. */
+  auto_stage_status: AutoStageStatus;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -82,7 +88,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const renderRes = await admin
     .from('renders')
     .select(
-      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id',
+      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id, auto_stage_status',
     )
     .eq('id', id)
     .single();
@@ -131,6 +137,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: render.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -141,6 +148,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: render.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -171,6 +179,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       status: 'running',
       falStatus: fal.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -193,6 +202,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: 'succeeded',
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -385,6 +395,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: 'succeeded',
       pickingListStatus: 'building',
+      autoStageStatus: null,
     });
   } catch (err) {
     console.error('finalise render failed', err);
