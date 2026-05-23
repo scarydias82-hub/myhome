@@ -94,6 +94,28 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RoomAnalysis | null>(null);
   const [analysing, setAnalysing] = useState(false);
+
+  // #179 — designer-curated picking step. Replaces the post-render
+  // Florence-2 picking list flow: user picks 1-3 per core category
+  // BEFORE the render so the products are guaranteed correct
+  // (they chose them).
+  const [curationOpen, setCurationOpen] = useState(false);
+  const [curationLoading, setCurationLoading] = useState(false);
+  const [curationCategories, setCurationCategories] = useState<
+    Array<{
+      displayLabel: string;
+      items: Array<{
+        id: string;
+        name: string;
+        retailer: string;
+        category: string;
+        priceAud: number | null;
+        imageUrl: string;
+        isWishlisted: boolean;
+      }>;
+    }>
+  >([]);
+  const [picks, setPicks] = useState<Map<string, Set<string>>>(new Map());
   // Phase 2 of the photo flow (#143). Set true after vision returns
   // and we kick off /api/recommend; flipped back to false when the
   // recommendation arrives (or fails). Drives the overlay on the
@@ -378,6 +400,61 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     void recommendForRoom(roomId, null);
   }
 
+  async function openCuration() {
+    if (!roomId || !paletteId) {
+      setError('Confirm the room and palette before browsing picks.');
+      return;
+    }
+    setError(null);
+    setCurationLoading(true);
+    try {
+      const res = await fetch('/api/render/curate-candidates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roomId, paletteId, styleSlug: style }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        categories?: typeof curationCategories;
+        error?: string;
+      };
+      if (!res.ok || !json.categories) {
+        setError(json.error ?? 'Could not load curated picks. Try again.');
+        return;
+      }
+      setCurationCategories(json.categories);
+      setCurationOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error.');
+    } finally {
+      setCurationLoading(false);
+    }
+  }
+
+  function togglePick(categoryLabel: string, productId: string) {
+    setPicks((prev) => {
+      const next = new Map(prev);
+      const curr = new Set(next.get(categoryLabel) ?? []);
+      if (curr.has(productId)) {
+        curr.delete(productId);
+      } else if (curr.size < 3) {
+        curr.add(productId);
+      }
+      next.set(categoryLabel, curr);
+      return next;
+    });
+  }
+
+  function allCategoriesHavePick(): boolean {
+    if (curationCategories.length === 0) return false;
+    return curationCategories.every(
+      (cat) => (picks.get(cat.displayLabel)?.size ?? 0) >= 1,
+    );
+  }
+
+  function getAllPickedIds(): string[] {
+    return [...picks.values()].flatMap((s) => [...s]);
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!roomId) {
@@ -388,13 +465,25 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       setError('Confirm the room analysis to continue.');
       return;
     }
+    // #179 — when the curation step is open and picks are made,
+    // forward those as featuredProductIds. The render path uses
+    // them as both the heroProducts (for the renderer prompt /
+    // refs) and the picking_list (so the user sees exactly what
+    // they picked, no Florence-2 guesswork). If the curation step
+    // hasn't been opened, fall through to the legacy featuredIds
+    // (currently always []).
+    const pickedIds = curationOpen ? getAllPickedIds() : featuredIds;
+    if (curationOpen && !allCategoriesHavePick()) {
+      setError('Pick at least one product per category before rendering.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch('/api/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId, style, paletteId, featuredProductIds: featuredIds, projectId: projectId ?? undefined }),
+        body: JSON.stringify({ roomId, style, paletteId, featuredProductIds: pickedIds, projectId: projectId ?? undefined }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !json.id) {
@@ -547,17 +636,55 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-4">
-        <Button
-          type="submit"
-          variant="cta"
-          size="lg"
-          disabled={!analysisConfirmed || submitting || converting || analysing || recommending}
-        >
-          {submitting ? 'Restyling… (~30s)' : 'Restyle the room'}
-        </Button>
+      {/* #179 — designer-curated picking step. Sits between palette
+          pick and render submit. User picks 1-3 per core category;
+          those products become both the heroProducts for the
+          renderer AND the picking list. Wishlist items are pinned
+          to the front of each row. */}
+      {curationOpen ? (
+        <CurationStep
+          categories={curationCategories}
+          picks={picks}
+          onTogglePick={togglePick}
+        />
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-4">
+        {!curationOpen ? (
+          <Button
+            type="button"
+            variant="cta"
+            size="lg"
+            onClick={openCuration}
+            disabled={
+              !analysisConfirmed || curationLoading || analysing || recommending
+            }
+          >
+            {curationLoading ? 'Loading picks…' : "Browse the designer's edit →"}
+          </Button>
+        ) : (
+          <>
+            <Button
+              type="submit"
+              variant="cta"
+              size="lg"
+              disabled={!allCategoriesHavePick() || submitting}
+            >
+              {submitting
+                ? 'Restyling… (~30s)'
+                : `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setCurationOpen(false)}
+              className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:text-ink"
+            >
+              ← Back to palette
+            </button>
+          </>
+        )}
         <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          Grounded by Claude vision · rendered with Flux + canny
+          Designer-curated · rendered with gpt-image-1 + Flux Kontext
         </p>
       </div>
 
@@ -1564,6 +1691,134 @@ function UnifiedPaletteCard({
         ) : null}
       </div>
     </button>
+  );
+}
+
+// #179 — designer-curated picking step. Replaces the post-render
+// Florence-2 picking flow with explicit user picks BEFORE the
+// render. Each core category for the room (4 max — sofas, coffee
+// tables, etc.) gets a horizontal row of 6-8 cards. Wishlist items
+// are pinned to the front of each row with a ♥ marker. User picks
+// 1-3 per category; those become both the heroProducts for the
+// renderer AND the picking_list shown after the render.
+function CurationStep({
+  categories,
+  picks,
+  onTogglePick,
+}: {
+  categories: Array<{
+    displayLabel: string;
+    items: Array<{
+      id: string;
+      name: string;
+      retailer: string;
+      category: string;
+      priceAud: number | null;
+      imageUrl: string;
+      isWishlisted: boolean;
+    }>;
+  }>;
+  picks: Map<string, Set<string>>;
+  onTogglePick: (categoryLabel: string, productId: string) => void;
+}) {
+  return (
+    <section>
+      <Eyebrow>The designer&rsquo;s edit · pick what you love</Eyebrow>
+      <h2 className="mt-2 font-display text-h3 text-ink">Choose 1–3 per category</h2>
+      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
+        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Pick what
+        you&rsquo;d actually buy — these are what the render shows. Items you&rsquo;ve
+        liked before are pinned to the front of each row.
+      </p>
+
+      {categories.map((cat) => {
+        const catPicks = picks.get(cat.displayLabel) ?? new Set();
+        return (
+          <div key={cat.displayLabel} className="mt-8">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h3 className="font-display text-h4 text-ink">{cat.displayLabel}</h3>
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                {catPicks.size} / 3 picked
+                {catPicks.size === 0 ? ' · required' : ''}
+              </p>
+            </div>
+
+            {cat.items.length === 0 ? (
+              <p className="mt-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                No catalogue matches in this palette — try another palette.
+              </p>
+            ) : (
+              <div className="-mx-2 mt-3 overflow-x-auto pb-3 [scrollbar-width:thin]">
+                <ul className="flex snap-x snap-mandatory gap-3 px-2">
+                  {cat.items.map((item) => {
+                    const selected = catPicks.has(item.id);
+                    const canPick = selected || catPicks.size < 3;
+                    return (
+                      <li
+                        key={item.id}
+                        className="snap-start shrink-0 basis-[160px] md:basis-[200px]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onTogglePick(cat.displayLabel, item.id)}
+                          disabled={!canPick}
+                          aria-pressed={selected}
+                          className={cn(
+                            'flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-cream text-left transition',
+                            selected
+                              ? 'border-clay shadow-soft ring-1 ring-clay/40'
+                              : canPick
+                                ? 'border-ink/[0.06] hover:border-ink/20'
+                                : 'border-ink/[0.06] opacity-40 cursor-not-allowed',
+                          )}
+                        >
+                          <div className="relative aspect-square w-full bg-paper-warm bg-grain">
+                            <Image
+                              src={item.imageUrl}
+                              alt={item.name}
+                              fill
+                              sizes="(max-width: 768px) 50vw, 200px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                            {item.isWishlisted ? (
+                              <span
+                                aria-label="You liked this before"
+                                className="absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-cream/95 text-clay shadow-sm"
+                              >
+                                ♥
+                              </span>
+                            ) : null}
+                            {selected ? (
+                              <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-clay text-paper font-mono text-meta">
+                                ✓
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="p-3">
+                            <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+                              {item.retailer}
+                            </p>
+                            <p className="mt-1 line-clamp-2 font-dmsans text-[12px] leading-tight text-ink">
+                              {item.name}
+                            </p>
+                            {item.priceAud != null ? (
+                              <p className="mt-1 font-display text-[14px] text-ink">
+                                ${Math.round(item.priceAud).toLocaleString('en-AU')}
+                              </p>
+                            ) : null}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
