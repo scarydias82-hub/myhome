@@ -115,7 +115,7 @@ export async function autoFeatureForPalette({
   // session-to-session, which makes eval iteration reproducible.
   const { data, error } = await admin
     .from('products')
-    .select('name, category, retailer, vision_profile')
+    .select('name, category, retailer, image_url, vision_profile')
     .contains('palette_tags', [paletteId])
     .in('category', cats)
     .neq('retailer', 'Dulux')
@@ -127,7 +127,13 @@ export async function autoFeatureForPalette({
   }
   if (!data?.length) return [];
 
-  type PaletteRow = { name: string; category: string; retailer: string; vision_profile: VisionProfile | null };
+  type PaletteRow = {
+    name: string;
+    category: string;
+    retailer: string;
+    image_url: string | null;
+    vision_profile: VisionProfile | null;
+  };
   let rows = data as PaletteRow[];
 
   // Prefs ↔ vision_profile re-rank (#156). No-op when briefTags is
@@ -149,7 +155,12 @@ export async function autoFeatureForPalette({
   for (const p of rows) {
     if (seenCats.has(p.category)) continue;
     seenCats.add(p.category);
-    picked.push({ name: p.name, category: p.category, retailer: p.retailer });
+    picked.push({
+      name: p.name,
+      category: p.category,
+      retailer: p.retailer,
+      imageUrl: p.image_url ?? null,
+    });
     if (picked.length >= limit) break;
   }
   return picked;
@@ -182,6 +193,10 @@ interface CandidateProduct {
   retailer: string;
   price_aud: number | null;
   materials: string[] | null;
+  /** Retailer-CDN image URL — propagated onto HeroProductDescriptor
+   *  so the renderer (#173) can pass it to Kontext as a reference
+   *  image. */
+  image_url: string | null;
   /** Vision-profile JSON from #145 backfill (Claude Haiku's read of
    *  the product image). Consumed by the prefs ↔ vision_profile
    *  re-ranker (#156) before Claude curation. May be null on rows that
@@ -313,7 +328,7 @@ async function fetchCandidatesByCategory(
   // each bucket can fill independently.
   const { data, error } = await admin
     .from('products')
-    .select('id, name, category, retailer, price_aud, materials, vision_profile')
+    .select('id, name, category, retailer, price_aud, materials, image_url, vision_profile')
     .in('category', categories)
     .contains('palette_tags', [paletteId])
     .overlaps('room_tags', roomFilter)
@@ -468,6 +483,7 @@ export async function autoFeatureClaude({
       name: cand.name,
       category: cand.category,
       retailer: cand.retailer,
+      imageUrl: cand.image_url,
     });
   }
 

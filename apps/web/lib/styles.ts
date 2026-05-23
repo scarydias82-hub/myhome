@@ -110,13 +110,22 @@ export interface RoomFacts {
   existing_colours?: Array<{ surface: string; description: string }>;
 }
 
-// Bare minimum about a hero product that we can describe in a prompt. We
-// don't pass the image — Flux can't see it without the redux variant — but
-// we describe it textually so the generation biases toward similar items.
+// Hero product descriptor — used both in the text prompt (the
+// describeProduct() formatter strips the name into Flux-friendly
+// tokens) AND, as of #173, as a multi-image conditioning reference
+// for fal-ai/flux-pro/kontext/multi. The `imageUrl` field is
+// populated by featuring.ts when available; the renderer uploads
+// the first 1-2 hero products to fal storage and passes them as
+// image_urls[2..3] so Kontext renders the actual SKU silhouette
+// natively rather than relying on text-only guidance.
 export interface HeroProductDescriptor {
   name: string;
   category: string;
   retailer: string;
+  /** Retailer-CDN URL for the product image. Optional — older
+   *  callers pass undefined and the renderer falls back to text-only
+   *  prompt biasing. */
+  imageUrl?: string | null;
 }
 
 // Render aggressiveness mode.

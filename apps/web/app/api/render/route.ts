@@ -34,6 +34,37 @@ import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders, resizeForFlux } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
+import sharp from 'sharp';
+
+// #173 — light helper for fetching catalogue product images and
+// resizing them to a Kontext-friendly size before uploading to fal
+// storage. JPEG output to keep the upload tiny. Browser headers
+// because some retailer CDNs (Freedom, Coco) 403 on default fetch.
+async function fetchAndResizeProductImage(url: string): Promise<Buffer> {
+  const res = await fetch(url, {
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`product fetch ${res.status} ${url.slice(0, 80)}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return sharp(buf)
+    .rotate()
+    .resize(768, 768, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer();
+}
+
+function slugifyName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+}
 
 export const runtime = 'nodejs';
 // Submit itself is fast (~5-8s) but we now kick off the designer LLM
@@ -384,15 +415,50 @@ export async function POST(request: NextRequest) {
       // Kontext path — round 14 broke the 5.0 average ceiling using
       // [roomPhoto, paletteSwatch] + a prompt that names each image's
       // role and pipes per-fixture preserve directives from vision.
+      //
+      // #173 — also upload the top 2 hero product images (when
+      // available) so Kontext renders the scene WITH those specific
+      // pieces baked in. Replaces the Sharp composite + auto-stage
+      // pipeline that was repeatedly failing on alpha-channel /
+      // drop-shadow edge cases. Best-effort: if a product image fails
+      // to fetch / resize / upload, we drop it from the array and
+      // proceed with whatever remains.
+      const productCandidates = heroProducts.filter(
+        (p) => typeof p.imageUrl === 'string' && p.imageUrl.length > 0,
+      );
+      const productUploads = await Promise.allSettled(
+        productCandidates.slice(0, 2).map(async (p) => {
+          const buf = await fetchAndResizeProductImage(p.imageUrl as string);
+          const url = await uploadImageBuffer(
+            buf,
+            `product-${render.id}-${slugifyName(p.name)}.jpg`,
+            'image/jpeg',
+          );
+          return { url, ref: { name: p.name, category: p.category, retailer: p.retailer } };
+        }),
+      );
+      const successfulProducts: Array<{
+        url: string;
+        ref: { name: string; category: string; retailer: string };
+      }> = [];
+      for (const r of productUploads) {
+        if (r.status === 'fulfilled') successfulProducts.push(r.value);
+        else console.warn('[render] product image upload failed:', r.reason instanceof Error ? r.reason.message : r.reason);
+      }
+      console.log(
+        `[render] kontext multi-image refs: ${successfulProducts.length} products (${successfulProducts.map((p) => p.ref.category).join(', ')})`,
+      );
       const kontextPrompt = buildKontextPrompt({
         basePrompt: groundedPrompt,
         paletteName: palette.name,
         roomFacts: room.analysis as RoomAnalysis | null,
+        productRefs: successfulProducts.map((p) => p.ref),
       });
       submission = await submitKontextRender({
         prompt: kontextPrompt,
         controlImageUrl,
         paletteSwatchUrl,
+        productImageUrls: successfulProducts.map((p) => p.url),
       });
     } else {
       // flux-general path. Used when:
