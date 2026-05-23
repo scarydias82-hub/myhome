@@ -35,6 +35,8 @@ import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders, resizeForFlux } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
 import sharp from 'sharp';
+import { submitOpenAIImageRender, buildOpenAIImagePrompt } from '@/lib/openai-image';
+import { buildPickingList, type PickingListItem } from '@/lib/matching';
 
 // #173 — light helper for fetching catalogue product images and
 // resizing them to a Kontext-friendly size before uploading to fal
@@ -214,6 +216,10 @@ export async function POST(request: NextRequest) {
   }
 
   let heroProducts: HeroProductDescriptor[] = [];
+  // #176 — hoisted so the gpt-image-1 path below can use it (was
+  // previously only declared inside the else-if(palette) auto-feature
+  // block and therefore out of scope for the openai branch).
+  const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
     // Legacy path: user explicitly picked products to feature via the
     // (now-deprecated) hero-products picker. Kept for backward compat
@@ -236,7 +242,6 @@ export async function POST(request: NextRequest) {
     // the render isn't project-scoped, or the project has no brief
     // yet, briefResponse is null — Claude still picks from candidates
     // but with no avoid signal.
-    const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
     const roomFacts = (room.analysis as RoomAnalysis | null) ?? null;
 
     // Fetch brief (best-effort — falls through to null on any error).
@@ -382,6 +387,11 @@ export async function POST(request: NextRequest) {
     // small, fast-fetch URL instead of the larger Supabase-signed one.
     let dims: { width: number; height: number } | undefined;
     let controlImageUrl = signed.data.signedUrl;
+    // #176 — keep the resized room + palette swatch buffers in scope
+    // outside the fal upload blocks so the gpt-image-1 path below can
+    // reuse them without re-fetching from Supabase.
+    let resizedRoomBuf: Buffer | null = null;
+    let paletteSwatchBuf: Buffer | null = null;
     try {
       const dl = await admin.storage.from('rooms').download(room.photo_url);
       if (dl.data) {
@@ -394,6 +404,7 @@ export async function POST(request: NextRequest) {
         }
         const resized = await resizeForFlux(trim.buf);
         dims = { width: resized.width, height: resized.height };
+        resizedRoomBuf = resized.buf;
         console.log(
           `[render] resized for fal: ${resized.width}×${resized.height} (${(resized.buf.length / 1024).toFixed(0)} KB)`,
         );
@@ -416,10 +427,13 @@ export async function POST(request: NextRequest) {
     //   - flux-general:  swatch becomes the IP-Adapter reference IF
     //     FLUX_ENABLE_IP_ADAPTER=1 (legacy flag, off by default after
     //     IP-Adapter tensor-mismatch issues forced the Kontext pivot)
+    //   - openai-image-1 (#176): swatch goes as image[1] to gpt-image-1
+    //     to anchor the palette tones.
     let paletteSwatchUrl: string | null = null;
     if (palette) {
       try {
         const swatchBuf = await generatePaletteSwatch(palette);
+        paletteSwatchBuf = swatchBuf;
         paletteSwatchUrl = await uploadImageBuffer(
           swatchBuf,
           `palette-${palette.id}.png`,
@@ -433,6 +447,125 @@ export async function POST(request: NextRequest) {
 
     const provider = getActiveProvider();
     console.log(`[render] provider: ${provider}`);
+
+    // #176 — gpt-image-1 path. Synchronous: openai.images.edit returns
+    // the rendered bytes directly (~15-30s), no queue. We save to
+    // Supabase storage inline and update the render row to 'succeeded'
+    // ourselves, then kick off the picking-list build via after() so
+    // the status route's existing polling flow catches the transition.
+    // No fal_request_id involved.
+    if (provider === 'openai-image-1' && palette && resizedRoomBuf) {
+      const productCandidates = heroProducts.filter(
+        (p) => typeof p.imageUrl === 'string' && p.imageUrl.length > 0,
+      );
+      // Fetch up to 4 product reference images. allSettled keeps a
+      // broken URL from killing the whole render.
+      const productBufResults = await Promise.allSettled(
+        productCandidates.slice(0, 4).map((p) => fetchAndResizeProductImage(p.imageUrl as string)),
+      );
+      const productImageBufs: Buffer[] = [];
+      for (const r of productBufResults) {
+        if (r.status === 'fulfilled') productImageBufs.push(r.value);
+        else console.warn('[render-openai] product fetch failed:', r.reason instanceof Error ? r.reason.message : r.reason);
+      }
+      const refs = productCandidates
+        .slice(0, productImageBufs.length)
+        .map((p) => ({ name: p.name, category: p.category, retailer: p.retailer }));
+      const openaiPrompt = buildOpenAIImagePrompt({
+        paletteName: palette.name,
+        paletteVibe: palette.vibe ?? null,
+        styleName: style.name,
+        roomType,
+        productRefs: refs,
+      });
+      console.log(
+        `[render-openai] submitting gpt-image-1: ${productImageBufs.length} product refs · ${roomType ?? '?'} · ${palette.id}`,
+      );
+      try {
+        const result = await submitOpenAIImageRender({
+          prompt: openaiPrompt,
+          roomBuf: resizedRoomBuf,
+          paletteSwatchBuf,
+          productImageBufs,
+          size: '1024x1024',
+          quality: 'medium',
+        });
+        // Save to Supabase storage in the same shape as fal renders
+        // so the rest of the page logic doesn't need to branch.
+        const outKey = `${user.id}/${render.id}.png`;
+        const upload = await admin.storage.from('renders').upload(outKey, result.imageBuf, {
+          contentType: 'image/png',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+        if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
+        // Mark render succeeded + picking-list 'building' so the
+        // client polling flow knows to keep watching.
+        await admin
+          .from('renders')
+          .update({
+            status: 'succeeded',
+            output_url: outKey,
+            completed_at: new Date().toISOString(),
+            picking_list_status: 'building',
+          })
+          .eq('id', render.id);
+        console.log(`[render-openai] saved + marked succeeded for ${render.id} (${result.durationMs}ms)`);
+        // Kick off the picking-list build in the same after() pattern
+        // the status route uses for fal renders. The picking list
+        // reads the saved image via a signed URL so we re-sign here.
+        const renderId = render.id;
+        const paletteHexes = palette.colors.map((c) => c.hex);
+        const paletteId = palette.id;
+        const rt = roomType;
+        after(async () => {
+          try {
+            const renderSigned = await admin.storage
+              .from('renders')
+              .createSignedUrl(outKey, 600);
+            const renderImageUrl = renderSigned.data?.signedUrl;
+            if (!renderImageUrl) {
+              throw new Error('could not sign rendered image for picking list build');
+            }
+            const matchRes = await buildPickingList({
+              admin,
+              renderImageUrl,
+              paletteHexes,
+              paletteId,
+              roomType: rt ?? undefined,
+            });
+            const items: PickingListItem[] = matchRes.items;
+            await admin
+              .from('renders')
+              .update({
+                picking_list: items,
+                picking_list_status: 'ready',
+              })
+              .eq('id', renderId);
+            console.log(`[render-openai:after] picking list ready for ${renderId} — ${items.length} items`);
+          } catch (err) {
+            console.error(`[render-openai:after] picking list build failed for ${renderId}`, err);
+            await admin
+              .from('renders')
+              .update({ picking_list_status: 'failed' })
+              .eq('id', renderId);
+          }
+        });
+        return NextResponse.json({ id: render.id });
+      } catch (err) {
+        console.error('[render-openai] gpt-image-1 submit failed', err);
+        await admin
+          .from('renders')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            picking_list_status: 'failed',
+          })
+          .eq('id', render.id);
+        const detail = err instanceof Error ? err.message : 'gpt-image-1 render failed';
+        return NextResponse.json({ error: detail }, { status: 500 });
+      }
+    }
 
     let submission: { requestId: string };
     if (provider === 'kontext-multi' && palette && paletteSwatchUrl) {
