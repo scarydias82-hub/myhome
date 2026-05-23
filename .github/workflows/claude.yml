@@ -1,0 +1,64 @@
+name: Claude Code
+
+# Lets you summon Claude in PRs and issues by mentioning @claude. Examples:
+#   - In an issue body or title: "@claude can you look at this bug?"
+#   - In a PR review comment: "@claude refactor this hook"
+#   - In an issue comment: "@claude open a PR with the fix"
+#
+# Claude reads the surrounding context (the PR diff, the issue body, the
+# review thread), then replies inline. With write permissions enabled it
+# can also push commits and open follow-up PRs.
+#
+# Required GitHub setup (both are one-time, done in the GitHub UI):
+#   1. Install the Claude Code GitHub App on this repo:
+#         https://github.com/apps/claude → "Install" → pick `myhome`.
+#      Without the App installed, the Action can't auth back to GitHub
+#      and every run will fail with a permissions error.
+#   2. Add the ANTHROPIC_API_KEY secret:
+#         Settings → Secrets and variables → Actions → New repository
+#         secret. Value comes from https://console.anthropic.com/.
+#
+# Permissions: this workflow grants `contents: write` + `pull-requests: write`
+# + `issues: write` so Claude can commit code, open PRs, and post comments
+# back. If that's too broad for your trust model, downgrade them to `read`
+# — Claude will then only be able to suggest changes in comments rather
+# than push them.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    # Gate the job on an actual @claude mention so we don't burn an API
+    # call on every comment that hits the repo.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 1 is fine for review/comment workflows. Bump to
+          # 0 (full history) only if Claude needs to reason about long
+          # commit-archeology questions.
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
