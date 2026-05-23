@@ -143,13 +143,15 @@
     background-size: 4px 4px;
   }
 
-  /* Disable native iOS / Android pull-to-refresh + overscroll bounce
-     so our custom PullToRefresh component (#172) is the only thing
-     reacting to the gesture. `contain` keeps internal scrollables
-     working; `none` would also block scroll-chaining which we want
-     for the wishlist drawers etc. */
-  body {
-    overscroll-behavior-y: contain;
+  /* #177 — scope overscroll-behavior to touch-only. The unconditional
+     body rule from #172 was breaking trackpad scrolling on macOS
+     (Safari + Chrome interpret it differently from the spec in some
+     contexts). Touch devices still get the native-PTR suppression
+     they need; desktops keep their default trackpad behaviour. */
+  @media (pointer: coarse) {
+    body {
+      overscroll-behavior-y: contain;
+    }
   }
 
   /* Horizontal marquee — used by the photo overlay's scrolling palette
