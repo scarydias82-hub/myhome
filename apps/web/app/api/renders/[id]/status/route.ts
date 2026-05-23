@@ -287,6 +287,16 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const projectId = render.project_id;
     after(async () => {
       try {
+        // #179 — skip Florence-2 + matcher when picking_list is
+        // already set (the user-picked flow on /api/render's
+        // featuredProductIds branch sets it inline). The list IS
+        // the user's picks; no detection guesswork needed.
+        if (pickingListStatus === 'ready') {
+          console.log(
+            `[status:after] picking_list already 'ready' (user picks) — skipping Florence-2`,
+          );
+          return;
+        }
         console.log(`[status:after] building picking list for ${renderId}`);
         const matchRes = await buildPickingList({
           admin,

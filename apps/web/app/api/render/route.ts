@@ -221,16 +221,97 @@ export async function POST(request: NextRequest) {
   // block and therefore out of scope for the openai branch).
   const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
-    // Legacy path: user explicitly picked products to feature via the
-    // (now-deprecated) hero-products picker. Kept for backward compat
-    // if any client still sends featuredProductIds; the wizard flow
-    // never does.
-    const ids = body.featuredProductIds.slice(0, 3);
+    // #179 — designer-curated picking step. User picked specific
+    // products before submitting the render. These become BOTH:
+    //   - heroProducts (top 4 → renderer prompt + multi-image refs)
+    //   - picking_list (all picks → exact items shown to the user
+    //     post-render, with synthetic centred bboxes since we no
+    //     longer detect; the user already knows what's in the scene)
+    //
+    // Also auto-saves each pick to user_wishlist (idempotent upsert)
+    // so the feedback loop closes — next render's curation step
+    // pins these to the front.
+    const ids = body.featuredProductIds.slice(0, 12);
+    interface PickedRow {
+      id: string;
+      name: string;
+      category: string;
+      retailer: string;
+      price_aud: number | null;
+      image_url: string | null;
+      product_url: string | null;
+      affiliate_url: string | null;
+    }
     const { data } = await admin
       .from('products')
-      .select('name, category, retailer')
+      .select('id, name, category, retailer, price_aud, image_url, product_url, affiliate_url')
       .in('id', ids);
-    if (data) heroProducts = data as HeroProductDescriptor[];
+    const rows = (data ?? []) as PickedRow[];
+    if (rows.length > 0) {
+      heroProducts = rows.map((p) => ({
+        name: p.name,
+        category: p.category,
+        retailer: p.retailer,
+        imageUrl: p.image_url ?? null,
+      }));
+
+      // Build the picking list from the picks. Synthetic bboxes
+      // distributed across the lower half of the image where most
+      // furniture sits — purely for hotspot positioning, no detection.
+      const pickingListItems = rows.map((p, i) => ({
+        itemLabel: p.category.toLowerCase(),
+        category: p.category,
+        bbox: {
+          x: 0.15 + (i % 3) * 0.28,
+          y: 0.45 + Math.floor(i / 3) * 0.18,
+          w: 0.18,
+          h: 0.14,
+        },
+        matches: [
+          {
+            productId: p.id,
+            name: p.name,
+            retailer: p.retailer,
+            category: p.category,
+            priceAud: p.price_aud,
+            imageUrl: p.image_url ?? '',
+            productUrl: p.product_url ?? '',
+            affiliateUrl: p.affiliate_url,
+            similarity: 1.0,
+          },
+        ],
+      }));
+
+      // Persist picking_list + flip status='ready' immediately. Any
+      // downstream Florence-2 + match flow (status route's after())
+      // will skip the rebuild when it sees picking_list_status is
+      // already 'ready'.
+      const plUpd = await admin
+        .from('renders')
+        .update({
+          picking_list: pickingListItems,
+          picking_list_status: 'ready',
+        })
+        .eq('id', render.id);
+      if (plUpd.error) {
+        console.warn('[render] picking_list pre-set failed:', plUpd.error.message);
+      } else {
+        console.log(
+          `[render] picking_list pre-set from ${rows.length} user picks — Florence-2 will skip`,
+        );
+      }
+
+      // Auto-write each pick to user_wishlist (feedback loop). The
+      // unique constraint is (user_id, product_id); ignoreDuplicates
+      // means existing rows are no-ops, no error.
+      const wlRows = rows.map((p) => ({ user_id: user.id, product_id: p.id }));
+      const wlUpd = await admin
+        .from('user_wishlist')
+        .upsert(wlRows, { onConflict: 'user_id,product_id', ignoreDuplicates: true });
+      if (wlUpd.error) {
+        console.warn('[render] wishlist upsert failed:', wlUpd.error.message);
+      }
+    }
   } else if (palette) {
     // #129 — Claude-curated default. Reads the brief + room + palette
     // + style + a candidate set and picks 3-5 cohesive products that
@@ -520,6 +601,21 @@ export async function POST(request: NextRequest) {
         const rt = roomType;
         after(async () => {
           try {
+            // #179 — skip Florence-2 build when picking_list is
+            // already set (the user-picked flow set it inline).
+            const plCheck = await admin
+              .from('renders')
+              .select('picking_list_status')
+              .eq('id', renderId)
+              .maybeSingle();
+            const currentStatus = (plCheck.data as { picking_list_status: string | null } | null)
+              ?.picking_list_status;
+            if (currentStatus === 'ready') {
+              console.log(
+                `[render-openai:after] picking_list already 'ready' (user picks) — skipping Florence-2`,
+              );
+              return;
+            }
             const renderSigned = await admin.storage
               .from('renders')
               .createSignedUrl(outKey, 600);
