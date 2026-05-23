@@ -311,6 +311,20 @@ export async function POST(request: NextRequest) {
       if (wlUpd.error) {
         console.warn('[render] wishlist upsert failed:', wlUpd.error.message);
       }
+
+      // #180 — also persist hero_products on the render row for the
+      // FeaturedPiecesStrip on /renders/[id]. The else-if(palette)
+      // auto-curation branch already does this (line ~339); the
+      // user-picked branch was missing it. Best-effort.
+      const heroUpd = await admin
+        .from('renders')
+        .update({ hero_products: heroProducts })
+        .eq('id', render.id);
+      if (heroUpd.error) {
+        console.warn(
+          `[render] hero_products persist failed (user-picked path) — migration likely not applied: ${heroUpd.error.message}`,
+        );
+      }
     }
   } else if (palette) {
     // #129 — Claude-curated default. Reads the brief + room + palette
@@ -580,15 +594,24 @@ export async function POST(request: NextRequest) {
           upsert: true,
         });
         if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
-        // Mark render succeeded + picking-list 'building' so the
-        // client polling flow knows to keep watching.
+        // Mark render succeeded. picking_list_status depends on
+        // whether the user already picked products via the #179
+        // curation step: if so, the featuredProductIds branch above
+        // already set picking_list + picking_list_status='ready', and
+        // we must NOT overwrite that back to 'building' (would re-
+        // trigger Florence-2 in the after() and leave the user
+        // staring at an indefinite spinner because Vercel's CLIP
+        // load is broken). For auto-curated renders, 'building' is
+        // correct — picking list gets built in after().
+        const userPicked =
+          body.featuredProductIds != null && body.featuredProductIds.length > 0;
         await admin
           .from('renders')
           .update({
             status: 'succeeded',
             output_url: outKey,
             completed_at: new Date().toISOString(),
-            picking_list_status: 'building',
+            picking_list_status: userPicked ? 'ready' : 'building',
           })
           .eq('id', render.id);
         console.log(`[render-openai] saved + marked succeeded for ${render.id} (${result.durationMs}ms)`);
