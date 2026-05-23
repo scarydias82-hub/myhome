@@ -47,6 +47,33 @@ product, the system, or the business. Cross-reference SHAs with
      the render. Only fails the whole batch if EVERY cutout fails.
   Next auto-staged render should land. Migration `20260522220000`
   remains the only manual op needed.
+- `2026-05-23` — **#169 shipped — designer-selecting overlay (scrolling
+  palettes) + shorter reasoning + Read more toggle.** Two related UX
+  changes to the post-photo, pre-render flow on `/rooms/new`:
+  1. **Photo overlay**: replaced the static "Claude is reading your
+     room…" overlay with a `DesignerSelectingOverlay` that sits on the
+     photo across BOTH the vision pass and the recommend pass. A
+     scrolling palette ribbon (CSS `@keyframes marquee` in globals.css,
+     duplicated palette list for seamless loop) runs behind centred
+     copy: "✦ Designer at work — The designer is choosing a direction
+     for you…". Hides only once `analysing && recommending` are both
+     false, i.e. when the `DesignerSummaryCard` has its reasoning to
+     show. Companion cleanup: removed the redundant
+     `CarouselRecommendingOverlay` that used to sit on the carousels
+     in parallel (it duplicated the messaging and added visual
+     noise).
+  2. **Reasoning truncation**: `lib/brief/synthesiser.ts` prompt
+     tightened from "2-3 sentence paragraph" to "ONE punchy sentence,
+     max 30 words". `DesignerSummaryCard` extracts the reasoning into
+     a new `ReasoningBlock` component that line-clamps to 3 lines on
+     mobile by default and shows a "Read more ↓ / Less ↑" toggle when
+     content exceeds ~160 chars (covers cached longer briefs from
+     before this commit). New synthesis output is short enough that
+     the toggle never appears; cached older briefs get the clamp +
+     expand fallback.
+  Net effect: the analyse → recommend phase reads as one continuous
+  designer-at-work surface, and the post-recommend commentary stops
+  eating mobile real estate.
 - `2026-05-23` — **#168 shipped — collapse three palette carousels
   into one + filter chips.** The Step 03 palette picker on
   `/rooms/new` had three carousels that implied three independent

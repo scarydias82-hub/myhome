@@ -143,6 +143,22 @@
     background-size: 4px 4px;
   }
 
+  /* Horizontal marquee — used by the photo overlay's scrolling palette
+     ribbon while the designer is selecting (#169). Pair with a
+     content list that's duplicated 2x so translateX(-50%) loops
+     seamlessly. */
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  .animate-marquee {
+    animation: marquee 28s linear infinite;
+  }
+
   /* Reduced motion — disable all transforms / reveal animations. */
   @media (prefers-reduced-motion: reduce) {
     *,
