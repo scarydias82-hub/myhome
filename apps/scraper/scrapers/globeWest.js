@@ -17,6 +17,7 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.globewest.com.au';
 const RETAILER = 'GlobeWest';
@@ -269,6 +270,7 @@ export async function scrapeGlobeWest() {
           },
           product_url: url,
           description,
+          market_segment: segmentFor(RETAILER),
           scraped_at: new Date().toISOString(),
         });
         if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${targetUrls.length} scraped`);

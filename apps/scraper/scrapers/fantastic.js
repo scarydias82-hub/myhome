@@ -1,15 +1,26 @@
-// Freedom Furniture — Angular SPA. Category landing pages are SSR shell
-// only; product cards are injected client-side after hydration. The
-// previous version used a 1.2s scroll loop which finished before
-// hydration completed, so we got zero product URLs.
+// Fantastic Furniture — SAP Commerce Cloud (Hybris) front-end behind
+// Cloudflare. The storefront HTML is a 1.9KB JS shell that hydrates
+// client-side; product cards never appear in the initial DOM.
 //
-// Fix: longer total wait (up to 25s per category page), wait
-// explicitly for the product card class to appear, AND fall back to
-// intercepting the `api-prod.freedom.com.au` JSON responses that the
-// SPA fires during hydration. Whichever yields URLs first wins.
+// Strategy modelled on the Freedom scraper:
+//   1. Warm up the Cloudflare cookie by visiting the homepage first.
+//   2. For each category landing, scroll to force hydration AND
+//      intercept api.fantasticfurniture.com.au JSON responses so we
+//      collect product URLs from both the rendered DOM and the
+//      SAP/OCC API the SPA fires during boot.
+//   3. Visit each product detail page (also SPA) and read JSON-LD +
+//      OpenGraph meta tags after `h1` mounts.
 //
-// Scope: mirrors + rugs + sofas (per product owner). Per-category cap
-// keeps the total visit count finite.
+// Sitemap was the reconnaissance shortcut — the category list at
+// api.fantasticfurniture.com.au/medias/Category-... carries every
+// `/c/<slug>` path. The landings below were picked from that list.
+//
+// Scope: 9 canonical categories matching the §6.11 budget rollout —
+// Sofas, Chairs, Stools, Rugs, Lamps, Wall Lights, Beds, Desks.
+// (No Mirrors — not on the user's list and Fantastic's mirror catalogue
+// is thin anyway.)
+//
+// Tier: budget. Sofas $400–$1,200 per the §6.11 anchor.
 
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -21,49 +32,45 @@ import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
 import { segmentFor } from '../utils/retailerSegment.js';
 
-const ORIGIN = 'https://www.freedom.com.au';
-const RETAILER = 'Freedom';
-const RETAILER_SLUG = 'freedom';
+const ORIGIN = 'https://www.fantasticfurniture.com.au';
+const RETAILER = 'Fantastic Furniture';
+const RETAILER_SLUG = 'fantastic';
 const DEFAULT_PER_LANDING_MAX = 50;
 
-// Multi-URL canonical categories (Chairs, Lamps) split their cap across
-// landings so the total per canonical category stays in the 30–50
-// range the catalogue targets. Single-URL categories use the default.
+// Multi-URL canonicals (Chairs, Lamps) split their cap so each canonical
+// stays in the 30–50 range. Single-URL canonicals use the default.
 const CATEGORY_LANDINGS = [
-  { url: `${ORIGIN}/sofas-and-armchairs/c/all-sofas`, category: 'Sofas' },
-  { url: `${ORIGIN}/rugs/c/all-rugs`, category: 'Rugs' },
-  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/wall-decor-and-mirrors/c/mirrors`, category: 'Mirrors' },
-  { url: `${ORIGIN}/living-and-dining/dining-furniture/c/dining-chairs`, category: 'Chairs', max: 25 },
-  { url: `${ORIGIN}/sofas-and-armchairs/all-sofas/c/all-armchairs`, category: 'Chairs', max: 25 },
-  { url: `${ORIGIN}/living-and-dining/dining-furniture/c/bar-stools`, category: 'Stools' },
-  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/lights/c/table-lamps`, category: 'Lamps', max: 25 },
-  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/lights/c/floor-lamps`, category: 'Lamps', max: 25 },
-  { url: `${ORIGIN}/wall-art-mirrors-and-lighting/c/wall-lights`, category: 'Wall Lights' },
-  { url: `${ORIGIN}/bedroom/c/beds`, category: 'Beds' },
-  { url: `${ORIGIN}/storage/office/c/desks`, category: 'Desks' },
+  { url: `${ORIGIN}/c/sofas-and-armchairs`, category: 'Sofas' },
+  { url: `${ORIGIN}/c/dining-chairs`, category: 'Chairs', max: 25 },
+  { url: `${ORIGIN}/c/armchairs`, category: 'Chairs', max: 25 },
+  { url: `${ORIGIN}/c/bar-stools`, category: 'Stools' },
+  { url: `${ORIGIN}/c/rugs`, category: 'Rugs' },
+  { url: `${ORIGIN}/c/table-lamps`, category: 'Lamps', max: 25 },
+  { url: `${ORIGIN}/c/floor-lamps`, category: 'Lamps', max: 25 },
+  { url: `${ORIGIN}/c/wall-lights`, category: 'Wall Lights' },
+  { url: `${ORIGIN}/c/beds`, category: 'Beds' },
+  { url: `${ORIGIN}/c/desks`, category: 'Desks' },
 ];
 
-// Try several selectors — Freedom's Angular components don't expose a
-// stable class hierarchy, so we accept any `a` whose href matches the
-// product-id pattern, regardless of wrapper class.
-const PRODUCT_SELECTOR = 'a[href*="/product/"]';
+// Product URL shape: /<slug>/p/<SKU>. The SKU is uppercase letters +
+// digits, typically 10–20 chars (e.g. BGBOTTRECSELCHIOAT). The slug
+// before /p/ is the product's display slug — we use it as the local
+// id since it's stable and human-readable.
+const PRODUCT_HREF_RE = /\/([a-z0-9-]+)\/p\/([A-Z0-9]+)$/;
+const PRODUCT_SELECTOR = 'a[href*="/p/"]';
 
 async function collectProductUrls(page, landingUrl) {
-  // Network interceptor — captures the SPA's API responses while we
-  // give the page time to hydrate. Often the product list comes back
-  // before any DOM is populated, so this is a useful fallback even when
-  // the DOM scrape works.
   const apiProductUrls = new Set();
   const onResponse = async (response) => {
     const url = response.url();
-    if (!url.includes('api-prod.freedom.com.au')) return;
+    if (!url.includes('api.fantasticfurniture.com.au')) return;
     try {
       const ct = response.headers()['content-type'] ?? '';
       if (!ct.includes('json')) return;
       const json = await response.json();
-      walkForFreedomProductIds(json, apiProductUrls);
+      walkForFantasticProducts(json, apiProductUrls);
     } catch {
-      /* not JSON or error fetching — ignore */
+      /* not JSON or parse error — ignore */
     }
   };
   page.on('response', onResponse);
@@ -75,18 +82,17 @@ async function collectProductUrls(page, landingUrl) {
     return [];
   }
 
-  // Give the Angular bundle time to fetch + render product cards.
-  // networkidle never fires on this site (persistent analytics), so we
-  // wait explicitly for the selector AND swallow the timeout if it
-  // never appears — we still have the API interceptor as fallback.
+  // The SPA renders product cards async; wait for the first card to
+  // appear, then scroll to mount lazy ones. Network never goes idle
+  // (persistent analytics + ads), so we don't waitForLoadState here.
   try {
     await page.waitForSelector(PRODUCT_SELECTOR, { timeout: 20000 });
   } catch {
-    /* DOM hydration may have failed — rely on API interceptor */
+    /* DOM hydration may have failed; the API interceptor is the
+       fallback. Don't abort. */
   }
 
-  // Scroll to ensure lazy-loaded cards mount.
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 14; i++) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(900);
   }
@@ -96,65 +102,81 @@ async function collectProductUrls(page, landingUrl) {
     for (const a of document.querySelectorAll(sel)) {
       const href = a.href;
       if (!href) continue;
-      const m = href.match(/\/product\/(\d+)/);
-      if (!m) continue;
-      seen.add(`https://www.freedom.com.au/product/${m[1]}`);
+      // Strip query string & hash so /widget-slug/p/SKU?xy=... dedupes.
+      const clean = href.split('?')[0].split('#')[0];
+      seen.add(clean);
     }
     return [...seen];
   }, PRODUCT_SELECTOR);
 
   page.off('response', onResponse);
 
-  // Merge DOM + API results, dedupe.
-  const all = new Set([...domUrls, ...apiProductUrls]);
-  return [...all];
+  // Merge DOM + API, dedupe, validate shape.
+  const merged = new Set();
+  for (const u of [...domUrls, ...apiProductUrls]) {
+    try {
+      const parsed = new URL(u);
+      if (parsed.host !== 'www.fantasticfurniture.com.au') continue;
+      if (PRODUCT_HREF_RE.test(parsed.pathname)) {
+        merged.add(`${parsed.origin}${parsed.pathname}`);
+      }
+    } catch {
+      /* malformed URL — skip */
+    }
+  }
+  return [...merged];
 }
 
-// Walk a JSON tree and collect any Freedom product-id-shaped strings.
-// The SPA's API responses bury product ids under varying keys
-// (results.products, items, etc.) — pattern-matching the id shape is
-// more robust than guessing the schema.
-function walkForFreedomProductIds(node, out) {
+// Walk a JSON tree and collect any Fantastic product slug/SKU pairs.
+// SAP/OCC product responses bury fields under varying keys
+// (results, products, productListEntries, etc.) — pattern-matching
+// by shape is more robust than guessing the schema. We look for:
+//   - A `url` string ending in `/p/<SKU>` (already a path or full URL)
+//   - A `code` field that looks like a Fantastic SKU paired with
+//     a `name` + `url` sibling.
+function walkForFantasticProducts(node, out) {
   if (!node) return;
   if (Array.isArray(node)) {
-    for (const v of node) walkForFreedomProductIds(v, out);
+    for (const v of node) walkForFantasticProducts(v, out);
     return;
   }
   if (typeof node !== 'object') return;
   for (const [key, value] of Object.entries(node)) {
-    if (typeof value === 'number' && /^id$|productId|product_id/i.test(key) && value > 1_000_000) {
-      out.add(`https://www.freedom.com.au/product/${value}`);
-    } else if (typeof value === 'string' && /^\d{7,9}$/.test(value) && /id$|productId|product_id/i.test(key)) {
-      out.add(`https://www.freedom.com.au/product/${value}`);
+    if (typeof value === 'string' && /\/[a-z0-9-]+\/p\/[A-Z0-9]+/.test(value) && /url|link|href/i.test(key)) {
+      const abs = value.startsWith('http') ? value : `${ORIGIN}${value.startsWith('/') ? value : '/' + value}`;
+      out.add(abs);
     } else if (typeof value === 'object') {
-      walkForFreedomProductIds(value, out);
+      walkForFantasticProducts(value, out);
     }
   }
 }
 
 function parsePriceString(s) {
   if (!s) return null;
-  const m = String(s).replace(/,/g, '').match(/\$(\d+(?:\.\d{1,2})?)/);
+  const m = String(s).replace(/,/g, '').match(/\$\s*(\d+(?:\.\d{1,2})?)/);
   return m ? Number(m[1]) : null;
 }
 
 function slugFromUrl(url) {
-  return url.replace(/\/$/, '').split('/').pop().slice(0, 80);
+  // /<slug>/p/<SKU> — use the slug; SKU is captured as a fallback.
+  const m = url.match(PRODUCT_HREF_RE);
+  if (!m) return url.replace(/\/$/, '').split('/').pop().slice(0, 80);
+  return `${m[1]}-${m[2]}`.slice(0, 80);
 }
 
 async function extractProduct(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  // Product pages are server-rendered with JSON-LD embedded — wait for
-  // h1 to confirm hydration, then read.
   try {
     await page.waitForSelector('h1', { timeout: 12000 });
   } catch {
-    /* fall through */
+    /* allow extraction to proceed — we'll fall back to meta tags */
   }
   await page.waitForTimeout(1500);
   return page.evaluate(() => {
     const text = (s) => document.querySelector(s)?.innerText?.trim() ?? null;
-    const meta = (p) => document.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content ?? null;
+    const meta = (p) =>
+      document.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content ?? null;
+
     const ldNodes = [...document.querySelectorAll('script[type="application/ld+json"]')]
       .map((n) => {
         try { return JSON.parse(n.innerText); } catch { return null; }
@@ -166,26 +188,31 @@ async function extractProduct(page, url) {
       else if (n && typeof n === 'object') { flat.push(n); Object.values(n).forEach(walk); }
     };
     ldNodes.forEach(walk);
-    const productLd = flat.find((n) => n['@type'] === 'Product' || (Array.isArray(n['@type']) && n['@type'].includes('Product')));
+    const productLd = flat.find(
+      (n) => n['@type'] === 'Product' || (Array.isArray(n['@type']) && n['@type'].includes('Product')),
+    );
     const offer = productLd?.offers;
     const ldPrice = Array.isArray(offer) ? offer[0]?.price : offer?.price;
     const ldImage = Array.isArray(productLd?.image) ? productLd.image[0] : productLd?.image;
+
     return {
       h1: text('h1'),
       title: document.title,
       ogImage: meta('og:image'),
       ogDescription: meta('og:description'),
-      heroImg: ldImage ?? document.querySelector('img[src*="medias/"], .product-image img')?.src ?? null,
+      heroImg: ldImage ?? document.querySelector('img[src*="medias/"], .product-image img, [class*="ProductImage"] img')?.src ?? null,
       ldPrice: ldPrice ?? null,
       ldName: productLd?.name ?? null,
       ldDescription: productLd?.description ?? null,
-      priceTexts: [...document.querySelectorAll('[class*="price"]')].map((e) => e.innerText.trim()).filter(Boolean),
+      priceTexts: [...document.querySelectorAll('[class*="price"], [class*="Price"]')]
+        .map((e) => e.innerText.trim())
+        .filter(Boolean),
       bodyText: document.body.innerText.slice(0, 6000),
     };
   });
 }
 
-export async function scrapeFreedom() {
+export async function scrapeFantastic() {
   console.log(`[${RETAILER}] starting`);
   const outDir = retailerOutputDir(RETAILER_SLUG);
   const errors = [];
@@ -202,14 +229,27 @@ export async function scrapeFreedom() {
       viewport: { width: 1280, height: 1600 },
       extraHTTPHeaders: { 'accept-language': 'en-AU,en;q=0.9' },
     });
-    // Block heavy assets we don't need (we still get image URLs from
-    // the DOM / API responses; we just don't fetch the binaries during
-    // category browsing).
+    // Block heavy assets we don't need (image binaries get fetched
+    // later via the downloadImage util, after we've identified the
+    // hero source).
     await ctx.route('**/*', (route) => {
       const t = route.request().resourceType();
       if (t === 'image' || t === 'media' || t === 'font') return route.abort();
       return route.continue();
     });
+
+    // Cloudflare warm-up — visit the homepage so cf_clearance + co.
+    // attach to the context before we hit category URLs. Without it,
+    // some category pages return the JS challenge interstitial.
+    try {
+      const warm = await ctx.newPage();
+      await warm.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await warm.waitForTimeout(2500);
+      await warm.close();
+    } catch (err) {
+      console.warn(`[${RETAILER}] homepage warm-up failed: ${err.message}`);
+    }
+
     const page = await ctx.newPage();
 
     const all = [];
@@ -275,10 +315,12 @@ export async function scrapeFreedom() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  scrapeFreedom()
-    .then(({ products, errors }) => console.log(`done — ${products.length} products, ${errors.length} errors`))
+  scrapeFantastic()
+    .then(({ products, errors }) =>
+      console.log(`done — ${products.length} products, ${errors.length} errors`),
+    )
     .catch((err) => {
-      console.error('freedom scrape failed', err);
+      console.error('fantastic scrape failed', err);
       process.exit(1);
     });
 }

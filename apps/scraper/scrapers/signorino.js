@@ -25,6 +25,7 @@ import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.signorino.com.au';
 const RETAILER = 'Signorino';
@@ -184,6 +185,7 @@ export async function scrapeSignorino() {
         images: { hero, downloaded: hero != null, source: c.src, all: hero ? [hero] : [] },
         product_url: `${ORIGIN}${c.rangePath}`,
         description: `${c.rangeName || rangeSlug} range — ${c.alt}`,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       });
       if ((i + 1) % 30 === 0) console.log(`[${RETAILER}] downloaded ${i + 1}/${Math.min(collected.length, TARGET_MAX)}`);

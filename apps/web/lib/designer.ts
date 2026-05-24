@@ -101,7 +101,7 @@ export async function getDesignerAdvice({
     '',
     palette
       ? JSON.stringify(palette, null, 2)
-      : 'Not yet selected — infer the most suitable palette from the room analysis and name it explicitly before making recommendations.',
+      : 'Not yet selected — default to warm-minimalist contemporary (warm neutrals + sculptural form + restrained accent) unless the room analysis strongly suggests a different direction. Name the palette family you settled on explicitly before making recommendations.',
     '',
     '## Recent industry insights (RAG context)',
     '',

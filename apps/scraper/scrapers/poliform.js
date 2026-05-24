@@ -11,6 +11,7 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.poliformaustralia.com.au';
 const RETAILER = 'Poliform';
@@ -140,6 +141,7 @@ export async function scrapePoliform() {
       },
       product_url: productUrl,
       description,
+      market_segment: segmentFor(RETAILER),
       scraped_at: new Date().toISOString(),
     });
   }

@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-22 · most recent material commit: `2cfa6d2` (will
+**Last verified:** 2026-05-23 · most recent material commit: `e88af66` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,110 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-23` — **Designer narrator gets a contemporary warm-
+  minimalist baseline POV.** Owner directive: make every room the
+  narrator describes feel calm, intentional, and contemporary —
+  push the products in any render toward feeling like a curated
+  contemporary interior rather than a catalogue stack. Scope is
+  deliberately narrow: only the narrator prompt
+  (`apps/web/lib/prompts/designer-system.md`) — render image
+  generation (`lib/styles.ts`, `lib/kontextPrompt.ts`) is unchanged,
+  so Flux still draws whatever style the user picked. What shifted:
+  (a) new `## YOUR DESIGN POINT OF VIEW` section near the top of
+  the prompt establishing warm minimalist contemporary as the
+  default aesthetic compass — materials (pale oak, lime-washed
+  plaster, sculptural travertine, oat linen, undyed bouclé), form
+  (clean lines, soft sculptural curves, generous proportion),
+  palette (warm neutrals + one considered accent, no jewel tones),
+  mood (considered, calm, intentional). When the user picked a
+  non-contemporary palette + product mix, the narrator still
+  narrates THAT room on its own terms but finds the contemporary
+  qualities inside it (restraint, considered proportion, material
+  honesty). (b) Australian context bullets rewritten with an
+  explicit contemporary lens — 2026 AU contemporary leans into
+  sculptural form (soft arches, organic plaster, travertine slabs)
+  and restrained palettes. (c) `lib/designer.ts` null-state palette
+  fallback updated to default toward warm-minimalist contemporary
+  when no palette has been selected, rather than the previous
+  style-agnostic "infer most suitable" wording. Preserved: the
+  3-section DESIGNER READ / PALETTE STORY / EXPLORE INVITE output
+  contract, the don't-critique-the-original directive, the 60-30-10
+  + scale + layering principles. Live on the next deploy — no DB
+  migration, no client work needed.
+- `2026-05-23` — **#158 Kmart scraper shipped — ultra-budget accent
+  line, stools only (scope per owner).** Site is Next.js SSR fronted
+  by Akamai's edge bot wall — homepage returns 200 but category pages
+  return 403 until a session has computed the `_abck` sensor cookie
+  (real-browser JS only). Vanilla Playwright + homepage warm-up
+  passes the wall reliably. Scraper is lean: single category landing
+  (`/category/home-and-living/stools/`), listing-only data extraction
+  (skip per-product detail visits) since sub-$100 stools don't need
+  precise dimensions for the picking list. One Playwright page visit
+  total = minimal Akamai pressure. Target 30–50 products. Out of
+  the §6.13 backlog the only remaining item is #156 IKEA, which the
+  owner deferred (aggressive bot defence + lower ROI given Fantastic
+  already covers the same budget price band). The catalogue now has
+  representation in every tier from ultra-budget to premium.
+- `2026-05-23` — **#157 Brosa scraper shipped — best-effort, DataDome-
+  gated (mid tier).** brosa.com.au is fronted by DataDome bot
+  protection — curl + Chrome UA returns the JS-challenge interstitial
+  (403), and that includes the public sitemap. Vanilla Playwright with
+  a real Chromium TLS fingerprint is the lowest-friction attempt;
+  DataDome's JS challenge often auto-solves in a real browser context.
+  The scraper warms up the cookie via homepage visit, detects whether
+  the challenge persisted (signature: `captcha-delivery.com`), and
+  aborts cleanly with a readable error if so — Promise.allSettled in
+  the orchestrator records the failure without taking down the batch.
+  URL guess (`/buy/<slug>` from the pre-Kogan Brosa pattern, confirmed
+  to be a real path namespace via robots.txt `/br/buy/...` disallow
+  rules) — the homepage warm-up dumps any visible nav links to stdout
+  so a wrong guess is debuggable. Status will be confirmed on the first
+  live run. If DataDome blocks it consistently, the fallback is
+  `playwright-extra` + stealth plugin (heavier dep) or skip Brosa for
+  a comparable mid-tier substitute like Castlery AU. #155 Amart
+  Furniture deferred per owner — gap covered by Adairs / Beacon
+  Lighting / Carpet Court for non-sofa mid-tier categories.
+- `2026-05-22` — **#154 Fantastic Furniture scraper shipped (budget
+  tier, first new retailer in the §6.13 rollout).** `apps/scraper/scrapers/fantastic.js`
+  + wired into `index.js`, `package.json` (`pnpm scrape:fantastic`),
+  and `retailerSegment.js` ('Fantastic Furniture' → 'budget'). Site is
+  SAP Commerce Cloud behind Cloudflare with a 1.9KB SPA shell — needs
+  Playwright + JS hydration. Strategy modelled on the Freedom scraper:
+  Cloudflare cookie warm-up via homepage visit, then per-landing
+  scrape with DOM + API-response interception (the SPA fires
+  `api.fantasticfurniture.com.au` JSON during boot; we walk the
+  responses for product URLs as a fallback when DOM hydration
+  partially fails). Reconnaissance shortcut: their public
+  `sitemap.xml` index exposes Category + Product sub-sitemaps —
+  that's where the 9 canonical-category landing URLs came from
+  (Sofas, Chairs ×2, Stools, Rugs, Lamps ×2, Wall Lights, Beds,
+  Desks). Same per-landing 30–50 product cap pattern as Freedom.
+  No migration needed — segment is tagged at scrape time via
+  `segmentFor(RETAILER)` and threaded through ingest. New retailers
+  don't need backfill SQL because they have no pre-existing rows.
+- `2026-05-22` — **#153 market-segment plumbing shipped + Freedom
+  catalogue extended (catalogue expansion budget-tier groundwork).**
+  Every product now carries a `market_segment` tag so a global user
+  preference ("show me budget options") can filter the catalogue
+  contextually. Six tiers anchored to the AU furniture market:
+  `ultra-budget`, `budget`, `budget-mid`, `mid`, `upper-mid`,
+  `premium`. New util `apps/scraper/utils/retailerSegment.js` is the
+  source of truth — every scraper imports `segmentFor(RETAILER)` and
+  writes the tag on each product record; `scripts/ingest.js` passes
+  it through into the new `products.market_segment` column (migration
+  `20260522191500_products_market_segment.sql` — renamed from
+  `20260522190000_...` during the 2026-05-23 merge to avoid timestamp
+  collision with main's `20260522190000_users_preferences.sql`).
+  Constraint allows
+  NULL for catalogues where the concept doesn't apply (Dulux paint).
+  Freedom scraper extended from 3 → 9 canonical categories: kept
+  Sofas + Rugs + Mirrors, added Chairs (dining + armchairs), Stools,
+  Lamps (table + floor), Wall Lights, Beds, Desks. Per-landing cap
+  bumped from 30 → 50 with split caps on multi-URL canonicals so each
+  canonical category lands in the 30–50 range. Sets up §6.13 for the
+  budget-retailer rollout (Fantastic, Amart, IKEA, Brosa-if-live,
+  Kmart accent line — one PR each) and the cross-segment
+  similar-products substitution feature.
 - `2026-05-23` — **#166 shipped — fix auto-stage alpha-channel crash
   + per-item fault tolerance.** First diagnostic-driven fix off the
   back of #165 observability. Render `57bddf98` came back with
@@ -2536,6 +2640,77 @@ User sets preferences           Catalogue grows / changes
 - Distinct from #129 (Claude-curated featured products) — that step
   *picks* from a candidate pool; §6.12 *shapes* the pool earlier in
   the pipeline so #129 has less work to do.
+
+### 6.13 Market segment + cross-segment substitution
+
+> *Renumbered from §6.11 during the 2026-05-23 merge with main —
+> main's parallel roadmap already uses §6.11 (user preferences) and
+> §6.12 (personalised product universe). Ticket numbers #153–#159
+> in this section refer to the catalogue-tier rollout and collide
+> with the user-preferences phasing under §6.11. Disambiguate via
+> commit hash, date, and section context — there is no plan to
+> renumber these tickets, but new tickets in this track will start
+> from #181 to avoid further collision.*
+
+Catalogue intelligence track for budget context. The premise: a single
+flat catalogue treats every user identically, but a first-home-buyer
+shopping a $800 sofa and an interior-design client shopping a $4,000
+sofa do not want the same picking list. A global user preference for
+budget tier filters the catalogue contextually so renders surface
+products the user can plausibly afford.
+
+The plumbing landed in #153 (above). Remaining work, in priority order:
+
+- **#154 — Fantastic Furniture scraper. SHIPPED.** Budget tier
+  ($400–$1,200 sofas). SAP Commerce Cloud behind Cloudflare (not
+  Salesforce as initially guessed); Playwright + cookie warm-up +
+  DOM/API dual extraction. 9 canonical categories. See changelog
+  for the detail.
+- **#155 — Amart Furniture scraper. DEFERRED.** Owner skipped on
+  2026-05-22. Budget-mid is currently uncovered (no scraped retailer
+  lands there); revisit if the picking-list builder shows a gap for
+  users at the $700–$1,500 sofa price point.
+- **#156 — IKEA AU scraper. DEFERRED.** Owner skipped on 2026-05-23
+  given Fantastic Furniture already covers the same $500–$1,200
+  budget price band and IKEA's bot defence would require non-trivial
+  stealth tooling. Revisit if the picking list needs Scandinavian-
+  styled budget pieces specifically (IKEA's MARKERAD line, the
+  Billy/Kallax storage staples, or the LACK occasional tables — none
+  of which Fantastic covers).
+- **#157 — Brosa scraper. SHIPPED (best-effort, DataDome-gated).**
+  Mid tier ($700–$1,500 designer-inspired). Site is fronted by
+  DataDome bot protection. Scraper uses vanilla Playwright + homepage
+  warm-up + JS-challenge detection (aborts cleanly if challenge
+  persists). First live run will confirm whether DataDome lets us
+  through. See changelog for the fallback ladder.
+- **#158 — Kmart accent scraper. SHIPPED (stools only).** Ultra-
+  budget tier. Owner narrowed scope on 2026-05-23 to stools only
+  (declined the lamps / small rugs / bedside tables expansion).
+  Target dropped from the build at the same time — Wesfarmers
+  collapsed most of Target's furniture range into Kmart so the
+  duplicate scraper wasn't worth the maintenance. See changelog
+  for the Akamai-bypass implementation detail.
+
+Once two or more retailers exist per category, the substitution
+feature becomes possible:
+
+- **#159 — Cross-segment similar-products substitution.** Two surfaces:
+  (a) catalogue browse — on a product detail page, surface "similar
+  at a different price point" cards drawing from neighbouring segments
+  (Freedom sofa shows IKEA + Brosa alternatives below); (b) render
+  picking-list — on a rendered scene's picking list, every product
+  card carries a "swap to cheaper / pricier" toggle that re-runs the
+  matcher with a forced segment filter and re-composites the affected
+  region using the SKU-fidelity pipeline (#73). Implementation
+  prerequisites: the matcher RPCs (#147) need a `market_segment`
+  filter parameter; the picking list UI needs a per-item segment
+  badge + swap affordance.
+
+  **Why this matters.** Memory [[platform_purpose_products_first]]
+  says the picking list is the deliverable. The substitution feature
+  is the lever that turns a single render into multiple shopping lists
+  at multiple price points — increasing the chance the user actually
+  buys something rather than bouncing off "too expensive" pricing.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live

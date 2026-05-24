@@ -10,6 +10,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { classifyProduct } from '../utils/paletteMatch.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,6 +51,11 @@ function toRow(raw) {
     colors: [],
     in_stock: true,
     ships_to: ['AU'],
+    // market_segment lands on the row. Prefer what the scraper wrote so
+    // a retailer can override per-product later (e.g. an IKEA MARKERAD
+    // designer line tagged differently to core range). Fall back to the
+    // retailer lookup so older products.json files re-ingest cleanly.
+    market_segment: raw.market_segment ?? segmentFor(raw.retailer),
     last_seen_at: raw.scraped_at ?? new Date().toISOString(),
   };
 }

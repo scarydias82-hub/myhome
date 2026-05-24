@@ -14,6 +14,7 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.beaconlighting.com.au';
 const RETAILER = 'Beacon Lighting';
@@ -222,6 +223,7 @@ export async function scrapeBeaconLighting() {
           images: { hero, downloaded: hero != null, source: heroSrc ?? null, all: hero ? [hero] : [] },
           product_url: url,
           description,
+          market_segment: segmentFor(RETAILER),
           scraped_at: new Date().toISOString(),
         });
         if ((i + 1) % 10 === 0) console.log(`[${RETAILER}] ${i + 1}/${targets.length}`);

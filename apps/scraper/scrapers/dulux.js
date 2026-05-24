@@ -14,6 +14,7 @@ import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.dulux.com.au';
 const RETAILER = 'Dulux';
@@ -262,6 +263,7 @@ export async function scrapeDulux() {
         description: atlasCode
           ? `Dulux ${name} — Atlas ${atlasCode}${chipCode ? `, Chip ${chipCode}` : ''}${lrv != null ? `, LRV ${lrv}` : ''}`
           : `Dulux ${name}`,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       };
     } catch (err) {

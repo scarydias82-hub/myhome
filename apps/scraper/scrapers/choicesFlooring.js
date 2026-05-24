@@ -20,6 +20,7 @@ import { USER_AGENT } from '../utils/userAgent.js';
 import { isAllowed } from '../utils/robots.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.choicesflooring.com.au';
 const RETAILER = 'Choices Flooring';
@@ -187,6 +188,7 @@ export async function scrapeChoicesFlooring() {
         images: { hero, downloaded: hero != null, source: heroSrc, all: hero ? [hero] : [] },
         product_url: productUrl,
         description: c.imgAlt || null,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       });
       if ((i + 1) % 20 === 0) console.log(`[${RETAILER}] downloaded ${i + 1}/${Math.min(collected.length, TARGET_MAX)}`);

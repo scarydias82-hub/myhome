@@ -22,6 +22,7 @@ import { isAllowed } from '../utils/robots.js';
 import { parseDimensions } from '../utils/parseDimensions.js';
 import { downloadImage } from '../utils/imageDownload.js';
 import { writeJson, retailerOutputDir } from '../utils/storage.js';
+import { segmentFor } from '../utils/retailerSegment.js';
 
 const ORIGIN = 'https://www.abiinteriors.com.au';
 const RETAILER = 'ABI Interiors';
@@ -219,6 +220,7 @@ export async function scrapeAbiInteriors() {
         images: { hero, downloaded: hero != null, source: heroSrc, all: hero ? [hero] : [] },
         product_url: c.href,
         description: null,
+        market_segment: segmentFor(RETAILER),
         scraped_at: new Date().toISOString(),
       });
     }
