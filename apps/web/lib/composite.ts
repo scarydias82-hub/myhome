@@ -348,17 +348,28 @@ async function buildProductLayersImpl(
   // that as a literal black box over the scene (see the curtain
   // staging report on 2026-05-23).
   //
-  // Detection: sharp.stats() returns per-channel min/max. For a real
-  // RGBA cutout, alpha min should be 0 (transparent pixels around
-  // the product). For a fully-opaque "fake alpha", min == max == 255.
-  // We use min < 250 as the "has real alpha" threshold — small
-  // tolerance for near-opaque cutouts that wouldn't shadow well anyway.
+  // Detection: sharp.stats() returns per-channel min/max/mean. Two
+  // thresholds, both required for "real cutout":
+  //   - min  < 250: there are actually transparent pixels (catches
+  //     the fully-opaque "fake alpha" case from #178).
+  //   - mean < 240: the alpha is mostly NOT opaque, i.e. birefnet
+  //     genuinely isolated a product from a background. Lifestyle-
+  //     scene inputs (rug-in-a-room, etc.) often pass the min check
+  //     because birefnet shaves a few pixels off the corners but
+  //     leaves the body of the image opaque — alpha mean stays
+  //     near 250+ and the blurred shadow still renders as a dark
+  //     blob (the case the owner hit on 2026-05-24 render). Adding
+  //     the mean threshold catches that.
   let hasRealAlpha = false;
+  let alphaStatsLog = '';
   try {
     const stats = await sharp(alpha).stats();
     const ch0 = stats.channels[0];
-    if (ch0 && typeof ch0.min === 'number' && ch0.min < 250) {
-      hasRealAlpha = true;
+    if (ch0 && typeof ch0.min === 'number' && typeof ch0.mean === 'number') {
+      alphaStatsLog = `min=${ch0.min} mean=${Math.round(ch0.mean)} max=${ch0.max}`;
+      if (ch0.min < 250 && ch0.mean < 240) {
+        hasRealAlpha = true;
+      }
     }
   } catch {
     // sharp.stats() rarely fails but defensively: if we can't tell,
@@ -375,7 +386,7 @@ async function buildProductLayersImpl(
 
   if (!hasRealAlpha) {
     console.warn(
-      `[composite] cutout has no real transparency (alpha is fully opaque) — skipping drop shadow to avoid the black-box failure mode. The product will render as a rectangle.`,
+      `[composite] cutout alpha looks suspect (${alphaStatsLog || 'stats unavailable'}) — skipping drop shadow to avoid the black-box failure mode. The product will render as a rectangle.`,
     );
     return [productLayer];
   }
