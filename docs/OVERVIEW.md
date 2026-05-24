@@ -25,6 +25,41 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-24` — **Tighter "no shadow" gate in the cutout pipeline
+  — kill the dark-blob artifact when birefnet barely-cuts a
+  lifestyle-scene product.** Owner ran a post-render compositing
+  pass and got product cards with dark/black backgrounds.
+  Background: the staging pipeline (`apps/web/lib/composite.ts`)
+  pushes each `products.image_url` through birefnet (fal-ai cutout
+  model) before compositing into the scene. Birefnet works
+  brilliantly on clean studio product shots but degrades when the
+  input is a lifestyle scene (typical for rugs, where retailers
+  default to room-context photography). Three earlier fixes
+  (#166 ensureAlpha, #170/#171 per-item fault tolerance, #178 skip
+  shadow when alpha is fully opaque) addressed the crashes and the
+  worst "solid black box" failure mode. #178 in particular checked
+  `alpha.min < 250` — i.e. "there's at least one transparent pixel
+  somewhere" — to decide whether to render a drop shadow. That
+  catches the fully-opaque ensureAlpha-fake-alpha case, but it
+  passes through a NEW failure mode: birefnet runs on a lifestyle
+  scene, finds a thin transparent border around the whole image
+  (so min drops to ~0-20), but the body of the image stays opaque
+  (no real product silhouette to isolate). Mean alpha ends up near
+  250+ — the existing min check thinks "real cutout, go ahead and
+  shadow", the blurred-shadow code then darkens the entire product
+  region into a dark blob. Fix in `composite.ts:342-381`: keep the
+  `min < 250` check AND require `mean < 240`. Both thresholds must
+  pass for `hasRealAlpha`. Pure ensureAlpha-opaque fails on min;
+  birefnet-found-the-border-but-not-the-product fails on mean;
+  genuine cutouts (sofa on white studio backdrop → alpha mean
+  100-180) pass both. Also: the suspect-alpha warn log now
+  includes `min/mean/max` so future eyeballing of birefnet
+  edge cases doesn't need a repro. No DB / scraper changes —
+  pure pipeline tighten. Doesn't fix the underlying source-image
+  quality problem for rugs (separate ticket — would need either
+  a vision quality gate at ingest or scraper second-pass for
+  flat-lay variants), but eliminates the visual artifact when
+  birefnet output is borderline.
 - `2026-05-24` — **Curation submit button stuck disabled when any
   category has zero candidates.** Follow-up to the lounge_room fix.
   Owner re-ran the render: products now appear (good), but the
