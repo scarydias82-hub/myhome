@@ -25,6 +25,24 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-24` — **Curation submit button stuck disabled when any
+  category has zero candidates.** Follow-up to the lounge_room fix.
+  Owner re-ran the render: products now appear (good), but the
+  "Render with these N picks" button stayed greyed out. Root cause
+  in `apps/web/components/rooms/upload-form.tsx`: the gating helper
+  `allCategoriesHavePick` required `picks.get(cat.displayLabel).size
+  >= 1` for EVERY core category. If a category came back with zero
+  candidates (e.g. Dining Tables in the chosen palette had no
+  matches in the catalogue), there was literally nothing to pick,
+  so the constraint could never be satisfied and the user was
+  locked out. The empty-state already showed the right hint ("No
+  catalogue matches in this palette — try another palette") but
+  the CTA stayed disabled regardless. Fix: empty categories
+  auto-satisfy the gate (`cat.items.length === 0 || picks ≥ 1`),
+  and the misleading "0 / 3 picked · required" eyebrow now reads
+  "No matches" for those categories so it lines up with the hint
+  below. Lets the user proceed without backtracking through palette
+  choice when they're happy with the picks they do have.
 - `2026-05-24` — **Picking step empty-result fix — `lounge_room` slug
   mismatch + missing category-only fallback.** Owner reported an
   earlier render where the curation step returned zero products

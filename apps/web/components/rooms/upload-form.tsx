@@ -446,8 +446,13 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
 
   function allCategoriesHavePick(): boolean {
     if (curationCategories.length === 0) return false;
+    // Categories with zero candidates (e.g. no Dining Tables in the
+    // picked palette) auto-satisfy — the user has nothing to pick
+    // and the "No catalogue matches" hint already nudges them toward
+    // changing palette. Without this, those rooms can never submit.
     return curationCategories.every(
-      (cat) => (picks.get(cat.displayLabel)?.size ?? 0) >= 1,
+      (cat) =>
+        cat.items.length === 0 || (picks.get(cat.displayLabel)?.size ?? 0) >= 1,
     );
   }
 
@@ -1738,8 +1743,9 @@ function CurationStep({
             <div className="flex flex-wrap items-baseline gap-3">
               <h3 className="font-display text-h4 text-ink">{cat.displayLabel}</h3>
               <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                {catPicks.size} / 3 picked
-                {catPicks.size === 0 ? ' · required' : ''}
+                {cat.items.length === 0
+                  ? 'No matches'
+                  : `${catPicks.size} / 3 picked${catPicks.size === 0 ? ' · required' : ''}`}
               </p>
             </div>
 
