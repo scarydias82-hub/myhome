@@ -560,6 +560,22 @@ function categoryCandidates(category: string): string[] {
   return CATEGORY_FAMILIES[category] ?? [category];
 }
 
+// Vision (lib/vision.ts) can return `lounge_room`, but the catalogue's
+// `room_tags` taxonomy (apps/scraper/utils/productTags.js +
+// palettes.json `recommended_rooms`) only uses `living_room`. Without
+// this alias, products tagged `living_room` are excluded for any room
+// the model classified as `lounge_room` → all picker tiers return zero.
+// `other` / null fall through to "no room filter" so the RPC + direct
+// queries skip the overlap clause instead of asking for the literal
+// string `other`.
+export function normaliseRoomTag(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  const slug = raw.toLowerCase().replace(/\s+/g, '_');
+  if (slug === 'lounge_room') return 'living_room';
+  if (slug === 'other') return undefined;
+  return slug;
+}
+
 async function fetchCandidates({
   admin,
   category,
@@ -579,6 +595,7 @@ async function fetchCandidates({
   cropBuf?: Buffer;
 }): Promise<ProductRow[]> {
   const cats = categoryCandidates(category);
+  const canonicalRoom = normaliseRoomTag(roomType);
   const selectCols =
     'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
 
@@ -612,14 +629,14 @@ async function fetchCandidates({
         query_embedding: queryEmbedding,
         category_list: cats,
         palette_id: paletteId ?? null,
-        room_type: roomType ?? null,
+        room_type: canonicalRoom ?? null,
         match_count: CANDIDATES_PER_ITEM,
       });
       if (vp.error) {
         console.error('[matching] vision_profile RPC failed', vp.error);
       } else if (vp.data && vp.data.length > 0) {
         console.log(
-          `[matching] vision_profile pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${vp.data.length} candidates in ${embedMs}ms embed`,
+          `[matching] vision_profile pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${vp.data.length} candidates in ${embedMs}ms embed`,
         );
         return vp.data as ProductRow[];
       }
@@ -630,19 +647,19 @@ async function fetchCandidates({
         query_embedding: queryEmbedding,
         category_list: cats,
         palette_id: paletteId ?? null,
-        room_type: roomType ?? null,
+        room_type: canonicalRoom ?? null,
         match_count: CANDIDATES_PER_ITEM,
       });
       if (tagged.error) {
         console.error('[matching] CLIP pre-rank RPC failed', tagged.error);
       } else if (tagged.data && tagged.data.length > 0) {
         console.log(
-          `[matching] palette_tags pre-rank(${category}, palette=${paletteId}, room=${roomType}): ${tagged.data.length} candidates`,
+          `[matching] palette_tags pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${tagged.data.length} candidates`,
         );
         return tagged.data as ProductRow[];
       } else {
         console.log(
-          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${roomType}): 0 across both tiers — falling back to non-RPC filter`,
+          `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): 0 across both tiers — falling back to non-RPC filter`,
         );
       }
     } catch (err) {
@@ -654,26 +671,26 @@ async function fetchCandidates({
   // category sorted by price descending to bias toward representative
   // pieces — cheap accessories can dominate categories like "Lighting"
   // otherwise. Used when CLIP pre-rank is unavailable or returned empty.
-  if (paletteId && roomType) {
+  if (paletteId && canonicalRoom) {
     const filtered = await admin
       .from('products')
       .select(selectCols)
       .in('category', cats)
       .not('image_url', 'is', null)
       .contains('palette_tags', [paletteId])
-      .overlaps('room_tags', [roomType, 'any'])
+      .overlaps('room_tags', [canonicalRoom, 'any'])
       .order('price_aud', { ascending: false, nullsFirst: false })
       .limit(CANDIDATES_PER_ITEM);
     if (filtered.error) {
       console.error('candidate fetch (filtered) failed', filtered.error);
     } else if (filtered.data && filtered.data.length > 0) {
       console.log(
-        `[matching] candidates(${category}, palette=${paletteId}, room=${roomType}): ${filtered.data.length}`,
+        `[matching] candidates(${category}, palette=${paletteId}, room=${canonicalRoom}): ${filtered.data.length}`,
       );
       return filtered.data as ProductRow[];
     } else {
       console.log(
-        `[matching] candidates(${category}, palette=${paletteId}, room=${roomType}): 0 — falling back to category-only`,
+        `[matching] candidates(${category}, palette=${paletteId}, room=${canonicalRoom}): 0 — falling back to category-only`,
       );
     }
   }
