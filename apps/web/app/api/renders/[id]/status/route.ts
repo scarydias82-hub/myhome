@@ -36,6 +36,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { checkActiveStatus, fetchActiveResult } from '@/lib/fal';
 import { buildPickingList } from '@/lib/matching';
 import { findPaletteByHexes } from '@/lib/palettes';
+import { autoStageAfterPickingList } from '@/lib/auto-stage';
 
 export const runtime = 'nodejs';
 // Foreground (image save) is ~5s; after() (matching) is ~25-30s. 120s
@@ -51,6 +52,7 @@ export const maxDuration = 120;
 const PICKING_LIST_BUILD_TTL_MS = 120_000;
 
 type PickingListStatus = 'not_started' | 'building' | 'ready' | 'failed';
+type AutoStageStatus = 'started' | 'completed' | 'failed' | 'skipped' | null;
 
 interface RenderRow {
   id: string;
@@ -64,6 +66,14 @@ interface RenderRow {
   completed_at: string | null;
   style_profile_id: string | null;
   room_id: string | null;
+  /** Needed by the auto-stage hook (#82) so the staged_images row +
+   *  multi_staged revision land on the right project. */
+  project_id: string | null;
+  /** #171 — surfaced so the polling client can wait for auto-stage
+   *  to be terminal too. Without this the client stops polling when
+   *  picking_list_status flips to 'ready' and never picks up the
+   *  staged composite that lands ~20-30s later. */
+  auto_stage_status: AutoStageStatus;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -78,7 +88,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const renderRes = await admin
     .from('renders')
     .select(
-      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id',
+      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id, auto_stage_status',
     )
     .eq('id', id)
     .single();
@@ -127,6 +137,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: render.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -137,6 +148,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: render.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -167,6 +179,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       status: 'running',
       falStatus: fal.status,
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -189,6 +202,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: 'succeeded',
       pickingListStatus,
+      autoStageStatus: render.auto_stage_status,
     });
   }
 
@@ -206,16 +220,21 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (upload.error) throw new Error(upload.error.message);
 
     // Step 2 (foreground): mark image-stage succeeded + flip
-    // picking_list_status to 'building'. The 'building' flag is what
-    // tells subsequent polls "image is ready, matching is in flight,
-    // keep polling but don't kick off another build."
+    // picking_list_status to 'building' unless the user already
+    // committed picks via the #179 curation step (in which case
+    // /api/render's featuredProductIds branch set picking_list +
+    // picking_list_status='ready' before submitting to fal). Don't
+    // overwrite 'ready' back to 'building' — the after() picking
+    // list build would then re-fire and either overwrite the user's
+    // picks or get stuck because Vercel's CLIP load is broken.
+    const userPicked = pickingListStatus === 'ready';
     await admin
       .from('renders')
       .update({
         status: 'succeeded',
         output_url: outKey,
         completed_at: new Date().toISOString(),
-        picking_list_status: 'building',
+        picking_list_status: userPicked ? 'ready' : 'building',
       })
       .eq('id', render.id);
 
@@ -239,18 +258,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     }
 
     let roomType: string | undefined;
+    // photo_url is the storage key inside the rooms bucket — needed by
+    // the auto-stage hook (#82) to download the original room photo
+    // for compositing. We fetch it here in the foreground so the
+    // after() worker doesn't need a second round-trip.
+    let roomPhotoKey: string | null = null;
     if (render.room_id) {
       const roomRes = await admin
         .from('rooms')
-        .select('analysis, room_type')
+        .select('analysis, room_type, photo_url')
         .eq('id', render.room_id)
         .single();
       const room = roomRes.data as {
         analysis: { room_type?: string | null } | null;
         room_type: string | null;
+        photo_url: string | null;
       } | null;
       const rawRoomType = room?.analysis?.room_type ?? room?.room_type ?? undefined;
       if (rawRoomType) roomType = rawRoomType.toLowerCase().replace(/\s+/g, '_');
+      roomPhotoKey = room?.photo_url ?? null;
     }
     if (paletteId || roomType) {
       console.log(`[status] picking-list filter context: palette=${paletteId} room=${roomType}`);
@@ -262,8 +288,20 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     // (120s); recovery is the TTL guard at the top of the handler.
     const renderImageUrl = result.imageUrl;
     const renderId = render.id;
+    const userId = user.id;
+    const projectId = render.project_id;
     after(async () => {
       try {
+        // #179 — skip Florence-2 + matcher when picking_list is
+        // already set (the user-picked flow on /api/render's
+        // featuredProductIds branch sets it inline). The list IS
+        // the user's picks; no detection guesswork needed.
+        if (pickingListStatus === 'ready') {
+          console.log(
+            `[status:after] picking_list already 'ready' (user picks) — skipping Florence-2`,
+          );
+          return;
+        }
         console.log(`[status:after] building picking list for ${renderId}`);
         const matchRes = await buildPickingList({
           admin,
@@ -283,6 +321,83 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         console.log(
           `[status:after] picking list ready for ${renderId} — ${matchRes.items.length} items`,
         );
+
+        // #82 — auto-stage the top-matched SKU into the rendered scene
+        // for every detected non-paint item. Runs AFTER picking_list
+        // flips to 'ready' so the user sees the picking list at the
+        // earliest opportunity; the staged composite then arrives as
+        // a new active revision (progressive enhancement). Failures
+        // are logged + swallowed — base render + picking list still
+        // succeed. Kill-switch: AUTO_STAGE_ALL=false env var.
+        //
+        // #165 — outcome is persisted to renders.auto_stage_status +
+        // renders.auto_stage_error so the failure mode is visible from
+        // the DB (Vercel function logs aren't always accessible).
+        // 'started' is written eagerly so a function timeout / OOM
+        // leaves a non-null status to read.
+        //
+        // Defensive: if the migration `20260522220000_renders_auto_stage_status.sql`
+        // hasn't been applied yet, the column doesn't exist and the
+        // UPDATE will error with PGRST204. We log + swallow so a
+        // missing migration doesn't break the picking-list flow.
+        const autoStageStartedRes = await admin
+          .from('renders')
+          .update({ auto_stage_status: 'started', auto_stage_error: null })
+          .eq('id', renderId);
+        const autoStageColumnsExist =
+          !autoStageStartedRes.error ||
+          !/auto_stage_status|column .* does not exist|PGRST204/i.test(
+            autoStageStartedRes.error.message ?? '',
+          );
+        if (autoStageStartedRes.error) {
+          console.warn(
+            `[status:after] auto_stage_status pre-write failed for ${renderId} — migration likely not applied yet:`,
+            autoStageStartedRes.error.message,
+          );
+        }
+        try {
+          const autoStageRes = await autoStageAfterPickingList({
+            admin,
+            renderId,
+            userId,
+            roomPhotoKey,
+            projectId,
+            pickingListItems: matchRes.items,
+          });
+          console.log(
+            `[status:after] auto-stage for ${renderId}: outcome=${autoStageRes.outcome} staged=${autoStageRes.staged} skipped=${autoStageRes.skipped}${autoStageRes.reason ? ` (${autoStageRes.reason})` : ''}`,
+          );
+          if (autoStageColumnsExist) {
+            const upd = await admin
+              .from('renders')
+              .update({
+                auto_stage_status: autoStageRes.outcome,
+                auto_stage_error: autoStageRes.reason ?? null,
+              })
+              .eq('id', renderId);
+            if (upd.error) {
+              console.warn(`[status:after] auto_stage_status final write failed for ${renderId}:`, upd.error.message);
+            }
+          }
+        } catch (autoErr) {
+          const msg = autoErr instanceof Error ? autoErr.message : String(autoErr);
+          console.warn(
+            `[status:after] auto-stage failed for ${renderId} — base render + picking list still succeeded`,
+            msg,
+          );
+          if (autoStageColumnsExist) {
+            await admin
+              .from('renders')
+              .update({
+                auto_stage_status: 'failed',
+                auto_stage_error: msg.length > 2000 ? msg.slice(0, 2000) + '…' : msg,
+              })
+              .eq('id', renderId)
+              .then((r) => {
+                if (r.error) console.warn(`[status:after] auto_stage_status fail-write failed for ${renderId}:`, r.error.message);
+              });
+          }
+        }
       } catch (err) {
         console.error(`[status:after] picking list build failed for ${renderId}`, err);
         await admin
@@ -295,6 +410,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       status: 'succeeded',
       pickingListStatus: 'building',
+      autoStageStatus: null,
     });
   } catch (err) {
     console.error('finalise render failed', err);

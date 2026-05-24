@@ -148,17 +148,22 @@ export default async function DashboardPage() {
 
   // Prefer the explicit first_name on public.users; fall back to a
   // heuristic derived from the email prefix for accounts that haven't
-  // had one captured yet.
-  const { data: profile } = await supabase
+  // had one captured yet. Same query also pulls the canonical
+  // preferences blob (#153, §6.11 Phase A) — null when the user
+  // hasn't onboarded yet, in which case HeroGreeting forces the
+  // onboarding modal open on first dashboard load.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: profile } = await (supabase as any)
     .from('users')
-    .select('first_name')
+    .select('first_name, preferences')
     .eq('id', user.id)
-    .maybeSingle<{ first_name: string | null }>();
+    .maybeSingle();
 
   const emailPrefix = user.email?.split('@')[0] ?? 'there';
   const fallbackFirstName = capitalise(emailPrefix.split(/[._-]/)[0] ?? emailPrefix);
   const firstName = profile?.first_name?.trim() || fallbackFirstName;
   const initials = firstName.slice(0, 2).toUpperCase();
+  const userPreferences = profile?.preferences ?? null;
 
   const admin = createAdminClient();
   const supabaseUrl = publicEnv.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -595,8 +600,11 @@ export default async function DashboardPage() {
       <main className="mx-auto max-w-[1200px] px-4 md:px-6">
         {/* 1. Hero + quick actions — compact on mobile so featured
             products land above the fold once the user scrolls a
-            single thumb-length. */}
-        <HeroGreeting firstName={firstName} />
+            single thumb-length. Canonical user preferences
+            (§6.11 Phase A, #153) are nested inside the greeting as
+            inline chips + Edit pill; the onboarding modal auto-opens
+            on first dashboard load when preferences is null. */}
+        <HeroGreeting firstName={firstName} preferences={userPreferences} />
 
         {/* 2. Featured products — Claude-curated weekly (heuristic
             until #137). Sits above all other content so products

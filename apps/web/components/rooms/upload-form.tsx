@@ -5,13 +5,21 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
-import { PaletteStrip } from '@/components/saltbush/palette-strip';
 import { Pill } from '@/components/saltbush/pill';
 import { type StyleSlug } from '@/lib/styles';
-import { listPalettes, paletteSwatch, type Palette } from '@/lib/palettes';
+import {
+  isTrendForward,
+  isTimeless,
+  listPalettes,
+  paletteDirection,
+  paletteSwatch,
+  type Palette,
+} from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
 import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
+import { PreferencesModal } from '@/components/dashboard/preferences-modal';
+import { BRIEF_TAG_GROUPS } from '@/lib/brief/taxonomy';
 
 // P0-2 confidence gate. When Claude returns ALL the load-bearing
 // facts we skip the manual review step entirely — the user can still
@@ -51,6 +59,14 @@ interface RecommendResponse {
     direction: '2026' | 'timeless' | null;
     reasoning: string;
   } | null;
+  /** Where the brief tags fed to the synthesiser came from
+   *  (§6.11 Phase C, #155). Drives the "Using your X" inheritance
+   *  banner above the carousels. */
+  source?: 'override' | 'project' | 'user_prefs' | 'none';
+  /** Echo of the tags actually used for the synthesis, so the
+   *  override modal opens pre-populated with whatever the recommendation
+   *  was grounded in. */
+  appliedTags?: string[];
   error?: string;
 }
 
@@ -69,19 +85,37 @@ interface FeaturedProduct {
 export function UploadForm({ projectId }: { projectId?: string | null }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
 
   const [roomId, setRoomId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<RoomAnalysis | null>(null);
   const [analysing, setAnalysing] = useState(false);
+
+  // #179 — designer-curated picking step. Replaces the post-render
+  // Florence-2 picking list flow: user picks 1-3 per core category
+  // BEFORE the render so the products are guaranteed correct
+  // (they chose them).
+  const [curationOpen, setCurationOpen] = useState(false);
+  const [curationLoading, setCurationLoading] = useState(false);
+  const [curationCategories, setCurationCategories] = useState<
+    Array<{
+      displayLabel: string;
+      items: Array<{
+        id: string;
+        name: string;
+        retailer: string;
+        category: string;
+        priceAud: number | null;
+        imageUrl: string;
+        isWishlisted: boolean;
+      }>;
+    }>
+  >([]);
+  const [picks, setPicks] = useState<Map<string, Set<string>>>(new Map());
   // Phase 2 of the photo flow (#143). Set true after vision returns
   // and we kick off /api/recommend; flipped back to false when the
   // recommendation arrives (or fails). Drives the overlay on the
@@ -92,16 +126,30 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
 
   const [style, setStyle] = useState<StyleSlug>('japandi');
   const [paletteId, setPaletteId] = useState<string>(listPalettes()[0]?.id ?? '');
-  // Direction state — mirrors the dashboard's two extra carousels. The
-  // colour palette (above) is required; direction is optional. Picking
-  // in carousel ② sets direction='2026', picking in ③ sets
-  // direction='timeless'. Mutex: choosing one clears the other.
-  const [direction, setDirection] = useState<'2026' | 'timeless' | null>(null);
+  // Direction state was removed 2026-05-23 (#168). The three-carousel
+  // picker collapsed into a single carousel + filter chips, so
+  // direction is now a derived value (via paletteDirection() helper)
+  // — no longer needs its own React state. Where we previously read
+  // `direction` we now compute paletteDirection(palette) on the fly.
   // Reasoning string from Claude's room-grounded recommendation (#142).
   // Surfaced on the DesignerSummaryCard so the user sees WHY this
   // palette/direction was picked, not just THAT it was.
   const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // §6.11 Phase C (#155) — inheritance source + per-render override.
+  // recommendationSource tells us where the tags that fed the synth
+  // came from (project / user_prefs / override / none). When the user
+  // clicks "Customise for this image", the override modal opens with
+  // appliedTags pre-selected; saving sets overrideTags + re-fires
+  // recommend. overrideTags lives in this component only — never
+  // persisted to users.preferences or any project.
+  const [recommendationSource, setRecommendationSource] = useState<
+    'override' | 'project' | 'user_prefs' | 'none' | null
+  >(null);
+  const [appliedTags, setAppliedTags] = useState<string[]>([]);
+  const [overrideTags, setOverrideTags] = useState<string[] | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
 
   // Hero products are an optional Step 5 — user selects up to 3 specific
   // catalogue items to "feature" so the Flux prompt biases toward them.
@@ -135,15 +183,9 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         if (rec.style_slug) setStyle(rec.style_slug as StyleSlug);
         if (rec.palette_id) {
           setPaletteId(rec.palette_id);
-          // Auto-derive direction from the recommended palette's
-          // timelessness. Trend-forward (< 9) → 2026 carousel
-          // selection. Heritage / classic (>= 9) → Tried & tested.
-          // The user can still clear or swap; this just matches what
-          // the brief synthesiser intended.
-          const recommended = listPalettes().find((p) => p.id === rec.palette_id);
-          if (recommended) {
-            setDirection(recommended.timelessness < 9 ? '2026' : 'timeless');
-          }
+          // #168 — direction is derived from the selected palette,
+          // no separate state to set. The card label and banner
+          // compute paletteDirection() at render time.
         }
         setBriefPreFilled(true);
       })
@@ -179,13 +221,6 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       cancelled = true;
     };
   }, [analysisConfirmed, analysis?.room_type]);
-
-  const isMobile =
-    typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-
-  useEffect(() => {
-    return () => streamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
 
   // Warmup keepalive. Fires on mount (paletteId has a default value)
   // and again whenever the user lands on a different palette. Keeps
@@ -297,15 +332,28 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     }
   }
 
-  async function recommendForRoom(rid: string) {
+  async function recommendForRoom(rid: string, overrideTagsArg?: string[] | null) {
     setRecommending(true);
     try {
       const res = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId: rid, projectId: projectId ?? null }),
+        body: JSON.stringify({
+          roomId: rid,
+          projectId: projectId ?? null,
+          // Only send the field when explicitly overriding — keeps the
+          // server log noise down and avoids ambiguity between "no
+          // override" and "override is an empty array".
+          ...(overrideTagsArg && overrideTagsArg.length > 0
+            ? { overrideTags: overrideTagsArg }
+            : {}),
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as RecommendResponse;
+      // Always capture source + appliedTags so the inheritance banner
+      // can render even when the synth itself failed (none-source).
+      setRecommendationSource(json.source ?? 'none');
+      setAppliedTags(json.appliedTags ?? []);
       if (!res.ok || !json.recommendation) {
         // Silent fallback — the carousels keep their default
         // selection. We don't surface an error because the user can
@@ -315,7 +363,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       const rec = json.recommendation;
       setPaletteId(rec.paletteId);
       if (rec.styleSlug) setStyle(rec.styleSlug as StyleSlug);
-      setDirection(rec.direction);
+      // #168 — direction derived from paletteId; no separate state.
       setRecommendationReasoning(rec.reasoning);
       // Flip the "we have a designer's pick" flag so the summary
       // card shows the recommendation block + commentary even when
@@ -328,59 +376,83 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     }
   }
 
-  async function openCamera() {
-    setError(null);
-    if (isMobile) {
-      cameraInput.current?.click();
+  // Build a human label list for the inheritance banner. We turn the
+  // tag slugs back into their display labels via the same BRIEF_TAG_GROUPS
+  // taxonomy used by the modal so the user sees "Modern organic"
+  // instead of "modern-organic".
+  const TAG_LABEL_BY_SLUG: Record<string, string> = (() => {
+    const map: Record<string, string> = {};
+    for (const group of BRIEF_TAG_GROUPS) {
+      for (const tag of group.tags) map[tag.slug] = tag.label;
+    }
+    return map;
+  })();
+
+  function handleOverrideSave(tags: string[]) {
+    if (!roomId) return;
+    setOverrideTags(tags);
+    void recommendForRoom(roomId, tags);
+  }
+
+  function clearOverride() {
+    if (!roomId) return;
+    setOverrideTags(null);
+    void recommendForRoom(roomId, null);
+  }
+
+  async function openCuration() {
+    if (!roomId || !paletteId) {
+      setError('Confirm the room and palette before browsing picks.');
       return;
     }
+    setError(null);
+    setCurationLoading(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
+      const res = await fetch('/api/render/curate-candidates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roomId, paletteId, styleSlug: style }),
       });
-      streamRef.current = stream;
-      setCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      });
+      const json = (await res.json().catch(() => ({}))) as {
+        categories?: typeof curationCategories;
+        error?: string;
+      };
+      if (!res.ok || !json.categories) {
+        setError(json.error ?? 'Could not load curated picks. Try again.');
+        return;
+      }
+      setCurationCategories(json.categories);
+      setCurationOpen(true);
     } catch (err) {
-      setError(
-        err instanceof Error && err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Allow camera access or upload a photo instead.'
-          : 'Could not open the camera. Try uploading a photo instead.',
-      );
+      setError(err instanceof Error ? err.message : 'Network error.');
+    } finally {
+      setCurationLoading(false);
     }
   }
 
-  function closeCamera() {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    setCameraOpen(false);
+  function togglePick(categoryLabel: string, productId: string) {
+    setPicks((prev) => {
+      const next = new Map(prev);
+      const curr = new Set(next.get(categoryLabel) ?? []);
+      if (curr.has(productId)) {
+        curr.delete(productId);
+      } else if (curr.size < 3) {
+        curr.add(productId);
+      }
+      next.set(categoryLabel, curr);
+      return next;
+    });
   }
 
-  function capturePhoto() {
-    const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const captured = new File([blob], `room-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        void handleFile(captured);
-        closeCamera();
-      },
-      'image/jpeg',
-      0.92,
+  function allCategoriesHavePick(): boolean {
+    if (curationCategories.length === 0) return false;
+    return curationCategories.every(
+      (cat) => (picks.get(cat.displayLabel)?.size ?? 0) >= 1,
     );
+  }
+
+  function getAllPickedIds(): string[] {
+    return [...picks.values()].flatMap((s) => [...s]);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -393,13 +465,25 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       setError('Confirm the room analysis to continue.');
       return;
     }
+    // #179 — when the curation step is open and picks are made,
+    // forward those as featuredProductIds. The render path uses
+    // them as both the heroProducts (for the renderer prompt /
+    // refs) and the picking_list (so the user sees exactly what
+    // they picked, no Florence-2 guesswork). If the curation step
+    // hasn't been opened, fall through to the legacy featuredIds
+    // (currently always []).
+    const pickedIds = curationOpen ? getAllPickedIds() : featuredIds;
+    if (curationOpen && !allCategoriesHavePick()) {
+      setError('Pick at least one product per category before rendering.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch('/api/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId, style, paletteId, featuredProductIds: featuredIds, projectId: projectId ?? undefined }),
+        body: JSON.stringify({ roomId, style, paletteId, featuredProductIds: pickedIds, projectId: projectId ?? undefined }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !json.id) {
@@ -420,23 +504,21 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         file={file}
         preview={preview}
         converting={converting}
-        analysing={analysing}
+        // #169 — overlay spans vision + recommend so the user sees one
+        // continuous "designer is choosing" experience.
+        selecting={analysing || recommending}
         onPick={handleFile}
-        onOpenCamera={openCamera}
         onBrowseFiles={() => fileInput.current?.click()}
       />
+      {/* Single hidden file input. No `capture` attribute so iOS/Android
+          surface the full native sheet (Take Photo + Photo Library +
+          Choose File) rather than forcing the camera. Desktop opens the
+          OS file chooser. The visible affordance in Step1Upload is the
+          tappable surface — this input is just plumbing. */}
       <input
         ref={fileInput}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-        className="sr-only"
-        onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-      />
-      <input
-        ref={cameraInput}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
-        capture="environment"
         className="sr-only"
         onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
       />
@@ -491,8 +573,22 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           analysis={analysis}
           briefPreFilled={briefPreFilled}
           paletteId={paletteId}
-          direction={direction}
           reasoning={recommendationReasoning}
+        />
+      ) : null}
+
+      {/* §6.11 Phase C (#155) — inheritance banner. Shows where the
+          recommendation's taste signal came from (project / user_prefs /
+          override) and offers the "Customise for this image" override.
+          Hidden when there's nothing to say (no recommendation yet, or
+          source is 'none' — the cold-start case we still allow). */}
+      {analysisConfirmed && roomId && recommendationSource && recommendationSource !== 'none' ? (
+        <RecommendationSourceBanner
+          source={recommendationSource}
+          appliedTags={appliedTags}
+          tagLabelBySlug={TAG_LABEL_BY_SLUG}
+          onCustomise={() => setOverrideOpen(true)}
+          onClear={recommendationSource === 'override' ? clearOverride : undefined}
         />
       ) : null}
 
@@ -503,27 +599,19 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           The relative wrapper anchors the overlay to this region
           only — photo overlay above stays in place during Phase 1,
           photo becomes interactive again in Phase 2. */}
+      {/* #169 — the photo overlay (DesignerSelectingOverlay) now
+          handles all "designer is at work" messaging across the
+          analyse + recommend phases. The carousel overlay was
+          redundant and visually noisy; removed. Step3Style mounts
+          underneath; while selecting=true the user can scroll the
+          chips/palette filters but the focus stays on the photo
+          overlay. */}
       {analysing || analysisConfirmed ? (
-        <div className="relative">
-          <Step3Style
-            paletteId={paletteId}
-            onPaletteChange={setPaletteId}
-            direction={direction}
-            onDirectionChange={(next) => {
-              // Mutex behaviour: setting direction='2026' clears any
-              // previous timeless pick (and vice versa). Setting to
-              // null clears either. The paletteId is updated by the
-              // caller via onPaletteChange when a direction card is
-              // tapped — those carousels are palette-backed, so
-              // picking a direction card IS picking that palette.
-              setDirection(next);
-            }}
-            trendPreviews={trendPreviews}
-          />
-          {analysing || recommending ? (
-            <CarouselRecommendingOverlay phase={analysing ? 'analysing' : 'recommending'} />
-          ) : null}
-        </div>
+        <Step3Style
+          paletteId={paletteId}
+          onPaletteChange={setPaletteId}
+          trendPreviews={trendPreviews}
+        />
       ) : null}
 
       {/* Step 5 hero products picker removed in #128. The auto-feature
@@ -548,63 +636,198 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-4">
-        <Button
-          type="submit"
-          variant="cta"
-          size="lg"
-          disabled={!analysisConfirmed || submitting || converting || analysing || recommending}
-        >
-          {submitting ? 'Restyling… (~30s)' : 'Restyle the room'}
-        </Button>
+      {/* #179 — designer-curated picking step. Sits between palette
+          pick and render submit. User picks 1-3 per core category;
+          those products become both the heroProducts for the
+          renderer AND the picking list. Wishlist items are pinned
+          to the front of each row. */}
+      {curationOpen ? (
+        <CurationStep
+          categories={curationCategories}
+          picks={picks}
+          onTogglePick={togglePick}
+        />
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-4">
+        {!curationOpen ? (
+          <Button
+            type="button"
+            variant="cta"
+            size="lg"
+            onClick={openCuration}
+            disabled={
+              !analysisConfirmed || curationLoading || analysing || recommending
+            }
+          >
+            {curationLoading ? 'Loading picks…' : "Browse the designer's edit →"}
+          </Button>
+        ) : (
+          <>
+            <Button
+              type="submit"
+              variant="cta"
+              size="lg"
+              disabled={!allCategoriesHavePick() || submitting}
+            >
+              {submitting
+                ? 'Restyling… (~30s)'
+                : `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setCurationOpen(false)}
+              className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:text-ink"
+            >
+              ← Back to palette
+            </button>
+          </>
+        )}
         <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          Grounded by Claude vision · rendered with Flux + canny
+          Designer-curated · rendered with gpt-image-1 + Flux Kontext
         </p>
       </div>
 
-      {cameraOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/80 p-4">
-          <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-cream">
-            <div className="relative aspect-[4/3] w-full bg-ink">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 p-5">
-              <Button type="button" variant="secondary" onClick={closeCamera}>
-                Cancel
-              </Button>
-              <Button type="button" variant="cta" size="lg" onClick={capturePhoto}>
-                Capture photo
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* §6.11 Phase C (#155) override modal. Renders only when the
+          user clicks "Customise for this image" — saves the chosen
+          tags into local state + re-fires recommendForRoom with them.
+          Saves NEVER touch users.preferences (canonical = dashboard
+          only). */}
+      <PreferencesModal
+        open={overrideOpen}
+        initialTags={overrideTags ?? appliedTags}
+        persistMode="per-render"
+        onClose={() => setOverrideOpen(false)}
+        onSaveOverride={handleOverrideSave}
+      />
     </form>
   );
 }
 
+// §6.11 Phase C (#155) inheritance banner. Surfaces where the
+// recommendation's taste signal came from (project brief / canonical
+// user preferences / per-render override) and offers the override
+// action. Cold-start case (source='none') hides the banner entirely —
+// we don't need to tell the user "we used no preferences"; the
+// existing summary card already explains the recommendation.
+function RecommendationSourceBanner({
+  source,
+  appliedTags,
+  tagLabelBySlug,
+  onCustomise,
+  onClear,
+}: {
+  source: 'override' | 'project' | 'user_prefs';
+  appliedTags: string[];
+  tagLabelBySlug: Record<string, string>;
+  onCustomise: () => void;
+  /** Provided only when source is 'override' — clearing reverts back
+   *  to the inherited prefs/project tags by re-firing /api/recommend
+   *  with no override. */
+  onClear?: () => void;
+}) {
+  const labelByKey: Record<typeof source, { eyebrow: string; explainer: string }> = {
+    override: {
+      eyebrow: 'Customised for this image',
+      explainer:
+        "Using a per-image override — your saved preferences on the dashboard aren't changed.",
+    },
+    user_prefs: {
+      eyebrow: 'Using your preferences',
+      explainer:
+        "Pre-filled from your dashboard preferences. Override below for this image only — your saved preferences won't change.",
+    },
+    project: {
+      eyebrow: 'Using your project brief',
+      explainer:
+        "Pre-filled from the brief you set on this project. Override below for this image only — the project's brief won't change.",
+    },
+  };
+  const { eyebrow, explainer } = labelByKey[source];
+  const chips = appliedTags.slice(0, 6);
+  const overflow = appliedTags.length - chips.length;
+
+  return (
+    <section className="rounded-2xl border border-clay/30 bg-clay/[0.05] p-4 md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">{eyebrow}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
+            {explainer}
+          </p>
+          {chips.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {chips.map((slug) => (
+                <span
+                  key={slug}
+                  className="rounded-pill border border-ink/15 bg-cream px-2.5 py-1 text-[12px] text-ink"
+                >
+                  {tagLabelBySlug[slug] ?? slug}
+                </span>
+              ))}
+              {overflow > 0 ? (
+                <span className="rounded-pill px-2.5 py-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                  +{overflow} more
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-pill border border-ink/15 bg-cream px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
+            >
+              Reset
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCustomise}
+            className="rounded-pill border border-clay/40 bg-clay/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:bg-clay/25"
+          >
+            Customise →
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Step 01 — single tap target. On mobile, tapping the empty tile opens
+// the OS-native file sheet which surfaces "Take Photo", "Photo Library"
+// and "Choose File" together; we don't ship a custom action sheet or a
+// `getUserMedia` viewfinder because the native UI is faster, more
+// accessible, and respects the user's default camera/photos apps. On
+// desktop, the same tile also accepts drag-and-drop. After a file is
+// chosen the tile becomes the preview — re-tapping (or dropping a new
+// file on) the preview replaces it in place.
 function Step1Upload({
   file,
   preview,
   converting,
-  analysing,
+  selecting,
   onPick,
-  onOpenCamera,
   onBrowseFiles,
 }: {
   file: File | null;
   preview: string | null;
   converting: boolean;
-  analysing: boolean;
+  /** True while the designer is at work — covers both /api/analyse-room
+   *  (vision) AND /api/recommend (synthesis). Drives the photo overlay
+   *  end-to-end so the user sees one continuous "designer is choosing"
+   *  experience instead of two disjoint loading states. (#169) */
+  selecting: boolean;
   onPick: (f: File | null) => void;
-  onOpenCamera: () => void;
   onBrowseFiles: () => void;
 }) {
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    onPick(e.dataTransfer.files?.[0] ?? null);
+  }
+
   return (
     <section>
       <Eyebrow>Step 01 · Your room</Eyebrow>
@@ -614,80 +837,93 @@ function Step1Upload({
         HEIC up to 15 MB.
       </p>
 
-      <div className={cn('mt-6 grid gap-6 md:grid-cols-2', file || converting ? '' : 'md:grid-cols-1')}>
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            onPick(e.dataTransfer.files?.[0] ?? null);
-          }}
-          className={cn(
-            'flex min-h-[260px] flex-col items-center justify-center gap-4',
-            'rounded-xl border-2 border-dashed border-ink/15 bg-paper-warm bg-grain p-8 text-center',
-            'transition hover:border-clay/40 hover:bg-paper-warm/80',
-          )}
-        >
-          <p className="font-display text-h4 text-ink">Drop a photo here</p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button type="button" variant="secondary" onClick={onBrowseFiles}>
-              Browse files
-            </Button>
-            <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">or</span>
-            <Button type="button" variant="cta" onClick={onOpenCamera}>
-              Use camera
-            </Button>
-          </div>
-          {file ? (
-            <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-              {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
-            </p>
-          ) : null}
-        </div>
-
+      <div className="mt-6">
         {preview ? (
-          <div className="relative overflow-hidden rounded-xl border border-ink/[0.06] bg-cream">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            className="relative overflow-hidden rounded-2xl border border-ink/[0.06] bg-cream"
+          >
             <Image
               src={preview}
               alt="Your room"
-              width={800}
-              height={600}
-              className="h-full w-full object-cover"
+              width={1600}
+              height={1200}
+              className="block h-auto max-h-[600px] w-full object-contain bg-ink/5"
               unoptimized
             />
-            {/* Analysing overlay — sits ON the photo so the Claude
-                vision call feels like the designer leaning in to
-                inspect the room, rather than a generic "loading"
-                placeholder elsewhere on the page. */}
-            {analysing ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-ink/55 p-6 text-center backdrop-blur-sm">
-                <div className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream/40 bg-cream/10 backdrop-blur">
-                  <span aria-hidden className="animate-pulse text-cream text-[20px]">◎</span>
-                </div>
-                <p className="mt-4 font-display text-h3 leading-tight text-cream md:text-[24px]">
-                  We&rsquo;re waiting for the designer&rsquo;s opinion…
-                </p>
-                <p className="mt-2 max-w-sm font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
-                  Claude is reading the light, the flooring, the architecture and the colour
-                  story of this room — about 8 seconds.
-                </p>
-                <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-cream/20">
-                  <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
-                </div>
-              </div>
+            {/* Designer-selecting overlay — sits ON the photo and stays
+                visible across BOTH the vision pass and the recommend
+                pass so the user sees one continuous "designer is at
+                work" surface rather than two disjoint spinners. The
+                scrolling palette ribbon makes the wait feel like the
+                designer actively browsing options. (#169) */}
+            {selecting ? (
+              <DesignerSelectingOverlay />
+            ) : (
+              <button
+                type="button"
+                onClick={onBrowseFiles}
+                className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-ink/15 bg-cream/95 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft shadow-sm backdrop-blur transition hover:border-clay/40 hover:text-clay"
+              >
+                Replace photo
+              </button>
+            )}
+            {file && !selecting ? (
+              <p className="absolute bottom-3 left-3 inline-flex items-center rounded-pill bg-ink/55 px-3 py-1 font-mono text-meta uppercase tracking-eyebrow text-cream backdrop-blur">
+                {file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB
+              </p>
             ) : null}
           </div>
         ) : converting ? (
-          <div className="grid min-h-[260px] place-items-center rounded-xl border border-ink/[0.06] bg-cream p-8 text-center">
+          <div className="grid min-h-[280px] place-items-center rounded-2xl border border-ink/[0.06] bg-cream p-8 text-center">
             <div>
               <div className="mx-auto h-3 w-40 overflow-hidden rounded-full bg-ink/10">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
               </div>
               <p className="mt-4 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                Converting HEIC → JPEG
+                Preparing photo
               </p>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={onBrowseFiles}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            className={cn(
+              'group flex w-full min-h-[280px] flex-col items-center justify-center gap-4',
+              'rounded-2xl border-2 border-dashed border-ink/15 bg-paper-warm bg-grain p-8 text-center',
+              'transition hover:border-clay/40 hover:bg-paper-warm/80',
+              'focus-visible:border-clay/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay/20',
+            )}
+            aria-label="Add a room photo"
+          >
+            <span className="grid h-16 w-16 place-items-center rounded-full border border-ink/10 bg-cream text-ink-soft transition group-hover:border-clay/40 group-hover:text-clay">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="3.25" />
+              </svg>
+            </span>
+            <div>
+              <p className="font-display text-h4 text-ink">Tap to add a room photo</p>
+              <p className="mt-2 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                Camera or photo library · or drag a file here
+              </p>
+            </div>
+          </button>
+        )}
       </div>
     </section>
   );
@@ -708,19 +944,21 @@ function DesignerSummaryCard({
   analysis,
   briefPreFilled,
   paletteId,
-  direction,
   reasoning,
 }: {
   analysis: RoomAnalysis | null;
   briefPreFilled: boolean;
   paletteId: string;
-  direction: '2026' | 'timeless' | null;
   /** Optional 1-2 sentence "why" from Claude's room-grounded
    *  recommendation. Surfaced under the palette name so the user
    *  sees what drove the pick. */
   reasoning?: string | null;
 }) {
   const palette = listPalettes().find((p) => p.id === paletteId) ?? null;
+  // #168 — direction derived from the palette via the centralised
+  // helper (single source of truth, #167). Was a prop in the
+  // three-carousel era; now a derived value.
+  const direction = paletteDirection(palette);
 
   // Compose the room-read line. We pick the highest-value facts and
   // skip null/unknown values so the line reads tight rather than
@@ -729,10 +967,11 @@ function DesignerSummaryCard({
   if (analysis?.room_type && analysis.room_type !== 'other') {
     roomReadParts.push(analysis.room_type.replace(/_/g, ' '));
   }
-  if (analysis?.light?.direction) {
-    roomReadParts.push(`${analysis.light.direction}-facing`);
-  } else if (analysis?.light?.quality) {
-    roomReadParts.push(analysis.light.quality);
+  // Cardinal direction dropped from vision (#149) — Claude can't infer
+  // compass orientation from a photo, and old cached analyses that
+  // still carry it are ignored here to keep the surface honest.
+  if (analysis?.light?.quality) {
+    roomReadParts.push(`${analysis.light.quality} light`);
   }
   if (analysis?.flooring) roomReadParts.push(analysis.flooring);
 
@@ -760,17 +999,13 @@ function DesignerSummaryCard({
       </p>
 
       {/* Commentary — Claude's punchy "why this direction" reasoning.
-          Sits directly under the room read so the editorial logic
-          reads as one breath: ROOM → WHY → WHAT. When the
-          recommendation hasn't landed yet (Phase 2 still running)
-          we show a placeholder line so the layout doesn't jump. */}
-      <p className="mt-3 font-dmsans text-[14px] leading-relaxed text-ink md:text-[15px]">
-        {reasoning ?? (
-          <span className="text-ink-faint italic">
-            Designer&rsquo;s reasoning is coming together — watch the carousels below.
-          </span>
-        )}
-      </p>
+          ROOM → WHY → WHAT, one breath. The synthesiser prompt now
+          targets ~30 words (#169), but cached project briefs from
+          before that change can still be 2-3 sentences. The clamp
+          + "Read more" pattern handles both gracefully: shows the
+          first ~3 lines on mobile, expands on click, never crowds
+          the real-estate above the carousels. */}
+      <ReasoningBlock reasoning={reasoning ?? null} />
 
       {/* Recommendation block — once the synth has settled. Palette
           name + direction label sit alongside the swatch chip so
@@ -833,33 +1068,110 @@ function capitalise(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
-function AnalysingPlaceholder() {
+// Truncate-with-expand commentary block used by DesignerSummaryCard
+// (#169). Reasoning was previously rendered as an unbounded <p> that
+// took 4-5 lines on mobile for typical Claude output. Synthesiser
+// prompt now targets ~30 words, but cached older briefs from
+// `projects.brief.response` can still be 2-3 sentences. Clamp to 3
+// lines by default + "Read more" toggle handles both cleanly.
+function ReasoningBlock({ reasoning }: { reasoning: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  // Heuristic: short enough that clamping wouldn't truncate → don't
+  // even render the toggle. ~160 chars maps to roughly 3 lines on a
+  // 360px viewport at our type scale.
+  const isLong = (reasoning?.length ?? 0) > 160;
   return (
-    <div className="rounded-xl border border-ink/[0.06] bg-paper-warm bg-grain p-8 text-center">
-      <div className="mx-auto h-3 w-40 overflow-hidden rounded-full bg-ink/10">
-        <div className="h-full w-1/3 animate-pulse rounded-full bg-clay" />
-      </div>
-      <p className="mt-4 font-display text-h4 text-ink">Claude is reading your room…</p>
-      <p className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-        Vision · ~8s
+    <div className="mt-3">
+      <p
+        className={cn(
+          'font-dmsans text-[14px] leading-relaxed text-ink md:text-[15px]',
+          isLong && !expanded ? 'line-clamp-3' : '',
+        )}
+      >
+        {reasoning ?? (
+          <span className="text-ink-faint italic">
+            Designer&rsquo;s reasoning is coming together…
+          </span>
+        )}
       </p>
+      {isLong ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:underline"
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Less ↑' : 'Read more ↓'}
+        </button>
+      ) : null}
     </div>
   );
 }
 
-// CarouselRecommendingOverlay (#143/#144) — sits over the 3
-// carousels across BOTH phases of the photo flow:
-//   phase='analysing'    → vision is still running; the carousels
-//                          are visible as the upcoming decision but
-//                          locked while Claude reads the room
-//   phase='recommending' → vision is done; synthesiser is picking
-//                          a palette + direction
+// DesignerSelectingOverlay (#169) — sits ON the photo while the
+// designer is at work, across both the vision and recommend phases.
+// Scrolling palette ribbon makes the wait feel like the designer is
+// actively browsing options. Replaces the earlier static "Claude is
+// reading the room" placeholder + the separate carousel-area
+// overlay; one continuous loading surface.
 //
-// Same visual treatment across both phases — only the headline copy
-// shifts — so the user sees one continuous "Claude is working"
-// overlay rather than two disjoint spinners. ink/55 + backdrop-blur
-// mirrors the photo overlay above so both surfaces read as one
-// design language.
+// The palette swatch list is duplicated 2x so the marquee animation
+// (defined in globals.css) translateX(-50%) loops seamlessly.
+function DesignerSelectingOverlay() {
+  const palettes = listPalettes();
+  // Double the list for seamless marquee loop. Memoise via
+  // useMemo so the doubled array isn't rebuilt every render.
+  const doubled = [...palettes, ...palettes];
+  return (
+    <div
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center overflow-hidden bg-ink/60 text-center backdrop-blur-sm"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      {/* Scrolling palette ribbon — runs behind the centred text. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 overflow-hidden opacity-90"
+      >
+        <div className="flex w-max gap-3 animate-marquee px-4">
+          {doubled.map((p, i) => {
+            const swatch = paletteSwatch(p);
+            return (
+              <div
+                key={`${p.id}-${i}`}
+                className="shrink-0 grid h-10 w-32 grid-cols-5 overflow-hidden rounded-md border border-cream/30 shadow-md md:h-12 md:w-40"
+              >
+                {swatch.slice(0, 5).map((hex, j) => (
+                  <div key={`${hex}-${j}`} style={{ backgroundColor: hex }} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Centred copy — sits above the marquee with extra contrast. */}
+      <div className="relative z-10 max-w-md px-6">
+        <p className="font-dmmono text-[10px] uppercase tracking-eyebrow text-cream/80 md:text-[11px]">
+          ✦ Designer at work
+        </p>
+        <p className="mt-2 font-display text-[22px] leading-tight text-cream md:text-[26px]">
+          The designer is choosing a direction for you…
+        </p>
+        <p className="mt-2 font-dmsans text-[13px] leading-relaxed text-cream/85 md:text-[14px]">
+          Reading the light, the flooring and the architecture — then choosing the palette that fits your taste signal.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// CarouselRecommendingOverlay — removed from active use 2026-05-23
+// (#169) in favour of the DesignerSelectingOverlay above which
+// covers both phases on the photo itself. The component is kept in
+// the file (dead but exported-less) so a future revert is a quick
+// re-add of the JSX call site rather than a re-implementation.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CarouselRecommendingOverlay({
   phase,
 }: {
@@ -1171,324 +1483,346 @@ interface TrendPreview {
   imageUrl: string;
 }
 
-// --- Step 3 · 3-carousel chooser ---------------------------------------
+// --- Step 3 · Single palette picker with filter chips ----------------
 //
-// Mirrors the dashboard's TrendsSection layout one-for-one so users see
-// the same affordance in both surfaces: pure palette swatches first,
-// then two optional direction carousels (2026 / Tried & tested).
+// 2026-05-23 #168 — replaced the previous 3-carousel design (palette +
+// 2026 trends + tried-and-tested with mutex) with one carousel and
+// three filter chips. Reason: the old structure implied three
+// independent choices when in reality all three carousels were
+// sliced views of the same 56-palette catalogue and picking from
+// the "trend" or "heritage" carousel just overwrote the pick from
+// the main one. UX now matches the data model — one palette
+// choice, filtered three ways. Trend-source provenance and the
+// trend / heritage label live on every card.
 //
-// Hierarchy is deliberate:
-//   ① Colour palettes      — required, sets walls/floors/tones
-//   ② 2026 Design Trends   — optional, sets decorative direction
-//   ③ Tried & tested       — optional, mutex with ②
-//
-// Picking in ② or ③ also updates the selected palette in ① (they're
-// palette-backed — a "2026 Trend" IS one of the 10 trend-forward
-// palettes presented with its trend-card hero image). The mutex
-// between ② and ③ enforces "one direction at most" so the prompt
-// doesn't get pulled in two heritage/contemporary directions.
+// The currently-selected palette is always included in the rendered
+// list, even when it's outside the active filter, so a user never
+// loses their selection by switching filters.
+type PaletteFilter = 'all' | 'trends' | 'timeless';
+
 function Step3Style({
   paletteId,
   onPaletteChange,
-  direction,
-  onDirectionChange,
   trendPreviews,
 }: {
   paletteId: string;
   onPaletteChange: (p: string) => void;
-  direction: '2026' | 'timeless' | null;
-  onDirectionChange: (d: '2026' | 'timeless' | null) => void;
   trendPreviews: Map<string, TrendPreview>;
 }) {
+  const [filter, setFilter] = useState<PaletteFilter>('all');
   const all = listPalettes();
-  const trendForward = all.filter((p) => p.timelessness < 9);
-  const timeless = all.filter((p) => p.timelessness >= 9);
+  const filtered =
+    filter === 'trends'
+      ? all.filter(isTrendForward)
+      : filter === 'timeless'
+        ? all.filter(isTimeless)
+        : all;
+  // Always include the selected palette even when it sits outside the
+  // active filter — switching filters should never make the user's
+  // current pick vanish.
+  const selectedPalette = all.find((p) => p.id === paletteId);
+  const palettes =
+    selectedPalette && !filtered.find((p) => p.id === paletteId)
+      ? [selectedPalette, ...filtered]
+      : filtered;
 
-  return (
-    <>
-      {/* ① Colour palettes — required */}
-      <PaletteCarousel
-        eyebrow="Step 03 · Colour palette"
-        title="Pick the colour direction"
-        intro="The full 16-palette set behind every render. Walls, floors and overall room tone draw from this — required."
-        palettes={all}
-        selectedId={paletteId}
-        onSelect={(pid) => {
-          onPaletteChange(pid);
-          // If the user picks a palette that doesn't belong to the
-          // currently-active direction carousel, clear the direction
-          // — keeps state coherent rather than leaving an orphan
-          // selection in ② or ③.
-          if (direction === '2026' && !trendForward.find((p) => p.id === pid)) {
-            onDirectionChange(null);
-          } else if (direction === 'timeless' && !timeless.find((p) => p.id === pid)) {
-            onDirectionChange(null);
-          }
-        }}
-      />
-
-      {/* ② 2026 Design Trends — optional, mutex with ③ */}
-      <DirectionCarousel
-        eyebrow="Step 04 · 2026 Design Trends (optional)"
-        title="Add a 2026 trend direction"
-        intro="Curated from WGSN, Pantone, Benjamin Moore, Sherwin-Williams, Dulux AU and the year's dominant designer voices. Pick one to seed the decorative direction — or skip."
-        palettes={trendForward}
-        trendPreviews={trendPreviews}
-        selectedPaletteId={direction === '2026' ? paletteId : null}
-        otherDirectionActive={direction === 'timeless'}
-        onSelect={(pid) => {
-          if (pid === null) {
-            onDirectionChange(null);
-          } else {
-            onPaletteChange(pid);
-            onDirectionChange('2026');
-          }
-        }}
-        emptyCopy="Loading trend previews…"
-      />
-
-      {/* ③ Tried & tested directions — optional, mutex with ② */}
-      <DirectionCarousel
-        eyebrow="Step 05 · Tried & tested (optional)"
-        title="Or pick a heritage / classic direction"
-        intro="Heritage, classic and modernist frameworks — durable colour stories grounded in Federation, Hamptons, Mid-Century and modernist principles. Choose this OR a 2026 trend, not both."
-        palettes={timeless}
-        trendPreviews={trendPreviews}
-        selectedPaletteId={direction === 'timeless' ? paletteId : null}
-        otherDirectionActive={direction === '2026'}
-        onSelect={(pid) => {
-          if (pid === null) {
-            onDirectionChange(null);
-          } else {
-            onPaletteChange(pid);
-            onDirectionChange('timeless');
-          }
-        }}
-        emptyCopy="Loading tried-and-tested previews…"
-      />
-    </>
-  );
-}
-
-// Pure colour palette carousel — swatch-led cards, no room hero image.
-// Mirrors the dashboard PaletteCarousel visually but the cards are
-// selectable buttons rather than navigation links.
-function PaletteCarousel({
-  eyebrow,
-  title,
-  intro,
-  palettes,
-  selectedId,
-  onSelect,
-}: {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  palettes: Palette[];
-  selectedId: string;
-  onSelect: (paletteId: string) => void;
-}) {
   return (
     <section>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-2 font-display text-h3 text-ink">{title}</h2>
-      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">{intro}</p>
+      <Eyebrow>Step 03 · Colour palette</Eyebrow>
+      <h2 className="mt-2 font-display text-h3 text-ink">
+        Pick the colour direction
+      </h2>
+      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
+        The full {all.length}-palette catalogue powers every render. Filter to a
+        curated subset — 2026&rsquo;s trend leaders or heritage / classical
+        frameworks — or browse them all. Pick one to set walls, floors, and the
+        overall colour story.
+      </p>
+
+      <div
+        className="mt-5 flex flex-wrap gap-2"
+        role="tablist"
+        aria-label="Palette filters"
+      >
+        <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>
+          All · {all.length}
+        </FilterChip>
+        <FilterChip
+          active={filter === 'trends'}
+          onClick={() => setFilter('trends')}
+        >
+          2026 trends · {all.filter(isTrendForward).length}
+        </FilterChip>
+        <FilterChip
+          active={filter === 'timeless'}
+          onClick={() => setFilter('timeless')}
+        >
+          Tried &amp; tested · {all.filter(isTimeless).length}
+        </FilterChip>
+      </div>
+
       <div className="-mx-2 mt-6 overflow-x-auto pb-3 [scrollbar-width:thin]">
         <ul className="flex snap-x snap-mandatory gap-4 px-2">
-          {palettes.map((p) => {
-            const selected = selectedId === p.id;
-            const swatch = paletteSwatch(p);
-            const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
-            return (
-              <li
-                key={p.id}
-                className="snap-start shrink-0 basis-[240px] md:basis-[280px]"
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelect(p.id)}
-                  aria-pressed={selected}
-                  style={{ background: tintCss }}
-                  className={cn(
-                    'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
-                    selected
-                      ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                      : 'border-ink/[0.06] hover:border-ink/20',
-                  )}
-                >
-                  <div className="grid h-32 grid-cols-5">
-                    {swatch.slice(0, 5).map((hex, i) => (
-                      <div key={`${hex}-${i}`} style={{ backgroundColor: hex }} />
-                    ))}
-                  </div>
-                  <div className="flex flex-1 flex-col gap-2 p-4">
-                    <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                      T {p.timelessness}/10 · {p.persona_fit.slice(0, 2).join(' · ')}
-                    </p>
-                    <p className="font-display text-[18px] leading-tight text-ink">
-                      {p.name}
-                    </p>
-                    <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
-                      {p.vibe}
-                    </p>
-                    {p.trend_source ? (
-                      <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                        {p.trend_source}
-                      </p>
-                    ) : null}
-                    {selected ? (
-                      <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-clay px-3 py-1 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
-                        ✓ Selected
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
+          {palettes.map((p) => (
+            <li
+              key={p.id}
+              className="snap-start shrink-0 basis-[280px] md:basis-[320px]"
+            >
+              <UnifiedPaletteCard
+                palette={p}
+                preview={trendPreviews.get(p.id)}
+                selected={paletteId === p.id}
+                onSelect={() => onPaletteChange(p.id)}
+              />
+            </li>
+          ))}
         </ul>
       </div>
     </section>
   );
 }
 
-// Direction carousel — palette-backed cards with the pre-rendered Flux
-// trend image as the hero. Used for both the 2026 carousel and the
-// Tried & tested carousel; the only difference is the slice of
-// palettes each gets.
-function DirectionCarousel({
-  eyebrow,
-  title,
-  intro,
-  palettes,
-  trendPreviews,
-  selectedPaletteId,
-  otherDirectionActive,
-  onSelect,
-  emptyCopy,
+function FilterChip({
+  active,
+  onClick,
+  children,
 }: {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  palettes: Palette[];
-  trendPreviews: Map<string, TrendPreview>;
-  selectedPaletteId: string | null;
-  otherDirectionActive: boolean;
-  onSelect: (paletteId: string | null) => void;
-  emptyCopy: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'rounded-pill border px-4 py-1.5 font-mono text-meta uppercase tracking-eyebrow transition',
+        active
+          ? 'border-clay bg-clay text-paper'
+          : 'border-ink/15 bg-cream text-ink-soft hover:border-ink/30 hover:text-ink',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Unified palette card — magazine-style. Hero is the pre-rendered
+// trend image when available (preview.imageUrl, generated by the
+// /api/trend-previews job), else falls back to a 5-column swatch
+// strip. Bottom block always carries the trend / heritage label,
+// palette name, vibe, and trend_source provenance line.
+function UnifiedPaletteCard({
+  palette: p,
+  preview,
+  selected,
+  onSelect,
+}: {
+  palette: Palette;
+  preview: TrendPreview | undefined;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const swatch = paletteSwatch(p);
+  const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
+  const isTrend = isTrendForward(p);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      style={{ background: tintCss }}
+      className={cn(
+        'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
+        selected
+          ? 'border-clay shadow-soft ring-1 ring-clay/40'
+          : 'border-ink/[0.06] hover:border-ink/20',
+      )}
+    >
+      {preview?.imageUrl ? (
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-ink/5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview.imageUrl}
+            alt={`${p.name} applied to a ${preview.roomType.replace(/_/g, ' ')}`}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+          {preview && !preview.matchedRoomType ? (
+            <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-paper">
+              {preview.roomType.replace(/_/g, ' ')} sample
+            </span>
+          ) : null}
+          {selected ? (
+            <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
+              ✓ Selected
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="relative grid h-32 grid-cols-5">
+          {swatch.slice(0, 5).map((hex, i) => (
+            <div key={`${hex}-${i}`} style={{ backgroundColor: hex }} />
+          ))}
+          {selected ? (
+            <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
+              ✓ Selected
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <p className="font-mono text-[10px] uppercase tracking-eyebrow text-clay">
+          {isTrend ? '2026 trend' : 'Tried & tested'} · T {p.timelessness}/10
+        </p>
+        <p className="font-display text-[18px] leading-tight text-ink">
+          {p.name}
+        </p>
+        <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
+          {p.vibe}
+        </p>
+        {p.trend_source ? (
+          <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+            {p.trend_source}
+          </p>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+// #179 — designer-curated picking step. Replaces the post-render
+// Florence-2 picking flow with explicit user picks BEFORE the
+// render. Each core category for the room (4 max — sofas, coffee
+// tables, etc.) gets a horizontal row of 6-8 cards. Wishlist items
+// are pinned to the front of each row with a ♥ marker. User picks
+// 1-3 per category; those become both the heroProducts for the
+// renderer AND the picking_list shown after the render.
+function CurationStep({
+  categories,
+  picks,
+  onTogglePick,
+}: {
+  categories: Array<{
+    displayLabel: string;
+    items: Array<{
+      id: string;
+      name: string;
+      retailer: string;
+      category: string;
+      priceAud: number | null;
+      imageUrl: string;
+      isWishlisted: boolean;
+    }>;
+  }>;
+  picks: Map<string, Set<string>>;
+  onTogglePick: (categoryLabel: string, productId: string) => void;
 }) {
   return (
     <section>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Eyebrow>{eyebrow}</Eyebrow>
-          <h2 className="mt-2 font-display text-h3 text-ink">{title}</h2>
-          <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">{intro}</p>
-        </div>
-        {selectedPaletteId ? (
-          <button
-            type="button"
-            onClick={() => onSelect(null)}
-            className="rounded-pill border border-ink/15 px-3 py-1.5 font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:border-ink/30 hover:text-ink"
-          >
-            Clear direction
-          </button>
-        ) : null}
-      </div>
+      <Eyebrow>The designer&rsquo;s edit · pick what you love</Eyebrow>
+      <h2 className="mt-2 font-display text-h3 text-ink">Choose 1–3 per category</h2>
+      <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
+        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Pick what
+        you&rsquo;d actually buy — these are what the render shows. Items you&rsquo;ve
+        liked before are pinned to the front of each row.
+      </p>
 
-      {/* Greyed-out hint when the OTHER direction carousel is active.
-          Cards still scroll but interactions feel "locked" until the
-          user clears that direction, so they understand the mutex. */}
-      {otherDirectionActive ? (
-        <p className="mt-3 rounded-lg border border-ink/[0.06] bg-paper-warm bg-grain px-4 py-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          Another direction is selected. Clear it above to pick from this carousel.
-        </p>
-      ) : null}
+      {categories.map((cat) => {
+        const catPicks = picks.get(cat.displayLabel) ?? new Set();
+        return (
+          <div key={cat.displayLabel} className="mt-8">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h3 className="font-display text-h4 text-ink">{cat.displayLabel}</h3>
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                {catPicks.size} / 3 picked
+                {catPicks.size === 0 ? ' · required' : ''}
+              </p>
+            </div>
 
-      {palettes.length === 0 ? (
-        <p className="mt-6 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          {emptyCopy}
-        </p>
-      ) : (
-        <div className="-mx-2 mt-6 overflow-x-auto pb-3 [scrollbar-width:thin]">
-          <ul className="flex snap-x snap-mandatory gap-4 px-2">
-            {palettes.map((p) => {
-              const selected = selectedPaletteId === p.id;
-              const preview = trendPreviews.get(p.id);
-              const swatch = paletteSwatch(p);
-              const tintCss = `linear-gradient(135deg, ${swatch[0] ?? '#F4EFE6'}1A 0%, ${swatch[2] ?? '#C4956A'}10 100%)`;
-              return (
-                <li
-                  key={p.id}
-                  className="snap-start shrink-0 basis-[280px] md:basis-[320px]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelect(p.id)}
-                    aria-pressed={selected}
-                    disabled={otherDirectionActive}
-                    style={{ background: tintCss }}
-                    className={cn(
-                      'flex h-full w-full flex-col overflow-hidden rounded-2xl border text-left transition',
-                      selected
-                        ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                        : 'border-ink/[0.06] hover:border-ink/20',
-                      otherDirectionActive && !selected
-                        ? 'opacity-40 cursor-not-allowed hover:border-ink/[0.06]'
-                        : '',
-                    )}
-                  >
-                    <div className="relative aspect-[4/3] w-full overflow-hidden bg-ink/5">
-                      {preview?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={preview.imageUrl}
-                          alt={`${p.name} applied to a ${preview.roomType.replace(/_/g, ' ')}`}
-                          className="absolute inset-0 h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 grid place-items-center">
-                          <div className="w-2/3">
-                            <PaletteStrip colors={swatch} className="h-7" />
+            {cat.items.length === 0 ? (
+              <p className="mt-3 font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
+                No catalogue matches in this palette — try another palette.
+              </p>
+            ) : (
+              <div className="-mx-2 mt-3 overflow-x-auto pb-3 [scrollbar-width:thin]">
+                <ul className="flex snap-x snap-mandatory gap-3 px-2">
+                  {cat.items.map((item) => {
+                    const selected = catPicks.has(item.id);
+                    const canPick = selected || catPicks.size < 3;
+                    return (
+                      <li
+                        key={item.id}
+                        className="snap-start shrink-0 basis-[160px] md:basis-[200px]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onTogglePick(cat.displayLabel, item.id)}
+                          disabled={!canPick}
+                          aria-pressed={selected}
+                          className={cn(
+                            'flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-cream text-left transition',
+                            selected
+                              ? 'border-clay shadow-soft ring-1 ring-clay/40'
+                              : canPick
+                                ? 'border-ink/[0.06] hover:border-ink/20'
+                                : 'border-ink/[0.06] opacity-40 cursor-not-allowed',
+                          )}
+                        >
+                          <div className="relative aspect-square w-full bg-paper-warm bg-grain">
+                            <Image
+                              src={item.imageUrl}
+                              alt={item.name}
+                              fill
+                              sizes="(max-width: 768px) 50vw, 200px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                            {item.isWishlisted ? (
+                              <span
+                                aria-label="You liked this before"
+                                className="absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-cream/95 text-clay shadow-sm"
+                              >
+                                ♥
+                              </span>
+                            ) : null}
+                            {selected ? (
+                              <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-clay text-paper font-mono text-meta">
+                                ✓
+                              </span>
+                            ) : null}
                           </div>
-                        </div>
-                      )}
-                      {preview && !preview.matchedRoomType ? (
-                        <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-paper">
-                          {preview.roomType.replace(/_/g, ' ')} sample
-                        </span>
-                      ) : null}
-                      {selected ? (
-                        <span className="absolute right-2 top-2 rounded-full bg-clay px-2 py-0.5 font-mono text-[10px] uppercase tracking-eyebrow text-paper">
-                          ✓ Selected
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-1 flex-col gap-2 p-4">
-                      <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                        T {p.timelessness}/10 · {p.persona_fit.slice(0, 2).join(' · ')}
-                      </p>
-                      <p className="font-display text-[18px] leading-tight text-ink">
-                        {p.name}
-                      </p>
-                      <PaletteStrip colors={swatch} className="mt-1 h-5" />
-                      <p className="line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
-                        {p.vibe}
-                      </p>
-                      {p.trend_source ? (
-                        <p className="mt-auto line-clamp-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                          {p.trend_source}
-                        </p>
-                      ) : null}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+                          <div className="p-3">
+                            <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+                              {item.retailer}
+                            </p>
+                            <p className="mt-1 line-clamp-2 font-dmsans text-[12px] leading-tight text-ink">
+                              {item.name}
+                            </p>
+                            {item.priceAud != null ? (
+                              <p className="mt-1 font-display text-[14px] text-ink">
+                                ${Math.round(item.priceAud).toLocaleString('en-AU')}
+                              </p>
+                            ) : null}
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
+
+// Legacy PaletteCarousel + DirectionCarousel removed 2026-05-23 (#168)
+// — replaced by Step3Style's single UnifiedPaletteCard with filter
+// chips above. Old structure implied three orthogonal choices when
+// all three carousels were filtered views of the same palette list.

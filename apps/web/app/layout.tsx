@@ -4,6 +4,7 @@ import './globals.css';
 import { PostHogProvider } from '@/components/posthog-provider';
 import { PWARegister } from '@/components/pwa-register';
 import { BottomNav } from '@/components/mobile/bottom-nav';
+import { PullToRefresh } from '@/components/shared/pull-to-refresh';
 
 // Editorial brand fonts — Playfair Display (display), DM Sans (body),
 // DM Mono (metadata + caps). The legacy Saltbush font vars
@@ -62,12 +63,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}
     >
       <body className="min-h-screen bg-editorial-cream bg-grain font-dmsans text-editorial-ink antialiased">
-        {/* pb-24 on mobile reserves space for the fixed BottomNav so
-            page content isn't covered. md:pb-0 cancels it on desktop
-            where the BottomNav is hidden. */}
-        <div className="pb-24 md:pb-0">
-          <PostHogProvider>{children}</PostHogProvider>
-        </div>
+        {/* PullToRefresh (#172) wraps the whole tree so the gesture
+            works on every route. Touch-only; desktops skip. The
+            indicator strip is fixed-position above all content. */}
+        <PullToRefresh>
+          {/* pb-24 on mobile reserves space for the fixed BottomNav so
+              page content isn't covered. md:pb-0 cancels it on desktop
+              where the BottomNav is hidden. */}
+          <div className="pb-24 md:pb-0">
+            <PostHogProvider>{children}</PostHogProvider>
+          </div>
+        </PullToRefresh>
         <BottomNav />
         <PWARegister />
       </body>

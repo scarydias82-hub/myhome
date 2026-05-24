@@ -178,10 +178,35 @@ export async function compositeMultipleProducts({
   items: Array<{ productCutoutBuf: Buffer; bbox: PixelBbox }>;
 }): Promise<Buffer> {
   if (items.length === 0) throw new Error('compositeMultipleProducts: no items');
+  // #166-followup + #170 — wrap each per-item buildProductLayers call
+  // so one bad cutout (corrupted buffer, sharp throw, etc.) is skipped
+  // with a warning instead of killing the entire multi-stage batch.
+  // The cutout step in staging.ts is already protected by
+  // Promise.allSettled; this is the second layer of defence at the
+  // composite step.
+  //
+  // Per-item error messages are aggregated into the thrown Error when
+  // every item fails — so the caller (autoStageAfterPickingList)
+  // surfaces real per-item detail in renders.auto_stage_error instead
+  // of the previous generic summary.
   const layers: sharp.OverlayOptions[] = [];
-  for (const item of items) {
-    const itemLayers = await buildProductLayers(item.productCutoutBuf, item.bbox);
-    layers.push(...itemLayers);
+  const failures: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item) continue;
+    try {
+      const itemLayers = await buildProductLayers(item.productCutoutBuf, item.bbox);
+      layers.push(...itemLayers);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      failures.push(`#${i}: ${msg}`);
+      console.warn(`[composite] buildProductLayers failed for item ${i}: ${msg}`);
+    }
+  }
+  if (layers.length === 0) {
+    throw new Error(
+      `compositeMultipleProducts: all ${items.length} items failed — ${failures.join(' || ')}`,
+    );
   }
   return sharp(roomBuf).composite(layers).webp({ quality: 88 }).toBuffer();
 }
@@ -194,7 +219,53 @@ async function buildProductLayers(
   cutoutBuf: Buffer,
   bbox: PixelBbox,
 ): Promise<sharp.OverlayOptions[]> {
-  const cutoutMeta = await sharp(cutoutBuf).metadata();
+  // #170 — capture a buffer fingerprint up front so the catch below
+  // can attach real diagnostic detail (size, magic bytes, sharp
+  // metadata read, current error) when something throws. Sharp errors
+  // alone don't tell us if the input was a JPEG, HTML error page, a
+  // truncated download, or something else — and Vercel function logs
+  // aren't easily accessible from CLI, so we surface the detail
+  // through compositeMultipleProducts → autoStageAfterPickingList →
+  // renders.auto_stage_error.
+  const bufLen = cutoutBuf.length;
+  const magic = cutoutBuf.subarray(0, 8).toString('hex');
+  let cutoutMeta: sharp.Metadata | null = null;
+  try {
+    cutoutMeta = await sharp(cutoutBuf).metadata();
+  } catch (err) {
+    throw new Error(
+      `sharp.metadata() failed on cutout buffer (len=${bufLen} magic=${magic}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return buildProductLayersImpl(cutoutBuf, bbox, cutoutMeta, bufLen, magic);
+}
+
+async function buildProductLayersImpl(
+  cutoutBuf: Buffer,
+  bbox: PixelBbox,
+  initialMeta: sharp.Metadata,
+  bufLen: number,
+  magic: string,
+): Promise<sharp.OverlayOptions[]> {
+  // #171 — ALWAYS normalise the cutout to RGBA in a dedicated sharp
+  // pipeline before any downstream operation, regardless of what
+  // metadata() reports. Sharp's metadata read can claim channels=4
+  // for certain birefnet outputs where the encoded image actually
+  // strips alpha (e.g. PNG encoder collapses fully-opaque alpha for
+  // size). The conditional `if (channels < 4)` from #166 looked
+  // sound on paper but missed those cases — the same
+  // "Cannot extract channel 3 from image with channels 0-2" error
+  // returned on a manual single-product stage. Always-normalise is
+  // belt-and-braces, ~20ms per cutout, eliminates the failure mode.
+  let cutoutMeta = initialMeta;
+  try {
+    cutoutBuf = await sharp(cutoutBuf).ensureAlpha().png().toBuffer();
+    cutoutMeta = await sharp(cutoutBuf).metadata();
+  } catch (err) {
+    throw new Error(
+      `ensureAlpha normalisation failed (len=${bufLen} magic=${magic} format=${initialMeta.format} channels=${initialMeta.channels}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const cw = cutoutMeta.width ?? bbox.w;
   const ch = cutoutMeta.height ?? bbox.h;
   const cutoutAspect = cw / ch;
@@ -215,12 +286,30 @@ async function buildProductLayers(
   // through sharp's composite pipeline. Apply a slight blur to the
   // alpha channel (feathered edges) so the silhouette doesn't read as
   // hard-cropped — a few pixels of softness reads as anti-aliasing.
+  //
+  // .ensureAlpha() (#166) guards against the case where the upstream
+  // cutoutProduct returned an RGB-only buffer — birefnet has been
+  // observed (2026-05-22 render 57bddf98) returning a JPEG without an
+  // alpha channel for certain product images, which made the next
+  // extractChannel('alpha') call throw "Cannot extract channel 3 from
+  // image with channels 0-2" and tank the whole multi-stage batch.
+  // ensureAlpha() adds a fully-opaque alpha channel when one is
+  // missing — the composite then renders the product as a rectangle
+  // (no actual cutout) instead of crashing. Still imperfect for that
+  // one item, but the OTHER three in the batch land successfully.
   const featherRadius = Math.max(1, Math.round(Math.min(drawW, drawH) * 0.003));
   const resized = await sharp(cutoutBuf)
     .resize(drawW, drawH, { fit: 'inside', withoutEnlargement: false })
+    .ensureAlpha()
     .png()
     .toBuffer();
+  // #171 — double-belt ensureAlpha() right before each extractChannel
+  // call. Sharp's PNG encode/decode round-trip can drop the alpha
+  // channel when the alpha is fully opaque (size optimisation). The
+  // upstream normalisation gets us RGBA going in, this guarantees
+  // RGBA at the read boundary too.
   const featheredAlpha = await sharp(resized)
+    .ensureAlpha()
     .extractChannel('alpha')
     .blur(featherRadius)
     .toBuffer();
@@ -245,7 +334,52 @@ async function buildProductLayers(
   const shadowOffsetX = Math.round(shadowRadius * 0.4);
   const shadowOffsetY = Math.round(shadowRadius * 0.7);
 
-  const alpha = await sharp(featheredResized).extractChannel('alpha').toBuffer();
+  // #171 — defensive ensureAlpha at this extractChannel boundary too;
+  // featheredResized came through a PNG encode and can lose alpha in
+  // the same edge case (fully opaque → encoder strips).
+  const alpha = await sharp(featheredResized).ensureAlpha().extractChannel('alpha').toBuffer();
+
+  // #178 — detect "no real alpha" cutouts and SKIP the drop shadow.
+  // When the cutout has no actual transparency (e.g. birefnet
+  // returned the source image as-is, or our ensureAlpha pass added
+  // a fully-opaque alpha layer to a 3-channel JPEG), the shadow code
+  // below blurs an all-255 alpha channel and produces a SOLID BLACK
+  // RECTANGLE the size of the cutout. The composite then renders
+  // that as a literal black box over the scene (see the curtain
+  // staging report on 2026-05-23).
+  //
+  // Detection: sharp.stats() returns per-channel min/max. For a real
+  // RGBA cutout, alpha min should be 0 (transparent pixels around
+  // the product). For a fully-opaque "fake alpha", min == max == 255.
+  // We use min < 250 as the "has real alpha" threshold — small
+  // tolerance for near-opaque cutouts that wouldn't shadow well anyway.
+  let hasRealAlpha = false;
+  try {
+    const stats = await sharp(alpha).stats();
+    const ch0 = stats.channels[0];
+    if (ch0 && typeof ch0.min === 'number' && ch0.min < 250) {
+      hasRealAlpha = true;
+    }
+  } catch {
+    // sharp.stats() rarely fails but defensively: if we can't tell,
+    // assume no shadow — better to render the cutout without a
+    // shadow than to risk the black-box failure mode.
+    hasRealAlpha = false;
+  }
+
+  const productLayer = {
+    input: featheredResized,
+    left: Math.max(0, drawX),
+    top: Math.max(0, drawY),
+  };
+
+  if (!hasRealAlpha) {
+    console.warn(
+      `[composite] cutout has no real transparency (alpha is fully opaque) — skipping drop shadow to avoid the black-box failure mode. The product will render as a rectangle.`,
+    );
+    return [productLayer];
+  }
+
   // Build a solid near-black layer the same size as the cutout, then
   // join the blurred alpha as its alpha channel → that's the shadow.
   const shadowBase = await sharp({
@@ -273,10 +407,6 @@ async function buildProductLayers(
       top: Math.max(0, drawY + shadowOffsetY),
       blend: 'multiply',
     },
-    {
-      input: featheredResized,
-      left: Math.max(0, drawX),
-      top: Math.max(0, drawY),
-    },
+    productLayer,
   ];
 }

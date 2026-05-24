@@ -34,6 +34,39 @@ import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders, resizeForFlux } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
+import sharp from 'sharp';
+import { submitOpenAIImageRender, buildOpenAIImagePrompt } from '@/lib/openai-image';
+import { buildPickingList, type PickingListItem } from '@/lib/matching';
+
+// #173 — light helper for fetching catalogue product images and
+// resizing them to a Kontext-friendly size before uploading to fal
+// storage. JPEG output to keep the upload tiny. Browser headers
+// because some retailer CDNs (Freedom, Coco) 403 on default fetch.
+async function fetchAndResizeProductImage(url: string): Promise<Buffer> {
+  const res = await fetch(url, {
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`product fetch ${res.status} ${url.slice(0, 80)}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return sharp(buf)
+    .rotate()
+    .resize(768, 768, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer();
+}
+
+function slugifyName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+}
 
 export const runtime = 'nodejs';
 // Submit itself is fast (~5-8s) but we now kick off the designer LLM
@@ -183,17 +216,116 @@ export async function POST(request: NextRequest) {
   }
 
   let heroProducts: HeroProductDescriptor[] = [];
+  // #176 — hoisted so the gpt-image-1 path below can use it (was
+  // previously only declared inside the else-if(palette) auto-feature
+  // block and therefore out of scope for the openai branch).
+  const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
   if (body.featuredProductIds && body.featuredProductIds.length > 0) {
-    // Legacy path: user explicitly picked products to feature via the
-    // (now-deprecated) hero-products picker. Kept for backward compat
-    // if any client still sends featuredProductIds; the wizard flow
-    // never does.
-    const ids = body.featuredProductIds.slice(0, 3);
+    // #179 — designer-curated picking step. User picked specific
+    // products before submitting the render. These become BOTH:
+    //   - heroProducts (top 4 → renderer prompt + multi-image refs)
+    //   - picking_list (all picks → exact items shown to the user
+    //     post-render, with synthetic centred bboxes since we no
+    //     longer detect; the user already knows what's in the scene)
+    //
+    // Also auto-saves each pick to user_wishlist (idempotent upsert)
+    // so the feedback loop closes — next render's curation step
+    // pins these to the front.
+    const ids = body.featuredProductIds.slice(0, 12);
+    interface PickedRow {
+      id: string;
+      name: string;
+      category: string;
+      retailer: string;
+      price_aud: number | null;
+      image_url: string | null;
+      product_url: string | null;
+      affiliate_url: string | null;
+    }
     const { data } = await admin
       .from('products')
-      .select('name, category, retailer')
+      .select('id, name, category, retailer, price_aud, image_url, product_url, affiliate_url')
       .in('id', ids);
-    if (data) heroProducts = data as HeroProductDescriptor[];
+    const rows = (data ?? []) as PickedRow[];
+    if (rows.length > 0) {
+      heroProducts = rows.map((p) => ({
+        name: p.name,
+        category: p.category,
+        retailer: p.retailer,
+        imageUrl: p.image_url ?? null,
+      }));
+
+      // Build the picking list from the picks. Synthetic bboxes
+      // distributed across the lower half of the image where most
+      // furniture sits — purely for hotspot positioning, no detection.
+      const pickingListItems = rows.map((p, i) => ({
+        itemLabel: p.category.toLowerCase(),
+        category: p.category,
+        bbox: {
+          x: 0.15 + (i % 3) * 0.28,
+          y: 0.45 + Math.floor(i / 3) * 0.18,
+          w: 0.18,
+          h: 0.14,
+        },
+        matches: [
+          {
+            productId: p.id,
+            name: p.name,
+            retailer: p.retailer,
+            category: p.category,
+            priceAud: p.price_aud,
+            imageUrl: p.image_url ?? '',
+            productUrl: p.product_url ?? '',
+            affiliateUrl: p.affiliate_url,
+            similarity: 1.0,
+          },
+        ],
+      }));
+
+      // Persist picking_list + flip status='ready' immediately. Any
+      // downstream Florence-2 + match flow (status route's after())
+      // will skip the rebuild when it sees picking_list_status is
+      // already 'ready'.
+      const plUpd = await admin
+        .from('renders')
+        .update({
+          picking_list: pickingListItems,
+          picking_list_status: 'ready',
+        })
+        .eq('id', render.id);
+      if (plUpd.error) {
+        console.warn('[render] picking_list pre-set failed:', plUpd.error.message);
+      } else {
+        console.log(
+          `[render] picking_list pre-set from ${rows.length} user picks — Florence-2 will skip`,
+        );
+      }
+
+      // Auto-write each pick to user_wishlist (feedback loop). The
+      // unique constraint is (user_id, product_id); ignoreDuplicates
+      // means existing rows are no-ops, no error.
+      const wlRows = rows.map((p) => ({ user_id: user.id, product_id: p.id }));
+      const wlUpd = await admin
+        .from('user_wishlist')
+        .upsert(wlRows, { onConflict: 'user_id,product_id', ignoreDuplicates: true });
+      if (wlUpd.error) {
+        console.warn('[render] wishlist upsert failed:', wlUpd.error.message);
+      }
+
+      // #180 — also persist hero_products on the render row for the
+      // FeaturedPiecesStrip on /renders/[id]. The else-if(palette)
+      // auto-curation branch already does this (line ~339); the
+      // user-picked branch was missing it. Best-effort.
+      const heroUpd = await admin
+        .from('renders')
+        .update({ hero_products: heroProducts })
+        .eq('id', render.id);
+      if (heroUpd.error) {
+        console.warn(
+          `[render] hero_products persist failed (user-picked path) — migration likely not applied: ${heroUpd.error.message}`,
+        );
+      }
+    }
   } else if (palette) {
     // #129 — Claude-curated default. Reads the brief + room + palette
     // + style + a candidate set and picks 3-5 cohesive products that
@@ -205,10 +337,14 @@ export async function POST(request: NextRequest) {
     // the render isn't project-scoped, or the project has no brief
     // yet, briefResponse is null — Claude still picks from candidates
     // but with no avoid signal.
-    const roomType = (room.analysis as RoomAnalysis | null)?.room_type ?? null;
     const roomFacts = (room.analysis as RoomAnalysis | null) ?? null;
 
-    // Fetch brief (best-effort — falls through to null on any error)
+    // Fetch brief (best-effort — falls through to null on any error).
+    // Tag priority chain mirrors /api/recommend (§6.11 Phase C, #155):
+    //   project brief tags → canonical `users.preferences.tags` → []
+    // Outside-project uploads previously fell through to [] here even
+    // when the user had set canonical preferences — closed by #156 so
+    // the auto-feature path always sees taste signal when one exists.
     let briefResponse: import('@/lib/brief/synthesiser').BriefSynthesis | null = null;
     let briefTags: string[] = [];
     if (verifiedProjectId) {
@@ -222,6 +358,21 @@ export async function POST(request: NextRequest) {
         | null)?.brief;
       briefResponse = brief?.response ?? null;
       briefTags = Array.isArray(brief?.tags) ? brief!.tags! : [];
+    }
+    if (briefTags.length === 0) {
+      // Canonical user prefs fallback. Outside-project uploads, and
+      // projects whose brief.tags happens to be empty, both pick up the
+      // dashboard chip picker's value. Snapshot semantics: this only
+      // READS users.preferences — never writes back.
+      const prefsRes = await admin
+        .from('users')
+        .select('preferences')
+        .eq('id', user.id)
+        .maybeSingle();
+      const prefs = (prefsRes.data as { preferences: { tags?: string[] } | null } | null)?.preferences;
+      if (prefs && Array.isArray(prefs.tags) && prefs.tags.length > 0) {
+        briefTags = prefs.tags;
+      }
     }
 
     // Try the Claude-curated path first. autoFeatureClaude returns []
@@ -249,12 +400,39 @@ export async function POST(request: NextRequest) {
         admin,
         paletteId: palette.id,
         roomType,
+        // #156 — fallback path is now prefs-aware too, so the user's
+        // avoid signals still bite when Claude curation has failed.
+        briefTags,
         limit: 3,
       });
       if (heroProducts.length > 0) {
         console.log(
           `[render] FALLBACK metadata auto-feature ${heroProducts.length} for palette=${palette.id} room=${roomType}: ` +
             heroProducts.map((p) => `${p.retailer}/${p.category}/${p.name}`).join(' · '),
+        );
+      }
+    }
+
+    // #174 — persist hero_products on the render row so the page can
+    // display the pre-selection immediately (no polling race) and the
+    // user can see WHAT went into the render the moment it's queued,
+    // separately from the post-render Florence-2 picking_list. Defensive:
+    // best-effort write — if the column doesn't exist (migration not
+    // applied) the update errors but the render still goes through.
+    if (heroProducts.length > 0) {
+      const heroUpd = await admin
+        .from('renders')
+        .update({ hero_products: heroProducts })
+        .eq('id', render.id);
+      if (heroUpd.error) {
+        console.warn(
+          `[render] hero_products persist failed — migration likely not applied yet: ${heroUpd.error.message}`,
+        );
+      } else {
+        console.log(
+          `[render] hero_products persisted: ${heroProducts
+            .map((p) => `${p.retailer}/${p.category}/${(p.name || '').slice(0, 30)}`)
+            .join(' · ')}`,
         );
       }
     }
@@ -304,6 +482,11 @@ export async function POST(request: NextRequest) {
     // small, fast-fetch URL instead of the larger Supabase-signed one.
     let dims: { width: number; height: number } | undefined;
     let controlImageUrl = signed.data.signedUrl;
+    // #176 — keep the resized room + palette swatch buffers in scope
+    // outside the fal upload blocks so the gpt-image-1 path below can
+    // reuse them without re-fetching from Supabase.
+    let resizedRoomBuf: Buffer | null = null;
+    let paletteSwatchBuf: Buffer | null = null;
     try {
       const dl = await admin.storage.from('rooms').download(room.photo_url);
       if (dl.data) {
@@ -316,6 +499,7 @@ export async function POST(request: NextRequest) {
         }
         const resized = await resizeForFlux(trim.buf);
         dims = { width: resized.width, height: resized.height };
+        resizedRoomBuf = resized.buf;
         console.log(
           `[render] resized for fal: ${resized.width}×${resized.height} (${(resized.buf.length / 1024).toFixed(0)} KB)`,
         );
@@ -338,10 +522,13 @@ export async function POST(request: NextRequest) {
     //   - flux-general:  swatch becomes the IP-Adapter reference IF
     //     FLUX_ENABLE_IP_ADAPTER=1 (legacy flag, off by default after
     //     IP-Adapter tensor-mismatch issues forced the Kontext pivot)
+    //   - openai-image-1 (#176): swatch goes as image[1] to gpt-image-1
+    //     to anchor the palette tones.
     let paletteSwatchUrl: string | null = null;
     if (palette) {
       try {
         const swatchBuf = await generatePaletteSwatch(palette);
+        paletteSwatchBuf = swatchBuf;
         paletteSwatchUrl = await uploadImageBuffer(
           swatchBuf,
           `palette-${palette.id}.png`,
@@ -356,11 +543,166 @@ export async function POST(request: NextRequest) {
     const provider = getActiveProvider();
     console.log(`[render] provider: ${provider}`);
 
+    // #176 — gpt-image-1 path. Synchronous: openai.images.edit returns
+    // the rendered bytes directly (~15-30s), no queue. We save to
+    // Supabase storage inline and update the render row to 'succeeded'
+    // ourselves, then kick off the picking-list build via after() so
+    // the status route's existing polling flow catches the transition.
+    // No fal_request_id involved.
+    if (provider === 'openai-image-1' && palette && resizedRoomBuf) {
+      const productCandidates = heroProducts.filter(
+        (p) => typeof p.imageUrl === 'string' && p.imageUrl.length > 0,
+      );
+      // Fetch up to 4 product reference images. allSettled keeps a
+      // broken URL from killing the whole render.
+      const productBufResults = await Promise.allSettled(
+        productCandidates.slice(0, 4).map((p) => fetchAndResizeProductImage(p.imageUrl as string)),
+      );
+      const productImageBufs: Buffer[] = [];
+      for (const r of productBufResults) {
+        if (r.status === 'fulfilled') productImageBufs.push(r.value);
+        else console.warn('[render-openai] product fetch failed:', r.reason instanceof Error ? r.reason.message : r.reason);
+      }
+      const refs = productCandidates
+        .slice(0, productImageBufs.length)
+        .map((p) => ({ name: p.name, category: p.category, retailer: p.retailer }));
+      const openaiPrompt = buildOpenAIImagePrompt({
+        paletteName: palette.name,
+        paletteVibe: palette.vibe ?? null,
+        styleName: style.name,
+        roomType,
+        productRefs: refs,
+      });
+      console.log(
+        `[render-openai] submitting gpt-image-1: ${productImageBufs.length} product refs · ${roomType ?? '?'} · ${palette.id}`,
+      );
+      try {
+        const result = await submitOpenAIImageRender({
+          prompt: openaiPrompt,
+          roomBuf: resizedRoomBuf,
+          paletteSwatchBuf,
+          productImageBufs,
+          size: '1024x1024',
+          quality: 'medium',
+        });
+        // Save to Supabase storage in the same shape as fal renders
+        // so the rest of the page logic doesn't need to branch.
+        const outKey = `${user.id}/${render.id}.png`;
+        const upload = await admin.storage.from('renders').upload(outKey, result.imageBuf, {
+          contentType: 'image/png',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+        if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
+        // Mark render succeeded. picking_list_status depends on
+        // whether the user already picked products via the #179
+        // curation step: if so, the featuredProductIds branch above
+        // already set picking_list + picking_list_status='ready', and
+        // we must NOT overwrite that back to 'building' (would re-
+        // trigger Florence-2 in the after() and leave the user
+        // staring at an indefinite spinner because Vercel's CLIP
+        // load is broken). For auto-curated renders, 'building' is
+        // correct — picking list gets built in after().
+        const userPicked =
+          body.featuredProductIds != null && body.featuredProductIds.length > 0;
+        await admin
+          .from('renders')
+          .update({
+            status: 'succeeded',
+            output_url: outKey,
+            completed_at: new Date().toISOString(),
+            picking_list_status: userPicked ? 'ready' : 'building',
+          })
+          .eq('id', render.id);
+        console.log(`[render-openai] saved + marked succeeded for ${render.id} (${result.durationMs}ms)`);
+        // Kick off the picking-list build in the same after() pattern
+        // the status route uses for fal renders. The picking list
+        // reads the saved image via a signed URL so we re-sign here.
+        const renderId = render.id;
+        const paletteHexes = palette.colors.map((c) => c.hex);
+        const paletteId = palette.id;
+        const rt = roomType;
+        after(async () => {
+          try {
+            // #179 — skip Florence-2 build when picking_list is
+            // already set (the user-picked flow set it inline).
+            const plCheck = await admin
+              .from('renders')
+              .select('picking_list_status')
+              .eq('id', renderId)
+              .maybeSingle();
+            const currentStatus = (plCheck.data as { picking_list_status: string | null } | null)
+              ?.picking_list_status;
+            if (currentStatus === 'ready') {
+              console.log(
+                `[render-openai:after] picking_list already 'ready' (user picks) — skipping Florence-2`,
+              );
+              return;
+            }
+            const renderSigned = await admin.storage
+              .from('renders')
+              .createSignedUrl(outKey, 600);
+            const renderImageUrl = renderSigned.data?.signedUrl;
+            if (!renderImageUrl) {
+              throw new Error('could not sign rendered image for picking list build');
+            }
+            const matchRes = await buildPickingList({
+              admin,
+              renderImageUrl,
+              paletteHexes,
+              paletteId,
+              roomType: rt ?? undefined,
+            });
+            const items: PickingListItem[] = matchRes.items;
+            await admin
+              .from('renders')
+              .update({
+                picking_list: items,
+                picking_list_status: 'ready',
+              })
+              .eq('id', renderId);
+            console.log(`[render-openai:after] picking list ready for ${renderId} — ${items.length} items`);
+          } catch (err) {
+            console.error(`[render-openai:after] picking list build failed for ${renderId}`, err);
+            await admin
+              .from('renders')
+              .update({ picking_list_status: 'failed' })
+              .eq('id', renderId);
+          }
+        });
+        return NextResponse.json({ id: render.id });
+      } catch (err) {
+        console.error('[render-openai] gpt-image-1 submit failed', err);
+        await admin
+          .from('renders')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            picking_list_status: 'failed',
+          })
+          .eq('id', render.id);
+        const detail = err instanceof Error ? err.message : 'gpt-image-1 render failed';
+        return NextResponse.json({ error: detail }, { status: 500 });
+      }
+    }
+
     let submission: { requestId: string };
     if (provider === 'kontext-multi' && palette && paletteSwatchUrl) {
-      // Kontext path — round 14 broke the 5.0 average ceiling using
-      // [roomPhoto, paletteSwatch] + a prompt that names each image's
-      // role and pipes per-fixture preserve directives from vision.
+      // Kontext path — [roomPhoto, paletteSwatch] + a prompt that
+      // names each image's role and pipes per-fixture preserve
+      // directives from vision.
+      //
+      // #175 — REVERTED the #173 product-image multi-input. Adding
+      // product reference images to image_urls caused Kontext to
+      // compose them as visible layout elements in the output rather
+      // than treat them as visual references. Result: a collage with
+      // the palette swatch panel and product images stitched into
+      // the render. Reverted to the previous [room, palette]-only
+      // signature; product references via Kontext multi need a
+      // different endpoint OR a different model (gpt-image-1) which
+      // we'll evaluate next. HeroProductDescriptor.imageUrl stays in
+      // the type so we can re-light the path quickly if/when we find
+      // the right approach.
       const kontextPrompt = buildKontextPrompt({
         basePrompt: groundedPrompt,
         paletteName: palette.name,

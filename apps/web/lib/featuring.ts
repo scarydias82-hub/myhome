@@ -25,6 +25,7 @@ import { withAnthropicRetry } from '@/lib/anthropic-retry';
 import { labelForSlug } from '@/lib/brief/taxonomy';
 import type { RoomAnalysis } from '@/lib/vision';
 import type { BriefSynthesis } from '@/lib/brief/synthesiser';
+import { rankCandidatesByPrefs, type VisionProfile } from '@/lib/prefs-vision-fit';
 
 // Category labels used by individual scrapers — they don't agree on
 // plural vs singular (Poliform writes "Sofa", Koala writes "Sofas") so
@@ -93,11 +94,17 @@ export async function autoFeatureForPalette({
   admin,
   paletteId,
   roomType,
+  briefTags = [],
   limit = 3,
 }: {
   admin: SupabaseClient;
   paletteId: string;
   roomType: string | null | undefined;
+  /** Optional preference tags — when provided, the candidate pool is
+   *  ranked by user_prefs ↔ vision_profile fit before the per-category
+   *  dedupe, so the fallback path is no longer prefs-blind. Empty array
+   *  preserves the previous behaviour exactly. */
+  briefTags?: string[];
   limit?: number;
 }): Promise<HeroProductDescriptor[]> {
   const cats = categoriesForRoom(roomType);
@@ -108,7 +115,7 @@ export async function autoFeatureForPalette({
   // session-to-session, which makes eval iteration reproducible.
   const { data, error } = await admin
     .from('products')
-    .select('name, category, retailer')
+    .select('name, category, retailer, image_url, vision_profile')
     .contains('palette_tags', [paletteId])
     .in('category', cats)
     .neq('retailer', 'Dulux')
@@ -120,13 +127,40 @@ export async function autoFeatureForPalette({
   }
   if (!data?.length) return [];
 
+  type PaletteRow = {
+    name: string;
+    category: string;
+    retailer: string;
+    image_url: string | null;
+    vision_profile: VisionProfile | null;
+  };
+  let rows = data as PaletteRow[];
+
+  // Prefs ↔ vision_profile re-rank (#156). No-op when briefTags is
+  // empty (preserves the deterministic id-sorted behaviour the eval
+  // pipeline expects when run without a brief).
+  if (briefTags.length > 0) {
+    const { ranked, dropped, topScore } = rankCandidatesByPrefs(rows, briefTags);
+    if (dropped > 0 || topScore !== 0) {
+      console.log(
+        `[featuring] prefs-vision rerank (fallback path): ${rows.length}→${ranked.length} (top score ${topScore})`,
+      );
+    }
+    rows = ranked;
+  }
+
   // One per category for variety.
   const seenCats = new Set<string>();
   const picked: HeroProductDescriptor[] = [];
-  for (const p of data as Array<{ name: string; category: string; retailer: string }>) {
+  for (const p of rows) {
     if (seenCats.has(p.category)) continue;
     seenCats.add(p.category);
-    picked.push({ name: p.name, category: p.category, retailer: p.retailer });
+    picked.push({
+      name: p.name,
+      category: p.category,
+      retailer: p.retailer,
+      imageUrl: p.image_url ?? null,
+    });
     if (picked.length >= limit) break;
   }
   return picked;
@@ -159,6 +193,16 @@ interface CandidateProduct {
   retailer: string;
   price_aud: number | null;
   materials: string[] | null;
+  /** Retailer-CDN image URL — propagated onto HeroProductDescriptor
+   *  so the renderer (#173) can pass it to Kontext as a reference
+   *  image. */
+  image_url: string | null;
+  /** Vision-profile JSON from #145 backfill (Claude Haiku's read of
+   *  the product image). Consumed by the prefs ↔ vision_profile
+   *  re-ranker (#156) before Claude curation. May be null on rows that
+   *  haven't been backfilled yet — those get a zero score and rank
+   *  alongside neutral candidates. */
+  vision_profile: VisionProfile | null;
 }
 
 interface ClaudeCurationOutput {
@@ -231,8 +275,10 @@ function formatRoomFactsForPrompt(facts: RoomAnalysis | null): string {
     const sqm = (d.width * d.depth).toFixed(1);
     parts.push(`- Dimensions: ${d.width}m × ${d.depth}m (~${sqm} sqm)`);
   }
-  if (facts.light?.direction) {
-    parts.push(`- Light: ${facts.light.direction}-facing${facts.light.quality ? ` (${facts.light.quality})` : ''}`);
+  // Cardinal direction dropped from vision (#149) — Claude can't infer
+  // compass orientation from a photo. Surface only the light quality.
+  if (facts.light?.quality) {
+    parts.push(`- Light: ${facts.light.quality}`);
   }
   if (facts.flooring) parts.push(`- Existing flooring: ${facts.flooring}`);
   if (facts.architectural_features?.length) {
@@ -282,7 +328,7 @@ async function fetchCandidatesByCategory(
   // each bucket can fill independently.
   const { data, error } = await admin
     .from('products')
-    .select('id, name, category, retailer, price_aud, materials')
+    .select('id, name, category, retailer, price_aud, materials, image_url, vision_profile')
     .in('category', categories)
     .contains('palette_tags', [paletteId])
     .overlaps('room_tags', roomFilter)
@@ -327,7 +373,29 @@ export async function autoFeatureClaude({
   briefTags: string[];
   limit?: number;
 }): Promise<HeroProductDescriptor[]> {
-  const candidates = await fetchCandidatesByCategory(admin, paletteId, roomType);
+  const rawCandidates = await fetchCandidatesByCategory(admin, paletteId, roomType);
+
+  // Prefs ↔ vision_profile re-rank (#156). Applied per category bucket
+  // so the most-preferred items lead each section in the Claude prompt
+  // (Claude reads top-down) and explicit avoid hits get dropped before
+  // they reach the curation step. No-op when briefTags is empty —
+  // preserves the prior price-desc bucket ordering exactly.
+  const candidates: Record<string, CandidateProduct[]> = {};
+  let totalDropped = 0;
+  let topScoreObserved = 0;
+  for (const [category, bucket] of Object.entries(rawCandidates)) {
+    const { ranked, dropped, topScore } = rankCandidatesByPrefs(bucket, briefTags);
+    candidates[category] = ranked;
+    totalDropped += dropped;
+    if (topScore > topScoreObserved) topScoreObserved = topScore;
+  }
+  if (briefTags.length > 0 && (totalDropped > 0 || topScoreObserved > 0)) {
+    const totalIn = Object.values(rawCandidates).reduce((s, arr) => s + arr.length, 0);
+    const totalOut = Object.values(candidates).reduce((s, arr) => s + arr.length, 0);
+    console.log(
+      `[featuring] prefs-vision rerank: ${totalIn}→${totalOut} candidates (top score ${topScoreObserved}, dropped ${totalDropped}) for ${briefTags.length} pref tags`,
+    );
+  }
   const totalCandidates = Object.values(candidates).reduce((s, arr) => s + arr.length, 0);
   if (totalCandidates < 3) {
     // Not enough candidates to curate meaningfully. Let the fallback
@@ -415,6 +483,7 @@ export async function autoFeatureClaude({
       name: cand.name,
       category: cand.category,
       retailer: cand.retailer,
+      imageUrl: cand.image_url,
     });
   }
 

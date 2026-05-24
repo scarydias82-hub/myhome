@@ -32,6 +32,25 @@ export function roomFactsToArchitecturalPreserves(
   if (!facts) return [];
   const out: string[] = [];
 
+  // Open-plan layouts must come FIRST in the architectural-preserve
+  // block. Kontext gives heavier weight to earlier directives, and
+  // closed-plan rooms dominate its training data — without an
+  // upfront and emphatic "this is not a bounded box", every
+  // subsequent directive ("preserve features", "keep doorways") gets
+  // interpreted through a closed-room lens and a back wall sneaks in
+  // behind the seating. Positive framing ("the X visible in image 1
+  // MUST remain visible") added 2026-05-22 #165 after the previous
+  // negative-only directive ("FORBIDDEN: adding a back wall") was
+  // observed failing on a real render with explicit open_plan_zones.
+  const openPlanZones = (facts as RoomAnalysis & { open_plan_zones?: string[] })
+    .open_plan_zones;
+  const isOpenPlan = !!openPlanZones && openPlanZones.length > 0;
+  if (isOpenPlan) {
+    out.push(
+      `OPEN-PLAN LAYOUT (LOAD-BEARING): image 1 shows a space that flows continuously into other functional zones. The continuation MUST remain visible in the render exactly as in image 1 — specifically: ${openPlanZones!.join('; ')}. KEEP visible: whatever appears at the back / sides of image 1 (kitchen, dining, hallway, mezzanine, void, etc.) including its cabinetry, shelving, furniture and finishes. ABSOLUTELY FORBIDDEN, no exceptions: adding a back wall behind the sofa/seating; adding partitions, dividers or screens between zones; adding windows on the open side; closing off the kitchen, dining, hallway or any visible zone; narrowing or enclosing the room. The far end of the frame in the render MUST be the same scene as in image 1.`,
+    );
+  }
+
   if (facts.flooring) {
     out.push(
       `Floor SURFACE TYPE stays as "${facts.flooring}" (a new rug ON TOP is fine and encouraged). FORBIDDEN: changing the floor itself to timber, parquet, vinyl, tiles.`,
@@ -72,22 +91,18 @@ export function roomFactsToArchitecturalPreserves(
     );
   }
 
-  // Anti-hallucination — Kontext invents rooms behind doors.
-  out.push(
-    `Through any doorway or opening: show ONLY what is visible in image 1 (unfurnished hallway, wall, void). FORBIDDEN: furnished rooms, beds, art, vases behind doors.`,
-  );
-
-  // Open-plan layouts. Without this, Kontext defaults to a bounded
-  // box layout — back wall behind the couch, windows on both sides
-  // of the room — because closed-plan rooms dominate its training
-  // data. Vision flags open-plan zones explicitly; we pipe them
-  // verbatim so Kontext can't reinterpret the space as a single
-  // enclosed room.
-  const openPlanZones = (facts as RoomAnalysis & { open_plan_zones?: string[] })
-    .open_plan_zones;
-  if (openPlanZones && openPlanZones.length > 0) {
+  // Anti-hallucination — Kontext invents rooms behind doors. We SKIP
+  // this directive when open_plan_zones is populated because the
+  // doorway framing ("show only unfurnished hallway, wall, void
+  // beyond doors") explicitly mentions "wall" as a valid outcome,
+  // which a model with a closed-room prior treats as permission to
+  // close off the open-plan continuation behind the sofa. Open-plan
+  // rooms don't have a door behind which "wall, void" makes sense;
+  // the open-plan directive above already covers what should appear
+  // at the back of frame.
+  if (!isOpenPlan) {
     out.push(
-      `OPEN-PLAN LAYOUT — this room is NOT a bounded box. Image 1 shows the space continuing into other zones: ${openPlanZones.join('; ')}. PRESERVE every sight line. ABSOLUTELY FORBIDDEN: adding a back wall behind the sofa/seating, adding partitions or dividers between zones, adding windows where image 1 shows the space continuing into another zone, closing off the kitchen or dining area, narrowing the room to make it feel enclosed. The far end of the visible space MUST remain open and visible exactly as shown in image 1.`,
+      `Through any doorway or opening: show ONLY what is visible in image 1 (unfurnished hallway, wall, void). FORBIDDEN: furnished rooms, beds, art, vases behind doors.`,
     );
   }
 
@@ -182,26 +197,54 @@ export function buildKontextPrompt({
   basePrompt,
   paletteName,
   roomFacts,
+  productRefs,
 }: {
   basePrompt: string;
   paletteName: string;
   roomFacts?: RoomAnalysis | null;
+  /** Heroes for the multi-image Kontext path (#173). Each entry's
+   *  image is appended to image_urls in order; the prompt references
+   *  them by index (image 3, image 4, …) and names what the model
+   *  should pull from each. */
+  productRefs?: Array<{ name: string; category: string; retailer: string }>;
 }): string {
   const preserves = roomFactsToArchitecturalPreserves(roomFacts);
   const transforms = roomFactsToTransformDirectives(roomFacts);
+  const heroes = (productRefs ?? []).slice(0, 4);
 
   const sections: string[] = [
     // Lead with the makeover framing + the swatch-visibility fix.
     `BOLD ROOM RESTYLE: transform the room shown in image 1 using the ${paletteName} palette from image 2.`,
     `Image 1 is the SOURCE ROOM to restyle. Image 2 is a COLOUR REFERENCE swatch — use its stripe colours to inform the palette, but DO NOT include the colour stripes as a visible element in the output. The output must show only the restyled room, no swatch, no bands, no colour reference panels.`,
     ``,
+  ];
+
+  // #173 — Product reference framing. Comes EARLY so Kontext weighs
+  // the product silhouettes / materials when planning the scene.
+  if (heroes.length > 0) {
+    sections.push(`FEATURED FURNITURE — render these specific pieces into the scene:`);
+    heroes.forEach((p, i) => {
+      const imageIndex = 3 + i; // image 1 = room, image 2 = palette
+      sections.push(
+        `- Image ${imageIndex} shows a ${p.category.toLowerCase()} (${p.name} from ${p.retailer}). ` +
+          `Render this exact silhouette, material and finish in the scene at its appropriate spot for a ${p.category.toLowerCase()}. ` +
+          `Match its colour family, fabric/timber/metal finish, and overall form factor — not a generic interpretation.`,
+      );
+    });
+    sections.push(
+      `Critical: the featured pieces should look natural in the room (correct scale, sitting on the actual floor, integrated lighting and shadows from image 1). Do not paste them flat — place them as if they live there.`,
+      ``,
+    );
+  }
+
+  sections.push(
     `PALETTE APPLICATION:`,
     `- Walls take the lighter stripe colours from image 2 as the dominant wall paint`,
     `- Soft furnishings (bedding, cushions, curtains, throws) use a mix of light + mid stripe tones`,
     `- Larger furniture upholstery + statement pieces use the deeper stripe tones`,
     `- The render should feel like a meaningful makeover, not a wall repaint`,
     ``,
-  ];
+  );
 
   if (transforms.length > 0) {
     sections.push(`ACTIVELY TRANSFORM (this is the makeover — be decisive):`);

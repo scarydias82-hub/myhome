@@ -186,11 +186,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   // Brief is shaped as { tags: string[], response: BriefSynthesis | null,
   // updated_at: string } in the projects.brief JSONB column. Defensive
   // shape-check tolerates the old briefs that pre-date the tag flow.
+  // `inherited_from_user_prefs` (#154 §6.11 Phase B) is set at project
+  // create time when the brief was snapshotted from users.preferences;
+  // it gets stripped on the first POST /api/projects/[id]/brief which
+  // replaces the whole brief shape — so the flag naturally tracks
+  // "have they edited this since create?".
   const briefData = (project.brief as
-    | { tags?: string[]; response?: BriefSynthesis | null; updated_at?: string }
+    | {
+        tags?: string[];
+        response?: BriefSynthesis | null;
+        updated_at?: string;
+        inherited_from_user_prefs?: boolean;
+      }
     | null) ?? null;
   const initialBriefTags = Array.isArray(briefData?.tags) ? briefData!.tags! : [];
   const initialBriefResponse = briefData?.response ?? null;
+  const briefInheritedFromUserPrefs = briefData?.inherited_from_user_prefs === true;
   const briefDone = initialBriefResponse !== null;
 
   // Palette + style lookup tables for the brief response card —
@@ -309,6 +320,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             projectId={project.id}
             initialBriefTags={initialBriefTags}
             initialBriefResponse={initialBriefResponse}
+            briefInheritedFromUserPrefs={briefInheritedFromUserPrefs}
             palettes={briefPalettes}
             styles={briefStyles}
             rooms={await Promise.all(

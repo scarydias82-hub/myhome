@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-23 · most recent material commit: `a1b2f9c` (will
+**Last verified:** 2026-05-23 · most recent material commit: `e88af66` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -65,7 +65,7 @@ product, the system, or the business. Cross-reference SHAs with
   (skip per-product detail visits) since sub-$100 stools don't need
   precise dimensions for the picking list. One Playwright page visit
   total = minimal Akamai pressure. Target 30–50 products. Out of
-  the §6.11 backlog the only remaining item is #156 IKEA, which the
+  the §6.13 backlog the only remaining item is #156 IKEA, which the
   owner deferred (aggressive bot defence + lower ROI given Fantastic
   already covers the same budget price band). The catalogue now has
   representation in every tier from ultra-budget to premium.
@@ -89,7 +89,7 @@ product, the system, or the business. Cross-reference SHAs with
   Furniture deferred per owner — gap covered by Adairs / Beacon
   Lighting / Carpet Court for non-sofa mid-tier categories.
 - `2026-05-22` — **#154 Fantastic Furniture scraper shipped (budget
-  tier, first new retailer in the §6.11 rollout).** `apps/scraper/scrapers/fantastic.js`
+  tier, first new retailer in the §6.13 rollout).** `apps/scraper/scrapers/fantastic.js`
   + wired into `index.js`, `package.json` (`pnpm scrape:fantastic`),
   and `retailerSegment.js` ('Fantastic Furniture' → 'budget'). Site is
   SAP Commerce Cloud behind Cloudflare with a 1.9KB SPA shell — needs
@@ -116,16 +116,382 @@ product, the system, or the business. Cross-reference SHAs with
   source of truth — every scraper imports `segmentFor(RETAILER)` and
   writes the tag on each product record; `scripts/ingest.js` passes
   it through into the new `products.market_segment` column (migration
-  `20260522190000_products_market_segment.sql`). Constraint allows
+  `20260522191500_products_market_segment.sql` — renamed from
+  `20260522190000_...` during the 2026-05-23 merge to avoid timestamp
+  collision with main's `20260522190000_users_preferences.sql`).
+  Constraint allows
   NULL for catalogues where the concept doesn't apply (Dulux paint).
   Freedom scraper extended from 3 → 9 canonical categories: kept
   Sofas + Rugs + Mirrors, added Chairs (dining + armchairs), Stools,
   Lamps (table + floor), Wall Lights, Beds, Desks. Per-landing cap
   bumped from 30 → 50 with split caps on multi-URL canonicals so each
-  canonical category lands in the 30–50 range. Sets up §6.11 for the
+  canonical category lands in the 30–50 range. Sets up §6.13 for the
   budget-retailer rollout (Fantastic, Amart, IKEA, Brosa-if-live,
   Kmart accent line — one PR each) and the cross-segment
   similar-products substitution feature.
+- `2026-05-23` — **#166 shipped — fix auto-stage alpha-channel crash
+  + per-item fault tolerance.** First diagnostic-driven fix off the
+  back of #165 observability. Render `57bddf98` came back with
+  `auto_stage_status='failed'` and the error
+  `Cannot extract channel 3 from image with channels 0-2` — a Sharp
+  call expecting an alpha channel on a buffer that birefnet had
+  silently returned RGB-only for one product. The whole 4-item
+  batch crashed at the first bad cutout.
+  Two-part fix:
+  1. `lib/composite.ts` — added `.ensureAlpha()` to the resize chain
+     in `addCutoutToLayers` so the subsequent
+     `extractChannel('alpha')` is guaranteed an alpha channel. The
+     product without a real cutout renders as a rectangle in the
+     composite (still wrong-looking for that one item), but no
+     crash.
+  2. `lib/staging.ts` — switched the cutout step from `Promise.all`
+     to `Promise.allSettled`. One broken cutout (404, birefnet
+     timeout, malformed bytes) now logs `[staging] cutout failed`
+     and is filtered out; the surviving items still composite into
+     the render. Only fails the whole batch if EVERY cutout fails.
+  Next auto-staged render should land. Migration `20260522220000`
+  remains the only manual op needed.
+- `2026-05-23` — **#169 shipped — designer-selecting overlay (scrolling
+  palettes) + shorter reasoning + Read more toggle.** Two related UX
+  changes to the post-photo, pre-render flow on `/rooms/new`:
+  1. **Photo overlay**: replaced the static "Claude is reading your
+     room…" overlay with a `DesignerSelectingOverlay` that sits on the
+     photo across BOTH the vision pass and the recommend pass. A
+     scrolling palette ribbon (CSS `@keyframes marquee` in globals.css,
+     duplicated palette list for seamless loop) runs behind centred
+     copy: "✦ Designer at work — The designer is choosing a direction
+     for you…". Hides only once `analysing && recommending` are both
+     false, i.e. when the `DesignerSummaryCard` has its reasoning to
+     show. Companion cleanup: removed the redundant
+     `CarouselRecommendingOverlay` that used to sit on the carousels
+     in parallel (it duplicated the messaging and added visual
+     noise).
+  2. **Reasoning truncation**: `lib/brief/synthesiser.ts` prompt
+     tightened from "2-3 sentence paragraph" to "ONE punchy sentence,
+     max 30 words". `DesignerSummaryCard` extracts the reasoning into
+     a new `ReasoningBlock` component that line-clamps to 3 lines on
+     mobile by default and shows a "Read more ↓ / Less ↑" toggle when
+     content exceeds ~160 chars (covers cached longer briefs from
+     before this commit). New synthesis output is short enough that
+     the toggle never appears; cached older briefs get the clamp +
+     expand fallback.
+  Net effect: the analyse → recommend phase reads as one continuous
+  designer-at-work surface, and the post-recommend commentary stops
+  eating mobile real estate.
+- `2026-05-23` — **#168 shipped — collapse three palette carousels
+  into one + filter chips.** The Step 03 palette picker on
+  `/rooms/new` had three carousels that implied three independent
+  choices (Colour palette + 2026 trend + Tried & tested with mutex)
+  but were actually all sliced views of the same 56-palette list —
+  picking from carousels ②/③ just overwrote the carousel ① pick.
+  UX lied about the data model. Replaced with one carousel + three
+  filter chips (`All · 56 / 2026 trends · N / Tried & tested · M`)
+  and a single `UnifiedPaletteCard` that shows the trend-preview
+  image as hero when available (falls back to the 5-column swatch
+  strip) plus the trend / heritage label, palette name, vibe, and
+  `trend_source` provenance on every card. The currently-selected
+  palette is always pinned to the front of the visible list even
+  when outside the active filter so switching filters never makes
+  the user's pick disappear. Companion cleanup: removed the standalone
+  `direction` React state (`'2026' | 'timeless' | null`) — it's now
+  derived from the palette via the shared `paletteDirection()` helper
+  (#167) wherever needed (DesignerSummaryCard label, banner copy).
+  Net effect: less state to keep coherent, ~200 lines of duplicated
+  carousel code gone, picker tells the truth about what choice the
+  user is actually making.
+- `2026-05-22` — **#165 shipped — auto-stage observability + open-plan
+  prompt fix.** Two changes from a real production diagnostic on
+  carydias@gmail.com's render (`546d0534`):
+  1. **Open-plan wall hallucination, prompt fix.** Vision correctly
+     captured `open_plan_zones` for the lounge_room render (kitchen +
+     dining visible past the sofa) but Kontext still injected a wall
+     behind the seating. Root cause: the OPEN-PLAN directive in
+     `lib/kontextPrompt.ts` was AFTER the doorway / windows
+     directives, so Kontext gave it lower weight; and the
+     doorway directive's "show ONLY hallway, wall, void" framing
+     gave the model permission to close off the open continuation as
+     a "wall". Fix: moved OPEN-PLAN to position 1 in
+     `roomFactsToArchitecturalPreserves`, rewrote with positive
+     framing ("the kitchen/dining/hallway visible at the back of
+     image 1 MUST remain visible") in addition to the existing
+     FORBIDDEN list, and made the doorway directive
+     conditional on the room being CLOSED-plan (skipped entirely
+     when `open_plan_zones.length > 0`).
+  2. **Auto-stage observability.** Audit confirmed #82's auto-stage
+     hook had not run on any render today (no `multi_staged`
+     revisions and no `staged_images` rows for renders that post-date
+     the #82 deploy). Vercel function logs aren't easily accessible
+     from CLI so the failure mode is invisible. Migration
+     `20260522220000_renders_auto_stage_status.sql` adds two columns
+     to renders: `auto_stage_status text` (null | started |
+     completed | failed | skipped) and `auto_stage_error text`
+     (reason / truncated error message). `lib/auto-stage.ts` now
+     returns a structured `AutoStageResult { outcome, staged,
+     skipped, reason }` and `/api/renders/[id]/status` writes
+     'started' eagerly before the call (so timeouts leave a trace)
+     then the final outcome after. Defensive: if the migration
+     hasn't been applied, the column-write fails gracefully and the
+     picking-list flow is unaffected.
+  Next render will write to these columns; we'll see in the DB
+  whether auto-stage ran and where it failed.
+- `2026-05-22` — **#164 shipped — coerce legacy accounts to set
+  preferences before dismissing the modal.** Audit found 4 of 6
+  closed-beta accounts had `preferences IS NULL` (created before
+  #153 shipped, never onboarded). Their renders were
+  preference-blind: #156 ranker no-op, #163 fallback only hit the
+  wishlist half. "Skip for now" removed from the first-time
+  `PreferencesModal`. Backdrop dismiss + Esc already disabled in
+  first-time mode, so legacy accounts now must pick ≥ 1 tag to
+  proceed. Edit mode (preferences already set) keeps the Cancel
+  button — saved users opening prefs to look aren't trapped.
+  Closed-beta-scoped coercion; comment in modal file flags the
+  decision point for when public signups open.
+- `2026-05-22` — **#163 shipped — never-empty Complete-the-Look
+  carousels.** Post-render shopping carousels (the per-category grids
+  alongside the hotspot picking list) used to filter out categories
+  with zero palette+room+style matches — so heritage palettes (#162)
+  or thin categories like curtains showed gaps. Added a user-signal
+  fallback tier on top of the existing 3-tier filter: products the
+  user has wishlisted in that category, plus catalogue rows ranked by
+  the prefs-vision-fit scorer (#156) against current
+  `users.preferences.tags`. Tiers 1-3 also tightened to drop into the
+  fallback as soon as palette coverage is below `perCategory` (vs
+  half-filling). Empty-category drop at the end of
+  `fetchCompleteTheLook` removed — every category in
+  `ROOM_CATEGORY_MANIFEST[room_type]` is now in the response with a
+  `source: 'palette' | 'mixed' | 'user_signal' | 'empty'` provenance
+  for future UI labelling. Carousels always have a story regardless
+  of palette coverage. Wires: `/renders/[id]/page.tsx` now loads
+  `users.preferences.tags` and passes it + `user.id` to the fetch.
+- `2026-05-22` — **Catalogue coverage audit + #162 memoed: heritage
+  retailer scrapers.** After the morning's vision_profile rebuild
+  (1,391 products rescored against all 56 palettes, palette_tags
+  re-derived in lock-step), an audit confirmed 0 palettes have zero
+  total product coverage but 14 sit under 50 total products — all
+  heritage / period leaning palettes added in `ef147c6` / `ade2461`
+  (victorian-refined, bauhaus-primary, french-provincial, cottage-
+  english, forest-green-classic, etc). 17 of 56 palettes have zero
+  sofas; same heritage cluster. Root cause: the scraper roster is
+  modern / contemporary biased (Globewest, Koala, Freedom, MCM House,
+  Coco Republic). #162 memos the next step — scrape 3-4 heritage-
+  leaning AU retailers (Provincial Home Living, Domayne, Fenton &
+  Fenton, an antique specialist) so the heritage palettes have real
+  catalogue rows to anchor renders. Until then the heritage palettes
+  remain shippable but will render with substitute pieces drawn
+  from neutral / warm-grounded-earth overlap.
+- `2026-05-22` — **#82 shipped — auto-stage every detected item on
+  every render.** Closes the catalog-to-render fidelity gap so users
+  see actual SKU pixels in the rendered scene by default, not Flux's
+  generic interpretation of "boucle sofa". New module
+  `apps/web/lib/auto-stage.ts` hooks into the `after()` block in
+  `/api/renders/[id]/status` right after the picking list flips to
+  'ready'. For every detected non-paint item with a top match that
+  has a `productId` + `imageUrl`, builds a `MultiStageItem` and
+  calls the existing `stageMultipleProducts()` pipeline (background-
+  remove via birefnet → composite → Flux Kontext harmonise). Caps
+  at 4 items, persists as a new `multi_staged` revision so the
+  user sees the staged composite as the canonical view but can
+  revert to base render via the revision strip in one click. Label
+  `+ N products (auto)` differentiates from user-initiated
+  multi-stages. Failures swallowed — base render + picking list
+  still succeed. Kill-switch: `AUTO_STAGE_ALL=false`. Renders now
+  show real product imagery by default, ~20-30s after the picking
+  list lands (progressive enhancement layered on top of the
+  existing pipeline; no breaking changes).
+- `2026-05-22` — **§6.12 memoed: Personalised product universe
+  (per-user curated catalogue) + tasks #158-#161.** Builds on #156:
+  every product now carries `vision_profile` and every user carries
+  `preferences.tags`, both projectable into the same signal space.
+  The intersection IS the user's catalogue — a materialised subset of
+  the 2,500+ row product table that fits their declared taste,
+  computed independently of any room photo. Two surfaces from one
+  derivation: (1) a new dashboard "Your edit" personalised browse
+  view that doesn't need a room upload, (2) smaller candidate pool
+  feeding the render-time matcher → cheaper Sonnet curation, faster
+  renders, more honest "for you" framing. Phased: #158
+  on-the-fly affinity endpoint, #159 dashboard surface, #160
+  materialise + plug into /api/render candidate query, #161
+  cache invalidation + cron freshness. Same commit renumbers the
+  §6.11 planned "Phase D" from #156 to #157 — the integer was
+  reused by the shipped pre-filter PR.
+- `2026-05-22` — **#156 prefs ↔ vision_profile pre-filter shipped.**
+  Closes the architectural gap where `users.preferences.tags` only
+  shaped the *Claude designer's prompt* (recommend + curation) but
+  never narrowed the *candidate product pool*. The fallback metadata
+  path (`autoFeatureForPalette`) was completely prefs-blind, and even
+  the Claude-curated path sent a candidate set ordered by price only
+  — meaning a user who picked "avoid:cool-metals" could still see a
+  chrome floor lamp in the prompt if the palette happened to match.
+  - New module `apps/web/lib/prefs-vision-fit.ts` with a deterministic
+    slug → vision_profile signal map (positives + negatives) built
+    against the exact `BRIEF_TAG_GROUPS` taxonomy and the exact
+    `materials` / `color_family` / `visual_tone` / `quality_tier`
+    enum vocabularies the scraper's `visionProfile.js` writes.
+    Weights: materials direct hit +2, mood→tone +1, colour/tier +1,
+    avoid axis hit −3. Threshold: score < −2 → drop (one unmitigated
+    avoid).
+  - `lib/featuring.ts` — both `autoFeatureClaude` (per-bucket re-rank
+    before the Claude prompt) and `autoFeatureForPalette` (re-rank
+    before the per-category dedupe) now run the new ranker. SQL
+    selects pull `vision_profile` alongside the existing columns. A
+    log line surfaces the dropped / top-score numbers per render so
+    we can verify the filter is biting.
+  - `app/api/render/route.ts` — when no project context exists, the
+    render route now falls back to `users.preferences.tags` for the
+    brief tags (closes the latent #155 gap where outside-project
+    uploads silently shipped with empty briefTags even when the user
+    had set canonical preferences). Snapshot semantics intact —
+    read-only on `users.preferences`.
+  Net: products with explicit avoid-conflict materials/tone/colour
+  get dropped from the candidate pool *before* Claude ever sees them;
+  preferred materials float to the top of each bucket; the no-Claude
+  fallback also respects preferences for the first time. Catalogue
+  rows without a `vision_profile` yet (pre-#145 backfill or new
+  arrivals) score neutral and rank alongside un-preferred candidates
+  — graceful degradation rather than a hard dependency.
+- `2026-05-22` — **#149 step 1 shipped — drop cardinal direction
+  from vision schema.** The c6f8137 hot-fix scrubbed cardinal
+  direction from the render-side prompts but `lib/vision.ts` was
+  still asking Claude for `"direction": "north" | "south" | "east"
+  | "west" | ...` in the analyseRoom schema — and consumers
+  (`lib/featuring.ts`, `lib/brief/synthesiser.ts`,
+  `components/rooms/upload-form.tsx` DesignerSummaryCard) were still
+  printing "south-facing" in matcher prompts, brief prompts, and the
+  user-facing room read. The schema-level fix:
+  - `lib/vision.ts` — `direction` removed from the JSON schema in the
+    system prompt + an explicit LIGHT directive added: "Do NOT
+    estimate cardinal compass direction. You cannot infer compass
+    orientation from a 2D photo without metadata; guessing produced
+    hallucinated windows downstream." TS type keeps `direction?` as
+    optional so cached `rooms.analysis` blobs from before the fix
+    still parse without crashing — new analyses just never return it.
+  - `lib/featuring.ts` + `lib/brief/synthesiser.ts` — `light:` line
+    now surfaces `quality` only, no cardinal segment.
+  - `components/rooms/upload-form.tsx` — DesignerSummaryCard room-read
+    line drops the `direction`-branch entirely; uses `light.quality`
+    only (so cached blobs with stale cardinal data don't surface
+    "south-facing" either).
+  Still deferred on #149: image-space `light.source` ("from left" /
+  "from right" / "from above" / "indirect") and `window_walls: string[]`
+  per the §6.10 plan — both are enhancements, not bug fixes. The
+  band-aid + this schema fix together close the window-hallucination
+  class without needing sensor data; #150/#151 RoomPlan integration
+  remains the long-term direction.
+- `2026-05-22` — **Dashboard preferences nested into HeroGreeting
+  welcome copy.** Replaced the standalone PreferencesSection block
+  (visible dedicated row right under the greeting, intro from #153)
+  with an inline chip row + Edit pill nested at the end of
+  HeroGreeting's welcome copy. First-time users see a "Set up your
+  taste signal →" cognac pill that auto-opens the PreferencesModal;
+  returning users see a "Your taste:" eyebrow + up to 6 chips (with
+  "+N more" overflow) + an "Edit →" pill. The PreferencesModal mount
+  moved into HeroGreeting; the first-time auto-open flow is preserved
+  and snapshot semantics from #153/#154/#155 are unchanged — the
+  modal still PUTs to /api/preferences from the dashboard surface and
+  only that surface. Net effect: dashboard hero stays compact on
+  mobile while surfacing the taste signal at the point of greeting
+  rather than as a separate "system" panel. Files:
+  `components/dashboard/hero-greeting.tsx` (chips + modal),
+  `app/dashboard/page.tsx` (drop PreferencesSection import + mount),
+  `components/dashboard/preferences-modal.tsx` (comment refresh).
+  Dead file deleted: `components/dashboard/sections/preferences-section.tsx`.
+- `2026-05-22` — **Single native-picker upload UI for /rooms/new
+  Step 01.** The room-photo upload affordance went from a two-button
+  "Browse files / Use camera" split + a desktop `getUserMedia`
+  live-viewfinder modal to a single tap target that opens the OS
+  file sheet (Take Photo + Photo Library + Choose File on iOS /
+  Android, Finder on desktop). Dropped the `capture="environment"`
+  second input plus the `videoRef` / `streamRef` / `cameraOpen`
+  bespoke camera UI — the native sheet is faster, more accessible,
+  and respects the user's default camera/photos apps. Drag-and-drop
+  on desktop preserved; preview replaces in-place with a "Replace
+  photo" pill in the corner; HEIC pipeline (`prepareImageForUpload`)
+  + 15 MB cap untouched. Net −56 lines in
+  `components/rooms/upload-form.tsx`. Vision-board upload
+  (`board-image-upload.tsx`) already uses the native-picker pattern
+  via a button trigger; visual parity with the new graphic-tile
+  pattern is a separate decision.
+- `2026-05-22` — **#155 §6.11 Phase C shipped: outside-project uploads
+  inherit user preferences + per-render override.** Closes the
+  cold-start gap that started the whole §6.11 conversation. Three
+  changes:
+  1. `apps/web/app/api/recommend/route.ts` resolves the brief tags
+     fed to `synthesiseBrief()` by strict priority: per-render
+     override (this request body) → project brief (when projectId
+     supplied) → `users.preferences.tags` → []. Returns the chosen
+     `source` ('override' | 'project' | 'user_prefs' | 'none') and
+     the `appliedTags` so the client can render the right banner
+     and pre-populate the override modal.
+  2. `apps/web/components/dashboard/preferences-modal.tsx` gains a
+     `persistMode: 'canonical' | 'per-render'` prop. In per-render
+     mode the modal skips the PUT to /api/preferences and instead
+     hands the tags back via `onSaveOverride(tags)` — the canonical
+     prefs stay untouched. Different header copy + button label
+     reinforce "this is for this image only".
+  3. `apps/web/components/rooms/upload-form.tsx` adds the
+     RecommendationSourceBanner above the carousels — eyebrow
+     ("Using your preferences" / "Using your project brief" /
+     "Customised for this image"), explainer copy, the applied tag
+     chips, and a "Customise →" CTA that opens the modal in
+     per-render mode. When the user is on an override, a "Reset"
+     button reverts back to inherited prefs/project tags by re-firing
+     `/api/recommend` without `overrideTags`.
+  Snapshot semantics strictly enforced: per-render override lives in
+  React state only, never persisted anywhere. The only way to update
+  canonical prefs is the dashboard edit surface (Phase A).
+- `2026-05-22` — **#154 §6.11 Phase B shipped: project wizard inherits
+  user preferences.** New projects now snapshot `users.preferences.tags`
+  into `projects.brief.tags` at create time, with an
+  `inherited_from_user_prefs: true` marker on the brief. The wizard's
+  BriefPicker renders a "Pre-filled from your preferences — adjust if
+  this project is different" banner when that marker is present and
+  the user hasn't yet toggled anything; the banner hides as soon as
+  any chip is touched. Snapshot semantics enforced: subsequent
+  `POST /api/projects/[id]/brief` calls replace the whole brief shape
+  (existing behaviour), so the marker is naturally stripped after the
+  first save. Changes to `users.preferences` on the dashboard never
+  cascade into already-created projects — each project carries its
+  own copy from the moment it's born.
+  Files: `apps/web/app/api/projects/route.ts` (read prefs + snapshot
+  into the insert), `apps/web/app/projects/[id]/page.tsx` (read
+  the flag from `project.brief.inherited_from_user_prefs`),
+  `apps/web/components/projects/project-wizard.tsx` (pass through),
+  `apps/web/components/projects/brief-picker.tsx` (banner + edit-
+  detection). When a project is seeded from a vision board, the
+  user-pref tags overlay on the board's other signals
+  (palette_signal, style_signal, trend_signals, product_anchors)
+  rather than replacing them.
+- `2026-05-22` — **#153 §6.11 Phase A shipped: user preferences
+  storage + onboarding + dashboard editor.** Closes the cold-start
+  gap when users upload a photo outside a project — previously
+  /api/analyse-room had zero user context, so Claude's room
+  recommendation was based on the photo alone. Now there's a
+  canonical user-level taste signal at `users.preferences jsonb`,
+  inherited by project briefs and outside-project uploads via
+  strict snapshot semantics (changes never cascade upward except
+  via explicit edits on the dashboard). Three pieces shipped:
+  1. Migration `20260522190000_users_preferences.sql` — `jsonb`
+     column on `public.users`. Read/write covered by existing RLS.
+  2. API `GET/PUT /api/preferences` — only the authenticated user
+     can read/write their own row. Body is `{ tags: string[] }`;
+     server de-dups, sorts, stamps `updated_at`.
+  3. UI:
+     - `PreferencesModal` (`components/dashboard/preferences-modal.tsx`)
+       — chip-picker over `BRIEF_TAG_GROUPS` (same taxonomy as the
+       project wizard, so vocab stays consistent). Two modes: first-
+       time (forced-open, no backdrop dismiss, "Skip for now"
+       allowed) and edit (standard modal UX).
+     - `PreferencesSection`
+       (`components/dashboard/sections/preferences-section.tsx`) —
+       dashboard surface. Option A placement: visible dedicated row
+       right below `HeroGreeting`, above featured products. Shows
+       current chips with "Edit →"; auto-opens the modal on first
+       visit when `preferences IS NULL`.
+     - `dashboard/page.tsx` extends the existing `profile` query to
+       pull preferences (no extra round-trip) and renders the section.
+  Inheritance into project briefs (#154 Phase B) and outside-project
+  uploads (#155 Phase C) is the next two phases — wiring exists, the
+  reads just haven't moved over yet. Foundation only in this PR.
 - `2026-05-22` — **#148 vision-grounded tag re-derivation shipped
   (catalogue intelligence Phase 4).** Now that vision_profile coverage
   hit 99.1% on imageable rows (1,387 of 1,400), the §6.9 sequencing
@@ -1457,7 +1823,7 @@ making sure each user has a great first render — concierge-style if needed.
 
 | Table              | Owns                                                                 |
 |--------------------|----------------------------------------------------------------------|
-| `users`            | Mirrors `auth.users` via trigger. Profile fields go here.            |
+| `users`            | Mirrors `auth.users` via trigger. Profile fields (`first_name`) + canonical taste signal (`preferences jsonb` — `{ tags: string[], updated_at }`, see §6.11). |
 | `projects`         | Top-level grouping. Status: `in_progress` → `in_review` → `completed`. |
 | `rooms`            | Uploaded room photos + `analysis` JSONB (Claude's room read).        |
 | `style_profiles`   | Descriptor + palette + materials + mood (per render, per board).     |
@@ -1640,6 +2006,52 @@ task IDs; reference them when briefing Claude Code.
   first-class render layer + Bunnings affiliate revenue.
 - **#64 — Freedom Furniture scraper.** Mass-market complement to the
   luxury catalogue.
+- **#162 — Heritage / period / colonial AU retailer scrapers.** Surfaced
+  by the 2026-05-22 vision_profile rebuild + audit: after rescoring
+  all 1,391 imageable products against the full 56-palette set, the
+  Layer 2/3 heritage palettes added on 2026-05-20 came back with weak
+  catalogue coverage. Current low-coverage palettes (all heritage /
+  period leaning):
+  - victorian-refined (3 total products, 0 sofas)
+  - bauhaus-primary (5 total, 0 sofas)
+  - french-provincial (6 total, 0 sofas)
+  - cottage-english (6 total, 0 sofas)
+  - forest-green-classic (7 total, 0 sofas)
+  - smoky-lavender (9 total, 0 sofas)
+  - aegean-blue-white (12 total, 0 sofas)
+  - hamptons-heritage (0 sofas — modern variant exists but classic
+    Hamptons not represented)
+  - australian-federation (0 sofas)
+  - english-country (0 sofas)
+  - art-deco-jewel (28 total, 0 sofas)
+  - sage-and-terracotta (29 total, 0 sofas)
+  Root cause: the current scraper roster is biased modern /
+  contemporary (Globewest, Koala, Freedom, MCM House, Coco Republic,
+  GlobeWest, Beacon Lighting, etc.) — they sell beautiful modern
+  pieces but their catalogues don't include period-correct upholstery,
+  classical mouldings, federation-era timber pieces, or colonial-
+  detail joinery. A user picking `victorian-refined` and uploading a
+  living room cannot get a render that anchors on real AU products
+  because we don't stock the catalogue rows.
+  Target retailers to scrape (3-4 chosen for first pass):
+  - **Provincial Home Living** — french provincial, english country,
+    cottage. Direct match for ~4 of the under-covered palettes.
+  - **Domayne** — partial heritage (Hamptons-leaning, traditional
+    upholstery, classic timber). Already a brand AU users recognise.
+  - **Fenton & Fenton** — eclectic / boho / heritage-with-colour. Hits
+    art-deco-jewel + soft-lilac + sunset-ochre tonally.
+  - **The Heritage Furniture Co. / Curio & Curio / Antique Outlet
+    AU** — antique / restoration / period. One specialist source for
+    federation + colonial pieces. Pick whichever has the most
+    consistent product image quality + URL stability for scraping.
+  After scrape: re-run `pnpm --filter @myhome/scraper run vision-profile`
+  (incremental — only new rows) + `redrive-tags`. Re-run the coverage
+  audit to confirm sofa-per-palette counts move into the workable
+  range (≥ 5 sofas) for the targeted heritage palettes.
+  Alternative path if scraping these retailers fails on TOS / image
+  quality / SKU instability: revisit "cull under-covered palettes
+  from the picker" (the option not taken on 2026-05-22). Memo
+  rationale stays in this section either way.
 
 ### 6.2 Design Studio mode
 - **#66 — Account type: Individual vs Studio.** Splits the sign-up form
@@ -1714,10 +2126,44 @@ Stage 1 is live; the rest is sequenced.
 - **#81 — Stage 3c: The Rug Establishment + Choices Flooring.** Rugs
   + hard flooring. Sandstone-2026 palette especially calls for oak +
   herringbone + travertine.
-- **#82 — Stage 4: "Visualise this whole room" + emotional UX.**
-  After the picking list lands, auto-stage the top match for every
-  detected item into one composite Flux Pro Fill call. This is the
-  emotional commitment moment.
+- **#163 — Stage 4b: never-empty Complete-the-Look carousels.
+  SHIPPED 2026-05-22.** `fetchCompleteTheLook` in
+  `lib/completeTheLook.ts` had 3 tiers (palette+room+style →
+  palette+room → category+room) and dropped empty categories at the
+  end — so heritage palettes with thin catalogue coverage (#162) or
+  obscure categories (curtains pre-Spotlight scrape) showed nothing
+  for those rows. Added tier 4: user-signal fallback. Combines (a)
+  the user's wishlist intersected with the category — strongest
+  personal signal — and (b) catalogue rows scored by the
+  prefs-vision-fit ranker (#156) against the user's current
+  `users.preferences.tags`. Tiers 1-3 hold a stricter ≥ perCategory
+  threshold so any thin palette result drops to the supplement
+  rather than half-filling the row. Empty-category drop at the end
+  removed — every category in `ROOM_CATEGORY_MANIFEST[room_type]`
+  now appears in the response, with a `source: 'palette' | 'mixed' |
+  'user_signal' | 'empty'` provenance so the UI can label fallback
+  origin if desired. Wishlist loaded once per render via a single
+  foreign-table embed query; prefs ranker re-uses the deterministic
+  scorer from #156. Carousels now always have a story to tell, even
+  when the palette is thin.
+- **#82 — Stage 4: "Visualise this whole room" + emotional UX.
+  SHIPPED 2026-05-22.** New module `lib/auto-stage.ts` hooks into
+  the `after()` block in `/api/renders/[id]/status` right after the
+  picking list flips to 'ready'. For every detected non-paint item
+  with a top match that has a `productId` + `imageUrl`, build a
+  `MultiStageItem` and call the existing
+  `stageMultipleProducts()` pipeline (background-remove via
+  birefnet → composite → harmonise via Flux Kontext). Cap at
+  4 items (matches the manual `/api/stage-multi` MAX_ITEMS so
+  composite cost stays bounded). Persist as a new `multi_staged`
+  revision and flip `renders.active_revision_id` so the user sees
+  the staged composite by default. Label `+ N products (auto)`
+  distinguishes auto-stages from user-initiated multi-stages in
+  the revision strip so reverting is one click. Failures are
+  logged + swallowed — base render + picking list still succeed.
+  Kill-switch: `AUTO_STAGE_ALL=false` env var. Closes the
+  catalog-to-render fidelity gap (#73 SHIPPED the manual path; #82
+  makes real SKU pixels the default surface).
 - (Stage 5 = warm-lead retailer plumbing — covered by existing
   pending tasks #52 + #53.)
 
@@ -1895,18 +2341,24 @@ already shipped is the right hook for whichever option wins.
 
 **Phased plan**
 
-- **#149 — vision.ts schema cleanup (no sensor required).** Drop the
-  `light.direction` cardinal enum from the analyseRoom schema. Replace
-  with image-space `light.source` ("from left" | "from right" |
-  "from above" | "from behind" | "indirect" | null) — what Claude
-  CAN actually see — plus an explicit `light.window_walls: string[]`
-  field describing which walls show windows ("left wall, large picture
-  window"; "back wall, two small awnings"). Update consumers in
-  `lib/styles.ts`, `lib/brief/synthesiser.ts`, `lib/featuring.ts`.
-  Invalidate cached `rooms.analysis` so the old shape doesn't linger
-  (re-runs are cheap — Haiku call per room). Pre-requisite for sensor
-  fusion: the schema needs to express the same facts on both sides
-  before reconciliation makes sense.
+- **#149 — vision.ts schema cleanup (no sensor required).**
+  - **Step 1 — SHIPPED 2026-05-22.** `light.direction` cardinal enum
+    dropped from the analyseRoom schema + system prompt. Consumers
+    in `lib/featuring.ts`, `lib/brief/synthesiser.ts`, and the
+    DesignerSummaryCard in `components/rooms/upload-form.tsx`
+    switched to `light.quality` only. TS type keeps `direction?`
+    optional so cached `rooms.analysis` blobs still parse without
+    crashing — new analyses won't return the field. `lib/styles.ts`
+    + `lib/kontextPrompt.ts` were already scrubbed by c6f8137.
+  - **Step 2 — TODO.** Replace with image-space `light.source`
+    ("from left" | "from right" | "from above" | "from behind" |
+    "indirect" | null) — what Claude CAN actually see from a 2D
+    photo.
+  - **Step 3 — TODO.** Add explicit `light.window_walls: string[]`
+    field describing which walls show windows ("left wall, large
+    picture window"; "back wall, two small awnings"). Pre-requisite
+    for sensor fusion: the schema needs to express the same facts
+    on both sides before reconciliation makes sense.
 
 - **#150 — Native iOS companion or Capacitor wrapper with RoomPlan.**
   Either path produces a USDZ/JSON room model from a 30-60s
@@ -1952,7 +2404,253 @@ already shipped is the right hook for whichever option wins.
   stays visible while we're prioritising the catalogue-intelligence
   work (§6.9).
 
-### 6.11 Market segment + cross-segment substitution
+### 6.11 User preferences (canonical brief)
+
+Closes the cold-start gap when users upload a photo outside a project.
+Today the project wizard captures a brief at project-creation time;
+outside-project uploads (/rooms/new, /api/analyse-room) have zero user
+context, so Claude's recommendation is based on the photo alone.
+
+**Three-layer model with snapshot semantics**
+
+```
+User Preferences      ← canonical, edited only on the dashboard
+       │
+       │ snapshotted on project create
+       ▼
+Project Brief         ← project-scoped, override cascades to all renders in project
+       │
+       │ snapshotted per render
+       ▼
+Per-render override   ← image-scoped, never persists back upward
+```
+
+Strict snapshot down the chain — changes to layer N don't affect
+already-snapshotted layers above. The ONLY way preferences propagate
+upward is by editing them on the dashboard. Explicit user action, never
+a side-effect of overriding a project or render.
+
+**Dashboard placement (Option A confirmed):** dedicated section between
+`HeroGreeting` and `FeaturedProductsSection`. Visible row, hard to miss,
+reinforces "your taste is the foundation of every render".
+
+**Phasing**
+
+- **#153 — Phase A: storage + onboarding + dashboard editor.**
+  *Shipped.* Migration `20260522190000_users_preferences.sql` adds the
+  `users.preferences jsonb` column. `GET/PUT /api/preferences` are the
+  only canonical-write paths. `PreferencesModal` is shared between
+  onboarding (first-time, forced-open, "Skip for now" allowed) and
+  edit (standard modal). `PreferencesSection` lives on the dashboard
+  right below `HeroGreeting` — auto-opens the modal on first visit
+  when `preferences IS NULL`. Vocabulary reuses the existing
+  `BRIEF_TAG_GROUPS` so user-level prefs and project briefs speak the
+  same chip language.
+
+- **#154 — Phase B: project wizard inherits + visible "inherited"
+  indicator.** *Shipped.* `POST /api/projects` reads
+  `users.preferences.tags` and snapshots them into `projects.brief.tags`
+  with `inherited_from_user_prefs: true`. BriefPicker shows the
+  "Pre-filled from your preferences" banner when that marker is
+  present and the user hasn't toggled anything; the banner hides on
+  first chip toggle, the marker gets stripped on first save (existing
+  POST behaviour replaces the whole brief shape). Vision-board seeds
+  carry the user-pref tags overlaid on the board's other signals
+  (palette_signal, style_signal, etc.) rather than replacing them.
+
+- **#155 — Phase C: outside-project upload inherits + per-render
+  override.** *Shipped.* `/api/recommend` resolves brief tags by
+  strict priority — override → project → user_prefs → [] — and
+  returns the source + appliedTags. UploadForm renders a
+  RecommendationSourceBanner above the carousels with the chosen
+  source's chips + a "Customise →" CTA that opens PreferencesModal
+  in `persistMode='per-render'` (no PUT to canonical prefs; tags
+  hand back via `onSaveOverride`). "Reset" on override reverts to
+  inherited tags by re-firing recommend without overrideTags. The
+  per-render override lives in React state only — never persisted.
+
+- **#164 — Phase E: closed-beta coercion of legacy accounts.
+  SHIPPED 2026-05-22.** Audit on 2026-05-22 confirmed 4 of 6
+  closed-beta accounts had `preferences IS NULL` — pre-existing
+  users who never had the chance to onboard because #153 shipped
+  after their signup. Their renders were preference-blind: #156
+  ranker no-op (empty briefTags), #163 carousel fallback hit only
+  the wishlist half. To make today's preference-aware paths
+  actually fire for them, the "Skip for now" affordance on the
+  first-time `PreferencesModal` was removed. With closed-beta
+  locked, the only users hitting `isFirstTime=true` are these
+  legacy accounts; they now MUST pick at least one tag before
+  dismissing. Backdrop dismiss + Esc were already disabled in
+  first-time mode. Edit mode (saved users) keeps the Cancel button
+  so users opening their prefs to look but not change are not
+  trapped. When public signups open, revisit whether the no-skip
+  behaviour stays or becomes a softer "Remind me later" — comment
+  in `components/dashboard/preferences-modal.tsx` flags the
+  decision point.
+- **#157 — Phase D: edge cases + telemetry.** Closed-beta users with
+  no `preferences` yet trigger the onboarding modal next login.
+  Existing projects with existing briefs are untouched. Log frequency
+  of per-render overrides so we can see whether the default
+  inheritance is working or users are constantly overriding (signal
+  that the canonical prefs need a richer schema). Estimated: ~0.5
+  day. (Note: ID renumbered from the original #156 reservation —
+  the integer was reused by the shipped prefs ↔ vision_profile
+  pre-filter PR. §6.12 picks up the sequence from #158.)
+
+**Cross-references**
+- The deferred memory note on "minimal signup, onboarding wizard,
+  snapshot prefs onto rooms.analysis and inject into vision +
+  designer prompts" is this work — #153 is the first concrete piece.
+- The §6.10 sensor fusion path will eventually post scan + photo +
+  preferences as a single payload — preferences becomes a stable
+  identity layer across both vision-only and sensor-fused uploads.
+- The brief synthesiser (`lib/brief/synthesiser.ts`) consumes tags
+  today; once #155 lands it gets the same shape from outside-project
+  uploads too. No prompt change.
+
+### 6.12 Personalised product universe (per-user curated catalogue)
+
+After #156 every product carries a `vision_profile` (Claude Haiku's read
+of materials / colour / tone / quality_tier / palette_fit / room_fit)
+and every user carries `preferences.tags` from §6.11. Both vocabularies
+project into the same signal space via the deterministic map in
+`lib/prefs-vision-fit.ts`. The **intersection** of those two sides IS
+the user's catalogue — a materialised subset of the 2,500+ row product
+table that fits their declared taste, computed independently of any
+room photo.
+
+Today the prefs ↔ vision_profile signal only fires *at render time*,
+between SQL fetch and Claude curation (#156). The architectural shift
+this section memos: do the narrowing *once per user* and use it for
+**two** distinct surfaces.
+
+**Two surfaces, one derivation**
+
+```
+User sets preferences           Catalogue grows / changes
+       │                                   │
+       ▼                                   ▼
+  preferences.tags             vision_profile per product
+       │                                   │
+       └─────────────┬─────────────────────┘
+                     │
+        user_product_affinity (materialised)
+                     │
+         ┌───────────┴───────────┐
+         ▼                       ▼
+  Dashboard "Your edit"   /api/render candidate pool
+   browse surface          ── intersected with this subset
+                              BEFORE palette+room SQL fires
+```
+
+**What it unlocks**
+
+1. **A new product surface — `Your edit` on the dashboard.** A
+   personalised browse view that doesn't require a room photo. "Your
+   600 matched products" is a meaningful engagement / shopping surface
+   the current architecture can't deliver. It also gives the user a
+   tangible payoff for setting preferences, which today are invisible
+   except as a downstream prompt input.
+2. **Faster, cheaper renders for prefs-set users.** Intersecting the
+   palette+room query with the user's affinity set typically takes the
+   candidate pool from ~100 down to ~20-40 before Claude Sonnet
+   curation runs. That's a smaller prompt (cheaper, faster) and a
+   stricter "for you" guarantee. The fallback metadata path also
+   benefits — it picks from a pre-narrowed pool that already respects
+   the user's avoid list.
+3. **An honest "for you" story.** "We've narrowed the catalogue to
+   what fits your taste" reads stronger than "we picked some
+   palette-matched things and asked Claude to be careful." Same data,
+   applied earlier, with a real new surface.
+
+**Phasing**
+
+- **#158 — Phase A: on-the-fly affinity endpoint.** Build
+  `lib/user-affinity.ts` extending the deterministic scorer from
+  `lib/prefs-vision-fit.ts` so it can rank the *whole* catalogue (not
+  just a palette-filtered slice) against a user's preference tags.
+  Add `GET /api/user-catalogue` returning the matched list with
+  scores, sorted desc, paginated. No materialisation yet — computed
+  on request (vision_profile is already in-DB so the query is fast
+  enough). Acceptance: endpoint returns < 500 ms for a typical user,
+  the score distribution looks sensible (most users land in the
+  600-900 range; abstract-preferences users in the 200-400 range).
+
+- **#159 — Phase B: surface in the UI.** Dashboard "Your edit"
+  section — top N products grouped by palette or category, image-led
+  cards matching the existing FeaturedProductsSection treatment.
+  Empty state for users without preferences directs them to the
+  onboarding modal. Decide between an inline dashboard block, a new
+  `/catalogue?for=me` route, or both. Acceptance: at least one
+  surface is live, visibly useful, and updates within a request of a
+  preferences edit.
+
+- **#160 — Phase C: materialise + plug into the render pipeline.**
+  New table `user_product_affinity (user_id uuid, product_id uuid,
+  score smallint, computed_at timestamptz)` with a composite primary
+  key + an index on `(user_id, score DESC)`. Recompute triggers:
+  `PUT /api/preferences` (synchronous, small — one user's row set),
+  scraper's `visionProfile.js` write (async, batched — only affected
+  users). `/api/render` joins the palette+room SQL against the
+  materialised set when the user has a row, falls back to the full
+  catalogue otherwise (preserves current behaviour for cold-start
+  users). Acceptance: matcher SQL ~3-5× fewer candidates for
+  prefs-set users; no regression for cold-start users.
+
+- **#161 — Phase D: freshness + observability.** Cron job: nightly
+  recompute for users whose preferences were edited that day (covers
+  any missed triggers). Bulk recompute when `palettes.json` or the
+  vision_profile schema versions. Telemetry: log how often a user's
+  affinity subset fails to fill a render's category buckets (signal
+  that we're over-narrowing). Add a dashboard health line showing
+  catalogue freshness per user.
+
+**Open design questions (resolve at #158)**
+
+- **Score visibility.** Showing the user "83% match" reads strong but
+  commits to a precision we may not have. Default to ordering desc and
+  showing no numbers; revisit if users start asking "why this product
+  ahead of that one."
+- **Anonymous browsing.** The personalised surface only renders for
+  signed-in users with preferences. Anonymous browsing stays on the
+  full catalogue (the current behaviour). The empty-state copy on the
+  personalised surface promotes sign-up.
+- **Abstract avoid slugs.** `avoid:trendy`, `avoid:fussy-patterns`,
+  `lifestyle:family-with-kids` etc. still don't project onto a single
+  `vision_profile` enum. Acceptable — those continue to feed Claude
+  Sonnet's curation reasoning at render time, but they don't shape the
+  pre-narrowed user catalogue. The doc surface explains this honestly.
+
+**Cross-references**
+
+- The deterministic scorer (`lib/prefs-vision-fit.ts`) shipped with
+  #156 — Phase A's affinity computation extends it from
+  per-render-bucket to whole-catalogue.
+- Depends on `vision_profile` being comprehensive across all 56
+  palettes (the post-2026-05-22 backfill — every product re-scored
+  against the Layer 2 / Layer 3 palettes added in `ef147c6` and
+  cherry-picked in `ade2461`).
+- Builds on §6.11 (user preferences foundation, #153-#157) — this
+  section is what makes the canonical brief load-bearing beyond
+  prompt-input.
+- Complements §6.9 (catalogue intelligence / matcher acceleration) —
+  §6.9 is about *which products match this palette+room*; §6.12 is
+  about *which products match this user*. They compose: matcher
+  filter ∩ user affinity = the candidates Sonnet sees.
+- Distinct from #129 (Claude-curated featured products) — that step
+  *picks* from a candidate pool; §6.12 *shapes* the pool earlier in
+  the pipeline so #129 has less work to do.
+
+### 6.13 Market segment + cross-segment substitution
+
+> *Renumbered from §6.11 during the 2026-05-23 merge with main —
+> main's parallel roadmap already uses §6.11 (user preferences) and
+> §6.12 (personalised product universe). Ticket numbers #153–#159
+> in this section refer to the catalogue-tier rollout and collide
+> with the user-preferences phasing under §6.11. Disambiguate via
+> commit hash, date, and section context — there is no plan to
+> renumber these tickets, but new tickets in this track will start
+> from #181 to avoid further collision.*
 
 Catalogue intelligence track for budget context. The premise: a single
 flat catalogue treats every user identically, but a first-home-buyer

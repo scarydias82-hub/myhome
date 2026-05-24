@@ -61,6 +61,13 @@ interface BriefPickerProps {
   mode?: 'wizard' | 'standalone';
   /** Called after a successful tag-only save in wizard mode. */
   onContinue?: () => void;
+  /** True when the project's brief was snapshotted from
+   *  users.preferences at create time and the user hasn't edited it
+   *  yet. Drives a "Pre-filled from your preferences" banner above
+   *  the picker. The banner hides as soon as the user toggles a chip
+   *  — at that point the user is actively editing, the inheritance
+   *  context isn't relevant anymore. (§6.11 Phase B, #154.) */
+  inheritedFromUserPrefs?: boolean;
 }
 
 export function BriefPicker({
@@ -71,12 +78,24 @@ export function BriefPicker({
   styles,
   mode = 'standalone',
   onContinue,
+  inheritedFromUserPrefs = false,
 }: BriefPickerProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialTags));
   const [response, setResponse] = useState<BriefSynthesis | null>(initialResponse);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The inheritance banner shows only when the initial set was
+  // snapshotted from users.preferences and the user hasn't touched it
+  // yet. The moment they toggle any chip, we hide it — at that point
+  // they're actively editing and the inheritance context becomes
+  // irrelevant. A separate `hasEditedSinceInherit` flag tracks this
+  // client-side; we don't try to re-show the banner after edits
+  // (consistent with the server side, which strips the
+  // inherited_from_user_prefs flag on the first POST that replaces
+  // the brief shape).
+  const [hasEditedSinceInherit, setHasEditedSinceInherit] = useState(false);
+  const showInheritanceBanner = inheritedFromUserPrefs && !hasEditedSinceInherit;
   // Editing state — if we have a saved response, the picker collapses
   // into the response card. Hitting "Edit your brief" reopens it.
   // In wizard mode the response card never appears here (the wizard
@@ -102,6 +121,9 @@ export function BriefPicker({
       else next.add(slug);
       return next;
     });
+    // Once they touch anything, the inheritance banner is no longer
+    // accurate — they're now editing the project's own brief.
+    if (!hasEditedSinceInherit) setHasEditedSinceInherit(true);
   }
 
   async function askDesigner() {
@@ -182,6 +204,23 @@ export function BriefPicker({
             ? 'Pick the tags that resonate across each section. The designer reads these alongside your room photo in Step 3 to recommend a colour direction.'
             : 'Pick the tags that resonate across each section. Claude — playing the role of a senior Australian designer — will read the brief, recommend a palette and style direction, and push back honestly if your tags conflict.'}
         </p>
+
+        {showInheritanceBanner ? (
+          <div className="mt-5 flex flex-wrap items-start gap-3 rounded-xl border border-clay/30 bg-clay/[0.06] px-4 py-3">
+            <span aria-hidden className="mt-0.5 font-mono text-meta uppercase tracking-eyebrow text-clay">
+              ✦
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-clay">
+                Pre-filled from your preferences
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-soft md:text-[14px]">
+                These tags came from the preferences on your dashboard. Adjust below
+                if this project is different — your dashboard preferences won&rsquo;t change.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-8 space-y-8">
           {BRIEF_TAG_GROUPS.map((group) => (

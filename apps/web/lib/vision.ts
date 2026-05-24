@@ -31,7 +31,13 @@ export interface RoomAnalysis {
   };
   existing_colours: Array<{ surface: string; hex: string | null; description: string }>;
   light: {
-    direction: string | null;
+    /** Cardinal compass direction was removed from the vision prompt
+     *  on 2026-05-22 (#149) — Claude can't infer compass orientation
+     *  from a single photo and guesses produced hallucinated windows
+     *  downstream. The field stays as optional on the type so cached
+     *  `rooms.analysis` blobs from before the fix still parse; new
+     *  analyses will never set it. Treat it as legacy-only on read. */
+    direction?: string | null;
     quality: string | null;
     notes: string | null;
   };
@@ -63,7 +69,7 @@ Be precise. Use null for any field you cannot infer confidently from the image �
   "room_type": "living_room" | "lounge_room" | "bedroom" | "kitchen" | "dining_room" | "bathroom" | "study" | "outdoor" | "other" | null,
   "dimensions_approximate_m": { "width": number | null, "depth": number | null, "height": number | null },
   "existing_colours": [{ "surface": "wall" | "floor" | "ceiling" | "trim" | "furniture", "hex": string | null, "description": string }],
-  "light": { "direction": "north" | "south" | "east" | "west" | "skylit" | "interior" | null, "quality": string | null, "notes": string | null },
+  "light": { "quality": string | null, "notes": string | null },
   "architectural_features": string[],
   "existing_furniture": [{ "item": string, "condition": "keep" | "replace" | "uncertain" }],
   "flooring": string | null,
@@ -98,6 +104,8 @@ OPEN-PLAN LAYOUTS — capture them explicitly in \`open_plan_zones\`. If the pho
   - "mezzanine void above the living area"
 
 Use an empty array \`[]\` when the room is closed-plan (single zone, walls bound the space on all sides shown). This field is load-bearing for renders of open-plan homes: without it Kontext defaults to a bounded box layout (adds back walls, partitions, extra windows) because closed-plan rooms dominate its training data. List zones generously — over-flagging an open-plan signal is recoverable; under-flagging produces a wall where the user has none.
+
+LIGHT — describe the LIGHT QUALITY only (warm / cool / diffuse / direct / bright / dim / golden hour / overcast), plus any notes about how it falls in the room. Do NOT estimate the cardinal compass direction (north / south / east / west / skylit / interior). You cannot infer compass orientation from a single 2D photo without metadata or a compass — guessing from shadow length and colour temperature has historically been wrong, and the downstream render prompt interprets a wrong cardinal guess by inventing a window on the wall it associates with that direction. Stick to light quality and image-observable notes only.
 
 Output ONLY the JSON, no markdown fences, no commentary.`;
 

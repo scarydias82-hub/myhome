@@ -145,12 +145,38 @@ export async function stageMultipleProducts({
 
   // 2. Cutout every product in parallel — these are the slow calls
   //    (~3s each via birefnet). Parallel matters when N >= 2.
-  const cutouts = await Promise.all(
+  //
+  // allSettled (#166) so one broken cutout (404, birefnet timeout,
+  // malformed image bytes) doesn't take down the entire batch. We
+  // log each failure with the product name + reason, then filter to
+  // the survivors. A successful auto-stage of 3 / 4 items is better
+  // than failing the whole render's auto-stage because one product
+  // had a flaky image URL.
+  const cutoutResults = await Promise.allSettled(
     items.map(async (it) => ({
+      productName: it.product.name,
+      productId: it.productId,
       bbox: toPixelBbox(it.bbox, width, height),
       productCutoutBuf: await cutoutProduct(it.product.imageUrl as string),
     })),
   );
+  const cutouts: Array<{ bbox: PixelBbox; productCutoutBuf: Buffer }> = [];
+  cutoutResults.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      cutouts.push({ bbox: r.value.bbox, productCutoutBuf: r.value.productCutoutBuf });
+    } else {
+      const it = items[i];
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.warn(
+        `[staging] cutout failed for "${it?.product?.name ?? 'item'}" (id=${it?.productId ?? '?'}): ${reason}`,
+      );
+    }
+  });
+  if (cutouts.length === 0) {
+    throw new Error(
+      `All ${items.length} cutouts failed — see [staging] warnings above for per-item reasons.`,
+    );
+  }
 
   // 3. Order by bbox area DESC so larger pieces composite first and
   //    smaller decor sits on top — without this a small cushion gets
