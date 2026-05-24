@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-23 · most recent material commit: `e88af66` (will
+**Last verified:** 2026-05-24 · most recent material commit: `e88af66` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,41 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-24` — **Picking step empty-result fix — `lounge_room` slug
+  mismatch + missing category-only fallback.** Owner reported an
+  earlier render where the curation step returned zero products
+  across every category. Root cause: the vision schema
+  (`lib/vision.ts`) emits `room_type = "lounge_room"`, but the
+  catalogue's `room_tags` taxonomy
+  (`apps/scraper/utils/productTags.js` + the `recommended_rooms`
+  arrays in `palettes.json`) only ever uses `"living_room"` —
+  zero occurrences of `lounge_room` anywhere in the tag pipeline.
+  `lib/curation.ts:fetchCurationCandidates` then built
+  `roomFilter = ['lounge_room', 'any']`, which doesn't overlap
+  any sofa / coffee table / rug row in the DB. All three tiers
+  (palette+room+style, palette+room, room-only) returned 0, the
+  panel rendered empty, the user couldn't pick anything. The
+  post-render `lib/matching.ts:fetchCandidates` had the same slug
+  mismatch but masked it with a category-only legacy fallback at
+  the bottom (`[matching] candidates(...): 0 — falling back to
+  category-only`), so post-render product matching kept working
+  even when the upfront picker silently broke. Fix: (a) new
+  exported `normaliseRoomTag` helper in `lib/matching.ts` that
+  aliases `lounge_room → living_room` and collapses `other` / null
+  / empty to `undefined` so the catalogue-side query sees the
+  canonical slug; (b) both `fetchCandidates` (RPC tiers 1 + 2 +
+  the legacy filtered path) and `fetchCurationCandidates`
+  (`roomFilter` + `CORE_CATEGORIES_PER_ROOM` lookup) route through
+  the helper before hitting Supabase; (c) `fetchCurationCandidates`
+  gains a Tier 4 category-only safety net mirroring matching.ts's
+  legacy path — if any future room-slug drift leaves the first
+  three tiers empty, the picker degrades gracefully instead of
+  going blank. Side-cleanup: removed the now-redundant
+  `lounge_room` key from `CORE_CATEGORIES_PER_ROOM` (the
+  normaliser collapses it to `living_room` before the lookup).
+  No DB migration. Added the missing **Designer-curated picking
+  step** row to §5.2 — that pipeline stage shipped in #179 but
+  was never recorded in the file-by-file table.
 - `2026-05-23` — **Designer narrator gets a contemporary warm-
   minimalist baseline POV.** Owner directive: make every room the
   narrator describes feel calm, intentional, and contemporary —
@@ -1932,6 +1967,7 @@ Mark complete → status completed (locked final selection, re-open available)
 | Palettes                      | `apps/web/lib/palettes.ts` + `apps/web/lib/palettes.json`  |
 | Styles + prompt builder       | `apps/web/lib/styles.ts` → `buildPrompt`                   |
 | Featured products             | `apps/web/app/api/featured-products/route.ts`              |
+| Designer-curated picking step | `apps/web/lib/curation.ts` + `/api/render/curate-candidates/route.ts` |
 | Render submit (async)         | `apps/web/app/api/render/route.ts`                         |
 | fal queue client              | `apps/web/lib/fal.ts` → `submitDepthRender`                |
 | Render status + finalise      | `apps/web/app/api/renders/[id]/status/route.ts`            |

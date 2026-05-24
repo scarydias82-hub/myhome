@@ -18,14 +18,17 @@
 //     mirrors, throws, etc.) belong to the post-render shop.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normaliseRoomTag } from '@/lib/matching';
 
 // Core categories per room — the picks the user MUST commit to
 // before rendering. Tight set so the picker stays short (≤4
-// categories on mobile).
+// categories on mobile). Keys use the catalogue's room-tag taxonomy
+// (matches palettes.json `recommended_rooms` + productTags.js
+// CATEGORY_TO_ROOMS). Vision-only slugs like `lounge_room` are mapped
+// to their catalogue equivalent via normaliseRoomTag before lookup.
 export const CORE_CATEGORIES_PER_ROOM: Record<string, string[]> = {
   bedroom: ['Beds', 'Bedside Tables', 'Rugs', 'Lighting'],
   living_room: ['Sofas', 'Coffee Tables', 'Side Tables', 'Rugs'],
-  lounge_room: ['Sofas', 'Coffee Tables', 'Side Tables', 'Rugs'],
   dining_room: ['Dining Tables', 'Chairs', 'Lighting', 'Rugs'],
   kitchen: ['Stools', 'Lighting'],
   bathroom: ['Tapware', 'Mirrors'],
@@ -116,10 +119,11 @@ export async function fetchCurationCandidates({
   styleTags,
   perCategory = 8,
 }: FetchOptions): Promise<CurationCategory[]> {
-  const normalisedRoom = (roomType ?? '').toLowerCase().replace(/\s+/g, '_');
-  const categories =
-    CORE_CATEGORIES_PER_ROOM[normalisedRoom] ?? FALLBACK_CORE_CATEGORIES;
-  const roomFilter = normalisedRoom ? [normalisedRoom, 'any'] : ['any'];
+  const canonicalRoom = normaliseRoomTag(roomType);
+  const categories = canonicalRoom
+    ? (CORE_CATEGORIES_PER_ROOM[canonicalRoom] ?? FALLBACK_CORE_CATEGORIES)
+    : FALLBACK_CORE_CATEGORIES;
+  const roomFilter = canonicalRoom ? [canonicalRoom, 'any'] : ['any'];
 
   // Load user's full wishlist with product details once. Wishlist
   // is small (≤50 typical), so the whole-pull is cheap and lets us
@@ -203,6 +207,21 @@ export async function fetchCurationCandidates({
           .in('category', cats)
           .not('image_url', 'is', null)
           .overlaps('room_tags', roomFilter)
+          .order('price_aud', { ascending: false, nullsFirst: false })
+          .limit(designerNeeded * 2);
+        if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
+      }
+      // Tier 4 — category only. Safety net mirroring the legacy
+      // fallback in lib/matching.ts:fetchCandidates: if room_tags
+      // taxonomy drift (or a vision slug we don't yet alias) leaves
+      // tiers 1-3 empty, surface SOMETHING in the category so the
+      // user is never stuck with an empty picker.
+      if (designerRows.length < designerNeeded) {
+        const q = await admin
+          .from('products')
+          .select(selectCols)
+          .in('category', cats)
+          .not('image_url', 'is', null)
           .order('price_aud', { ascending: false, nullsFirst: false })
           .limit(designerNeeded * 2);
         if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
