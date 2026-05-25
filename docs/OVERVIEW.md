@@ -46,20 +46,29 @@ product, the system, or the business. Cross-reference SHAs with
     picks a different palette. "Browse the designer's edit" button
     stays as a recovery path if the auto-fetch fails.
 
-  **Picker: 1-per-category enforcement.**
+  **Picker: variable pick count per category (default 1, some 2).**
   - `togglePick` flipped from "max 3 per category" (1-3 picks model
-    from #179 PR #25) to **strictly 1 per category** — clicking a new
-    product replaces the prior pick; clicking the selected product
-    deselects. No more "X / 3 picked" counter; just "Selected" or
-    "Pick one".
-  - `CurationStep` heading + helper copy updated to match. Card
-    disabled-state dropped — every product is always pickable since
-    selecting one replaces another. Forgiving UX when the user
-    changes their mind.
-  - Rooms that visually need multiples (a set of dining chairs around
-    a table, two bedside tables flanking a bed) are handled by the
-    renderer prompt — the user picks one chair model and gpt-image-1
-    places coordinated copies. See renderer changes below.
+    from #179 PR #25) to **variable max via `pickCountForCategory`** —
+    most categories cap at 1, pair / variety categories cap at 2
+    (Bedside Table, Table Lamp, Side Table, Dining Chair, Stool).
+    Clicking a selected card deselects; clicking unselected adds
+    until cap; clicking unselected at capacity is ignored until user
+    deselects another.
+  - New `CATEGORY_PICK_COUNT` config + `pickCountForCategory(label)`
+    helper at the top of `upload-form.tsx`. Both singular + plural
+    category forms are mapped to the same count so any retailer's
+    labels work (Coco "Sofa" + Freedom "Sofas" both resolve to 1).
+  - `CurationStep` heading + helper copy + per-card counter all
+    reflect the variable count: "Pick 1" / "Pick 2" / "1 of 2
+    picked" / "Selected" depending on state. Card disabled-state
+    re-introduced for the "at capacity" case (no card to add to
+    until the user deselects one).
+  - Rooms that visually need many of the same thing (a set of dining
+    chairs around a table, two bedside tables flanking a bed) are
+    handled by the renderer prompt below — the user picks one chair
+    model and gpt-image-1 places coordinated copies. Picking 2 of a
+    pair-category (Bedside Table) lets the user mix two styles in
+    the rendered scene.
 
   **Renderer: multi-instance prompt for the right categories.**
   - `buildOpenAIImagePrompt` in `lib/openai-image.ts` gains a new
