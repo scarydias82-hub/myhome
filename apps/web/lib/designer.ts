@@ -32,6 +32,12 @@ function loadSystemPrompt(): string {
 }
 
 export interface DesignerAdvice {
+  /** One-line, comma-separated list of products in the render with a
+   *  single material/colour adjective each (e.g. "Linen cream sofa,
+   *  oak coffee table, sculptural travertine lamp"). The render page
+   *  shows this as the default at-a-glance read with the longer
+   *  sections collapsed behind an expand button. */
+  productSummary: string;
   /** Two-to-three sentence greeting describing what's exciting in the
    *  render. Names specific products visible. Positive only — does not
    *  reference the original upload. */
@@ -198,11 +204,17 @@ async function fetchCandidates(
 // EXPLORE INVITE. We split on the labels and tolerate small whitespace
 // variations.
 function parseDesignerOutput(text: string): Omit<DesignerAdvice, 'raw'> {
+  // Section order in the prompt: PRODUCT SUMMARY → DESIGNER READ →
+  // PALETTE STORY → EXPLORE INVITE. Each section's `until` parameter
+  // is the label of the next section so extraction stops at the
+  // right boundary.
+  const productSummary = extractSection(text, 'PRODUCT SUMMARY', 'DESIGNER READ');
   const designerRead = extractSection(text, 'DESIGNER READ', 'PALETTE STORY');
   const paletteStory = extractSection(text, 'PALETTE STORY', 'EXPLORE INVITE');
   const exploreInvite = extractSection(text, 'EXPLORE INVITE', null);
 
   return {
+    productSummary,
     designerRead,
     paletteStory,
     exploreInvite,

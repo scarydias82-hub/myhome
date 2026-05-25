@@ -40,6 +40,39 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 
+// Per-category pick count for the curation step. Most categories
+// allow exactly 1 — the renderer multiplies single picks into the
+// right number of instances for the room (see MULTI_INSTANCE_CATEGORIES
+// in lib/openai-image.ts). A handful allow 2 where:
+//   (a) the room typically has a matching pair (Bedside Table, Table
+//       Lamp, Side Table)
+//   (b) the user might want to mix two styles for visual interest
+//       (Dining Chair, Stool — useful for breakfast-bar / dining-set
+//       variety, even though the renderer can multiply a single pick)
+// Both singular + plural forms map to the same count so any retailer's
+// category labels work (Coco writes "Sofa", Freedom writes "Sofas").
+const CATEGORY_PICK_COUNT: Record<string, number> = {
+  Sofa: 1, Sofas: 1,
+  Chair: 1, Chairs: 1,
+  'Lounge Chair': 1, 'Lounge Chairs': 1,
+  'Dining Chair': 2, 'Dining Chairs': 2,
+  'Dining Table': 1, 'Dining Tables': 1,
+  Bed: 1, Beds: 1,
+  'Bedside Table': 2, 'Bedside Tables': 2,
+  'Floor Lamp': 1, 'Floor Lamps': 1,
+  'Table Lamp': 2, 'Table Lamps': 2,
+  'Coffee Table': 1, 'Coffee Tables': 1,
+  'Side Table': 2, 'Side Tables': 2,
+  Rug: 1, Rugs: 1,
+  Stool: 2, Stools: 2,
+  Lighting: 1,
+  Mirror: 1, Mirrors: 1,
+};
+
+function pickCountForCategory(label: string): number {
+  return CATEGORY_PICK_COUNT[label] ?? 1;
+}
+
 // HEIC conversion + resize moved into lib/client/prepare-image-upload.ts
 // so /rooms/new and the vision-board upload share the same pipeline.
 // Any future tuning (quality, max dim, additional codec support)
@@ -101,6 +134,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   // (they chose them).
   const [curationOpen, setCurationOpen] = useState(false);
   const [curationLoading, setCurationLoading] = useState(false);
+  // Tracks which palette the curationCategories were last fetched for.
+  // Drives the auto-open effect: when the user picks a new palette,
+  // paletteId !== loadedForPaletteId, so curation refetches + reopens
+  // without needing a manual "Browse the designer's edit" click. Reset
+  // by openCuration() once the fetch lands.
+  const [loadedForPaletteId, setLoadedForPaletteId] = useState<string | null>(null);
   const [curationCategories, setCurationCategories] = useState<
     Array<{
       displayLabel: string;
@@ -230,6 +269,24 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   useEffect(() => {
     fetch('/api/warm', { method: 'POST' }).catch(() => {});
   }, [paletteId]);
+
+  // Auto-open the curation step once we have an analysed room AND a
+  // selected palette, so the user sees products immediately instead of
+  // clicking a "Browse the designer's edit" button. Refires when the
+  // user goes back and picks a different palette — `loadedForPaletteId`
+  // tracks which palette curationCategories were fetched for, so a
+  // palette change triggers a refetch + reopen. Guarded against
+  // concurrent fetches via curationLoading.
+  useEffect(() => {
+    if (!analysisConfirmed || !paletteId) return;
+    if (curationLoading) return;
+    if (loadedForPaletteId === paletteId) return;
+    void openCuration();
+    // openCuration captures `roomId`, `paletteId`, `style` from the
+    // surrounding scope and sets loadedForPaletteId on success — the
+    // deps below are the trigger conditions, not the closed-over vars.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisConfirmed, paletteId, loadedForPaletteId]);
 
   async function handleFile(next: File | null) {
     setError(null);
@@ -423,6 +480,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       }
       setCurationCategories(json.categories);
       setCurationOpen(true);
+      setLoadedForPaletteId(paletteId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error.');
     } finally {
@@ -430,16 +488,30 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     }
   }
 
+  // Per-category pick cap. Each category has a `pickCountForCategory`
+  // value (1 default; 2 for pair categories like Bedside Table / Table
+  // Lamp / Side Table or variety categories like Dining Chair / Stool).
+  // Toggle logic:
+  //   - Clicking a selected product deselects it
+  //   - Clicking an unselected product with room available adds it
+  //   - Clicking an unselected product at capacity is ignored — user
+  //     deselects something first to swap
+  // Renderer-side multiplication of single picks still applies for
+  // categories in MULTI_INSTANCE_CATEGORIES (lib/openai-image.ts) — a
+  // user picking 1 dining chair still gets 4-6 matching chairs in the
+  // render; picking 2 lets them mix two styles in the same scene.
   function togglePick(categoryLabel: string, productId: string) {
     setPicks((prev) => {
       const next = new Map(prev);
       const curr = new Set(next.get(categoryLabel) ?? []);
+      const maxN = pickCountForCategory(categoryLabel);
       if (curr.has(productId)) {
         curr.delete(productId);
-      } else if (curr.size < 3) {
+      } else if (curr.size < maxN) {
         curr.add(productId);
       }
-      next.set(categoryLabel, curr);
+      if (curr.size > 0) next.set(categoryLabel, curr);
+      else next.delete(categoryLabel);
       return next;
     });
   }
@@ -569,33 +641,25 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           make — auto-confirm via #101 handled most cases silently
           already. This pulls the surface entirely. */}
 
-      {/* DesignerSummaryCard only renders when we have analysis data
-          (Phase 1 done). Commentary inside the card progressively
-          reveals — room read first, then the "why" once Phase 2 is
-          done. */}
-      {analysisConfirmed && analysis ? (
-        <DesignerSummaryCard
-          analysis={analysis}
-          briefPreFilled={briefPreFilled}
-          paletteId={paletteId}
-          reasoning={recommendationReasoning}
-        />
-      ) : null}
+      {/* DesignerSummaryCard removed per owner directive — the long
+          room-read + reasoning block crowded the page and pushed the
+          palette + product pickers below the fold. Step3Style below
+          IS the brief "here's the recommended palette" surface (the
+          pre-selected tile), and CurationStep auto-opens once the
+          palette is locked. The DesignerSummaryCard component itself
+          remains in the file (lines ~948+) as dead code; safe to
+          remove in a follow-up sweep. */}
 
-      {/* §6.11 Phase C (#155) — inheritance banner. Shows where the
-          recommendation's taste signal came from (project / user_prefs /
-          override) and offers the "Customise for this image" override.
-          Hidden when there's nothing to say (no recommendation yet, or
-          source is 'none' — the cold-start case we still allow). */}
-      {analysisConfirmed && roomId && recommendationSource && recommendationSource !== 'none' ? (
-        <RecommendationSourceBanner
-          source={recommendationSource}
-          appliedTags={appliedTags}
-          tagLabelBySlug={TAG_LABEL_BY_SLUG}
-          onCustomise={() => setOverrideOpen(true)}
-          onClear={recommendationSource === 'override' ? clearOverride : undefined}
-        />
-      ) : null}
+      {/* RecommendationSourceBanner (preferences chips + "Customise"
+          CTA) removed per owner directive — was clutter between the
+          designer summary and the palette/curation flow. The banner
+          was originally from #155 Phase C to surface per-render override
+          source; with the simplified flow (recommended palette →
+          override via picker → products) the user doesn't need to see
+          the source-of-recommendation chips inline. RecommendationSource
+          state + override modal stays in code (unused for now;
+          PreferencesModal is dead code that can be removed in a
+          follow-up sweep once we're sure no other surface uses it). */}
 
       {/* Carousels mount as soon as analysis kicks off — not waiting
           for Phase 1 to complete. Single carousel overlay spans
@@ -1704,8 +1768,16 @@ function UnifiedPaletteCard({
 // render. Each core category for the room (4 max — sofas, coffee
 // tables, etc.) gets a horizontal row of 6-8 cards. Wishlist items
 // are pinned to the front of each row with a ♥ marker. User picks
-// 1-3 per category; those become both the heroProducts for the
-// renderer AND the picking_list shown after the render.
+// up to N per category, where N comes from `pickCountForCategory`
+// (1 for most categories, 2 for matching-pair categories like
+// Bedside Tables / Table Lamps / Side Tables and variety categories
+// like Dining Chair / Stool). The per-card hint shows the count
+// ("Pick 1" / "Pick 2" / "1 of 2 picked"). Categories where the
+// renderer naturally multiplies a single pick (dining chairs around
+// a table, matching bedsides) still benefit from
+// MULTI_INSTANCE_CATEGORIES in lib/openai-image.ts — picking 2
+// Dining Chairs lets the user MIX styles in the rendered scene
+// while picking 1 still gets multiplied into a coordinated set.
 function CurationStep({
   categories,
   picks,
@@ -1729,23 +1801,40 @@ function CurationStep({
   return (
     <section>
       <Eyebrow>The designer&rsquo;s edit · pick what you love</Eyebrow>
-      <h2 className="mt-2 font-display text-h3 text-ink">Choose 1–3 per category</h2>
+      <h2 className="mt-2 font-display text-h3 text-ink">Pick your products</h2>
       <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
-        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Pick what
-        you&rsquo;d actually buy — these are what the render shows. Items you&rsquo;ve
-        liked before are pinned to the front of each row.
+        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Each
+        category shows how many to pick — usually one, sometimes two where the
+        room calls for a matching pair or you might want to mix two styles.
+        Items you&rsquo;ve liked before are pinned to the front of each row.
       </p>
 
       {categories.map((cat) => {
         const catPicks = picks.get(cat.displayLabel) ?? new Set();
+        const maxN = pickCountForCategory(cat.displayLabel);
+        const atCapacity = catPicks.size >= maxN;
+        // Counter copy per state:
+        //   - No catalogue matches in this palette
+        //   - Empty: "Pick 1" / "Pick 2"
+        //   - Partial (only relevant when maxN > 1): "1 of 2 picked"
+        //   - Full + maxN=1: "Selected" (terse for the common case)
+        //   - Full + maxN>1: "2 of 2 picked"
+        const counter =
+          cat.items.length === 0
+            ? 'No matches'
+            : catPicks.size === 0
+              ? `Pick ${maxN}`
+              : !atCapacity
+                ? `${catPicks.size} of ${maxN} picked`
+                : maxN === 1
+                  ? 'Selected'
+                  : `${catPicks.size} of ${maxN} picked`;
         return (
           <div key={cat.displayLabel} className="mt-8">
             <div className="flex flex-wrap items-baseline gap-3">
               <h3 className="font-display text-h4 text-ink">{cat.displayLabel}</h3>
               <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                {cat.items.length === 0
-                  ? 'No matches'
-                  : `${catPicks.size} / 3 picked${catPicks.size === 0 ? ' · required' : ''}`}
+                {counter}
               </p>
             </div>
 
@@ -1758,7 +1847,12 @@ function CurationStep({
                 <ul className="flex snap-x snap-mandatory gap-3 px-2">
                   {cat.items.map((item) => {
                     const selected = catPicks.has(item.id);
-                    const canPick = selected || catPicks.size < 3;
+                    // Disabled when this category is at capacity AND
+                    // this card isn't already selected — user has to
+                    // deselect another card first to swap. Cards always
+                    // remain clickable when selected (so users can
+                    // deselect freely).
+                    const canPick = selected || !atCapacity;
                     return (
                       <li
                         key={item.id}

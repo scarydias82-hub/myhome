@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-25 · most recent material commit: `45ae4fd` (will
+**Last verified:** 2026-05-25 · most recent material commit: `5876a25` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,78 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-25` — **Render flow simplification: tighter upload page,
+  1-per-category picker, brief render commentary with expand.** Owner
+  directive — strip clutter from the upload → palette → product flow
+  so users don't scroll past walls of Claude commentary to get to the
+  picker, and shorten the post-render commentary to a product summary
+  by default. Four coordinated pieces:
+
+  **Upload flow** (`apps/web/components/rooms/upload-form.tsx`).
+  - Removed `RecommendationSourceBanner` (the prefs-chips +
+    "Customise for this image" CTA from §6.11 Phase C / #155). Was
+    clutter between the analysis card and palette picker.
+  - Removed `DesignerSummaryCard` rendering (component def stays as
+    dead code for now). The room-read sentence + reasoning paragraph
+    crowded the page; `Step3Style` palette picker that follows is
+    already the "brief recommended palette + override" surface.
+  - Auto-opens `CurationStep` once `analysisConfirmed && paletteId`
+    via a new `useEffect`. New `loadedForPaletteId` state guards
+    against duplicate fetches and refires the open when the user
+    picks a different palette. "Browse the designer's edit" button
+    stays as a recovery path if the auto-fetch fails.
+
+  **Picker: variable pick count per category (default 1, some 2).**
+  - `togglePick` flipped from "max 3 per category" (1-3 picks model
+    from #179 PR #25) to **variable max via `pickCountForCategory`** —
+    most categories cap at 1, pair / variety categories cap at 2
+    (Bedside Table, Table Lamp, Side Table, Dining Chair, Stool).
+    Clicking a selected card deselects; clicking unselected adds
+    until cap; clicking unselected at capacity is ignored until user
+    deselects another.
+  - New `CATEGORY_PICK_COUNT` config + `pickCountForCategory(label)`
+    helper at the top of `upload-form.tsx`. Both singular + plural
+    category forms are mapped to the same count so any retailer's
+    labels work (Coco "Sofa" + Freedom "Sofas" both resolve to 1).
+  - `CurationStep` heading + helper copy + per-card counter all
+    reflect the variable count: "Pick 1" / "Pick 2" / "1 of 2
+    picked" / "Selected" depending on state. Card disabled-state
+    re-introduced for the "at capacity" case (no card to add to
+    until the user deselects one).
+  - Rooms that visually need many of the same thing (a set of dining
+    chairs around a table, two bedside tables flanking a bed) are
+    handled by the renderer prompt below — the user picks one chair
+    model and gpt-image-1 places coordinated copies. Picking 2 of a
+    pair-category (Bedside Table) lets the user mix two styles in
+    the rendered scene.
+
+  **Renderer: multi-instance prompt for the right categories.**
+  - `buildOpenAIImagePrompt` in `lib/openai-image.ts` gains a new
+    `MULTI_INSTANCE_CATEGORIES` set (dining chairs, bedside tables,
+    lounge chairs, armchairs, stools — both singular + plural forms
+    so any retailer triggers it). For products in those categories,
+    the per-product placement directive becomes "Place multiple
+    matching instances of this exact piece as the room composition
+    requires — e.g. a set of 4-6 around a dining table, a pair
+    flanking a bed." Other categories keep the single-instance
+    directive. Single user pick → coordinated multi-instance render.
+
+  **Render-page commentary: brief default + expand.**
+  - `designer-system.md` adds a new **PRODUCT SUMMARY** output block
+    as the first section (before DESIGNER READ / PALETTE STORY /
+    EXPLORE INVITE). One line, comma-separated products with a
+    single material/colour adjective each — e.g. *"Linen cream sofa,
+    oak coffee table, sculptural travertine lamp."* 6-12 words, no
+    verb, no story.
+  - `lib/designer.ts` `DesignerAdvice` adds optional `productSummary:
+    string`. `parseDesignerOutput` extracts the new section.
+  - `components/renders/designer-read.tsx` `AdviceBlock` defaults to
+    showing only the PRODUCT SUMMARY one-liner with a
+    "+ Read the designer's take" toggle that reveals the existing
+    three long-form sections. Backward-compat: rows missing
+    `productSummary` (anything rendered before this prompt change)
+    auto-expand the long-form so the user still sees something
+    useful and the toggle hides.
 - `2026-05-25` — **Render test mode: retailer allowlist + multi-angle
   product references.** Two related changes to support the post-Coco-
   rescrape render quality test.
