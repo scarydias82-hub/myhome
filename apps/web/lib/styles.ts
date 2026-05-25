@@ -133,6 +133,16 @@ export interface HeroProductDescriptor {
    *  renderer 3D-perspective info the single hero shot can't convey.
    *  When null, falls back to the single `imageUrl`. */
   imageUrls?: string[] | null;
+  /** Short physical description from the product's vision_profile
+   *  (3-8 words, e.g. "low-profile modern armchair with curved arms
+   *  and round upholstered seat"). Used by buildOpenAIImagePrompt to
+   *  anchor each per-product directive in concrete visual language
+   *  rather than the generic category — gpt-image-1 honours the
+   *  reference image more reliably when the prompt names the
+   *  silhouette explicitly. Null for products whose vision_profile
+   *  hasn't been derived yet; the renderer falls back to the
+   *  category descriptor in that case. */
+  silhouette?: string | null;
 }
 
 // Render aggressiveness mode.

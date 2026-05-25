@@ -278,10 +278,11 @@ export async function POST(request: NextRequest) {
       image_urls: string[] | null;
       product_url: string | null;
       affiliate_url: string | null;
+      vision_profile: { silhouette?: string | null } | null;
     }
     const { data } = await admin
       .from('products')
-      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url')
+      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url, vision_profile')
       .in('id', ids);
     const rows = (data ?? []) as PickedRow[];
     if (rows.length > 0) {
@@ -294,6 +295,13 @@ export async function POST(request: NextRequest) {
         // single-image scrapers — renderer falls back to imageUrl in
         // that case.
         imageUrls: p.image_urls ?? null,
+        // Silhouette from vision_profile (post-#145 Haiku pre-pass).
+        // 3-8 word physical description used by buildOpenAIImagePrompt
+        // to anchor each per-product directive — much stronger signal
+        // than "a lounge chair" for gpt-image-1 to honour the
+        // reference image fidelity. Falls back to category descriptor
+        // when null (older products / pre-vision-profile rows).
+        silhouette: p.vision_profile?.silhouette ?? null,
       }));
 
       // Build the picking list from the picks. Synthetic bboxes
@@ -629,10 +637,18 @@ export async function POST(request: NextRequest) {
       // per angle) — the prompt only names each product once, even if
       // multiple angles are sent. This keeps buildOpenAIImagePrompt's
       // existing N-product contract intact.
+      //
+      // Silhouette is the vision_profile-derived physical description
+      // (3-8 words, e.g. "low-profile modern armchair with curved arms
+      // and round upholstered seat"). When present, buildOpenAIImage
+      // Prompt leads each per-product directive with it instead of
+      // the generic category descriptor — significantly stronger
+      // signal for gpt-image-1 to honour the reference image fidelity.
       const refs = productsForRefs.map((p) => ({
         name: p.name,
         category: p.category,
         retailer: p.retailer,
+        silhouette: p.silhouette ?? null,
       }));
       const openaiPrompt = buildOpenAIImagePrompt({
         paletteName: palette.name,
