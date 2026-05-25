@@ -19,6 +19,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normaliseRoomTag } from '@/lib/matching';
+import { getRenderRetailerAllowlist } from '@/lib/env';
 
 // Core categories per room — the picks the user MUST commit to
 // before rendering. Tight set so the picker stays short (≤4
@@ -80,6 +81,10 @@ export interface CurationItem {
   category: string;
   priceAud: number | null;
   imageUrl: string;
+  /** Full multi-image array if the retailer publishes one (Coco hi-res
+   *  rebuild #36). Null for single-image scrapers. The render route
+   *  consumes this for multi-angle gpt-image-1 reference input. */
+  imageUrls: string[] | null;
   productUrl: string;
   affiliateUrl: string | null;
   /** True when this product is in the user's wishlist — UI pins these
@@ -101,6 +106,9 @@ interface ProductRow {
   category: string;
   price_aud: number | null;
   image_url: string;
+  /** Multi-image array (Coco-style hi-res scrapers populate this; older
+   *  single-image scrapers leave it NULL). image_urls[0] === image_url. */
+  image_urls: string[] | null;
   product_url: string;
   affiliate_url: string | null;
 }
@@ -136,13 +144,20 @@ export async function fetchCurationCandidates({
     : FALLBACK_CORE_CATEGORIES;
   const roomFilter = canonicalRoom ? [canonicalRoom, 'any'] : ['any'];
 
+  // Optional retailer scoping for test mode. When set (e.g.
+  // RENDER_RETAILER_ALLOWLIST='Coco Republic'), every product query
+  // here is narrowed to those retailers — both the wishlist join and
+  // the designer-curated tiers. Returns null in production where the
+  // env var is unset.
+  const retailerAllowlist = getRenderRetailerAllowlist();
+
   // Load user's full wishlist with product details once. Wishlist
   // is small (≤50 typical), so the whole-pull is cheap and lets us
   // pin per-category in-memory.
   const wlRes = await admin
     .from('user_wishlist')
     .select(
-      'products(id, name, retailer, category, price_aud, image_url, product_url, affiliate_url)',
+      'products(id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url)',
     )
     .eq('user_id', userId);
   const wishlistRows = (wlRes.data ?? []) as unknown as Array<{
@@ -158,6 +173,10 @@ export async function fetchCurationCandidates({
         : [];
     for (const p of candidates) {
       if (!p || !p.image_url) continue;
+      // Test-mode allowlist applied to wishlist too — if we're scoping
+      // renders to Coco-only, a Freedom sofa in the wishlist shouldn't
+      // surface in the picker.
+      if (retailerAllowlist && !retailerAllowlist.includes(p.retailer)) continue;
       wishlistIds.add(p.id);
       const bucket = wishlistByCategory.get(p.category);
       if (bucket) bucket.push(p);
@@ -170,7 +189,7 @@ export async function fetchCurationCandidates({
     categories.map(async (displayLabel) => {
       const cats = expandCategory(displayLabel);
       const selectCols =
-        'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url';
+        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url';
 
       // 1. Wishlist items in this category (pinned). Filter by
       //    expanded category family so wishlist items tagged
@@ -187,9 +206,9 @@ export async function fetchCurationCandidates({
       const designerRows: ProductRow[] = [];
 
       if (paletteId && styleTags && styleTags.length > 0 && designerNeeded > 0) {
-        const q = await admin
-          .from('products')
-          .select(selectCols)
+        let qb = admin.from('products').select(selectCols);
+        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+        const q = await qb
           .in('category', cats)
           .not('image_url', 'is', null)
           .contains('palette_tags', [paletteId])
@@ -200,9 +219,9 @@ export async function fetchCurationCandidates({
         if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
       }
       if (paletteId && designerRows.length < designerNeeded) {
-        const q = await admin
-          .from('products')
-          .select(selectCols)
+        let qb = admin.from('products').select(selectCols);
+        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+        const q = await qb
           .in('category', cats)
           .not('image_url', 'is', null)
           .contains('palette_tags', [paletteId])
@@ -212,9 +231,9 @@ export async function fetchCurationCandidates({
         if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
       }
       if (designerRows.length < designerNeeded) {
-        const q = await admin
-          .from('products')
-          .select(selectCols)
+        let qb = admin.from('products').select(selectCols);
+        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+        const q = await qb
           .in('category', cats)
           .not('image_url', 'is', null)
           .overlaps('room_tags', roomFilter)
@@ -228,9 +247,9 @@ export async function fetchCurationCandidates({
       // tiers 1-3 empty, surface SOMETHING in the category so the
       // user is never stuck with an empty picker.
       if (designerRows.length < designerNeeded) {
-        const q = await admin
-          .from('products')
-          .select(selectCols)
+        let qb = admin.from('products').select(selectCols);
+        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+        const q = await qb
           .in('category', cats)
           .not('image_url', 'is', null)
           .order('price_aud', { ascending: false, nullsFirst: false })
@@ -259,6 +278,7 @@ export async function fetchCurationCandidates({
           category: row.category,
           priceAud: row.price_aud,
           imageUrl: row.image_url,
+          imageUrls: row.image_urls,
           productUrl: row.product_url,
           affiliateUrl: row.affiliate_url,
           isWishlisted,

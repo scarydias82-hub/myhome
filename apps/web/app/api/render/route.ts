@@ -68,6 +68,42 @@ function slugifyName(s: string): string {
     .slice(0, 40);
 }
 
+// Multi-image reference budget for gpt-image-1's images.edit endpoint.
+// Total per call = 1 (room) + 1 (palette) + N × K product images, where
+// N = MAX_PRODUCTS_FOR_REFS and K = MAX_ANGLES_PER_PRODUCT. gpt-image-1
+// hard cap is 16; current settings (4 × 2 = 8) leave 6 slots of headroom.
+const MAX_PRODUCTS_FOR_REFS = 4;
+const MAX_ANGLES_PER_PRODUCT = 2;
+
+// Heuristic: BigCommerce CDN filenames for Coco encode the image type
+// in the filename (Hero, Main Image, Front, Detail, Lifestyle_N, etc.).
+// Lifestyle shots are styled-room shots with surrounding context that
+// the renderer can accidentally splice into the output scene — exclude
+// them from reference input so gpt-image-1 only sees the product on a
+// neutral background. The regex tolerates both "_Lifestyle_1_" and
+// "_LifestyleAngle1_" filename patterns Coco uses in practice.
+const LIFESTYLE_FILENAME_RE = /_Lifestyle[A-Za-z]*[_-]?\d*[_-]/i;
+
+// Pick the best reference image URLs for a single product. Prefers
+// `imageUrls[]` (Coco hi-res rebuild #36 — multiple hero angles per
+// product) and falls back to `imageUrl` (single image, older scrapers).
+// Filters out lifestyle shots via LIFESTYLE_FILENAME_RE so the
+// renderer only sees product-on-neutral-background references.
+function pickRenderReferenceUrls(p: HeroProductDescriptor): string[] {
+  const candidates =
+    Array.isArray(p.imageUrls) && p.imageUrls.length > 0
+      ? p.imageUrls
+      : p.imageUrl
+        ? [p.imageUrl]
+        : [];
+  const productOnly = candidates.filter((url) => !LIFESTYLE_FILENAME_RE.test(url));
+  // If the lifestyle filter empties the list (e.g. a product page where
+  // every shot is styled), fall back to the original candidates rather
+  // than send the renderer no references at all.
+  const final = productOnly.length > 0 ? productOnly : candidates;
+  return final.slice(0, MAX_ANGLES_PER_PRODUCT);
+}
+
 export const runtime = 'nodejs';
 // Submit itself is fast (~5-8s) but we now kick off the designer LLM
 // via after() in the same function — that needs another 15-25s. Bump
@@ -239,12 +275,13 @@ export async function POST(request: NextRequest) {
       retailer: string;
       price_aud: number | null;
       image_url: string | null;
+      image_urls: string[] | null;
       product_url: string | null;
       affiliate_url: string | null;
     }
     const { data } = await admin
       .from('products')
-      .select('id, name, category, retailer, price_aud, image_url, product_url, affiliate_url')
+      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url')
       .in('id', ids);
     const rows = (data ?? []) as PickedRow[];
     if (rows.length > 0) {
@@ -253,6 +290,10 @@ export async function POST(request: NextRequest) {
         category: p.category,
         retailer: p.retailer,
         imageUrl: p.image_url ?? null,
+        // Multi-image array (Coco hi-res rebuild #36). NULL for older
+        // single-image scrapers — renderer falls back to imageUrl in
+        // that case.
+        imageUrls: p.image_urls ?? null,
       }));
 
       // Build the picking list from the picks. Synthetic bboxes
@@ -550,22 +591,49 @@ export async function POST(request: NextRequest) {
     // the status route's existing polling flow catches the transition.
     // No fal_request_id involved.
     if (provider === 'openai-image-1' && palette && resizedRoomBuf) {
+      // Eligible products = anything with at least one image URL (single
+      // or multi). Multi-image scrapers (Coco hi-res #36) populate
+      // imageUrls[]; older scrapers populate only imageUrl.
       const productCandidates = heroProducts.filter(
-        (p) => typeof p.imageUrl === 'string' && p.imageUrl.length > 0,
+        (p) =>
+          (typeof p.imageUrl === 'string' && p.imageUrl.length > 0) ||
+          (Array.isArray(p.imageUrls) && p.imageUrls.length > 0),
       );
-      // Fetch up to 4 product reference images. allSettled keeps a
-      // broken URL from killing the whole render.
+      const productsForRefs = productCandidates.slice(0, MAX_PRODUCTS_FOR_REFS);
+
+      // Build the flat list of (product, url) reference pairs. For each
+      // product, take up to MAX_ANGLES_PER_PRODUCT product-only images
+      // (lifestyle / styled-room shots filtered out via URL heuristic
+      // since they carry surrounding context the renderer can splice
+      // into the output scene). 4 products × 2 angles = 8 product
+      // references max, plus 1 room + 1 palette = 10 total, well under
+      // gpt-image-1's 16-image cap.
+      const refPairs: Array<{ product: HeroProductDescriptor; url: string }> = [];
+      for (const p of productsForRefs) {
+        for (const url of pickRenderReferenceUrls(p)) {
+          refPairs.push({ product: p, url });
+        }
+      }
+
+      // Fetch all reference images in parallel. allSettled keeps a
+      // single broken URL from killing the whole render.
       const productBufResults = await Promise.allSettled(
-        productCandidates.slice(0, 4).map((p) => fetchAndResizeProductImage(p.imageUrl as string)),
+        refPairs.map(({ url }) => fetchAndResizeProductImage(url)),
       );
       const productImageBufs: Buffer[] = [];
       for (const r of productBufResults) {
         if (r.status === 'fulfilled') productImageBufs.push(r.value);
         else console.warn('[render-openai] product fetch failed:', r.reason instanceof Error ? r.reason.message : r.reason);
       }
-      const refs = productCandidates
-        .slice(0, productImageBufs.length)
-        .map((p) => ({ name: p.name, category: p.category, retailer: p.retailer }));
+      // For prompt purposes the refs list is one entry PER PRODUCT (not
+      // per angle) — the prompt only names each product once, even if
+      // multiple angles are sent. This keeps buildOpenAIImagePrompt's
+      // existing N-product contract intact.
+      const refs = productsForRefs.map((p) => ({
+        name: p.name,
+        category: p.category,
+        retailer: p.retailer,
+      }));
       const openaiPrompt = buildOpenAIImagePrompt({
         paletteName: palette.name,
         paletteVibe: palette.vibe ?? null,
@@ -574,7 +642,7 @@ export async function POST(request: NextRequest) {
         productRefs: refs,
       });
       console.log(
-        `[render-openai] submitting gpt-image-1: ${productImageBufs.length} product refs · ${roomType ?? '?'} · ${palette.id}`,
+        `[render-openai] submitting gpt-image-1: ${productImageBufs.length} product refs (${productsForRefs.length} products × up to ${MAX_ANGLES_PER_PRODUCT} angles) · ${roomType ?? '?'} · ${palette.id}`,
       );
       try {
         const result = await submitOpenAIImageRender({
