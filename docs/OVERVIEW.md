@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-25 · most recent material commit: `5876a25` (will
+**Last verified:** 2026-05-25 · most recent material commit: `dbb702f` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,50 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-25` — **Composite: reject black-background cutouts at source
+  instead of pasting them onto the room.** First Coco-only render test
+  surfaced black rectangles in the multi-stage "Stage 3 Together"
+  modal — each cutout (Otis lamp, Frankie bedside, Parisian Loft Bed)
+  was being composited onto the original room photo with a clean black
+  rectangle around the product. Diagnostic (`renders.auto_stage_status:
+  null` + `auto_stage_error: null` + the cutouts visibly opaque-black)
+  pointed at birefnet returning unusable cutouts — either a re-encoded
+  source image (no actual background removal) or a JPEG with black
+  where transparent pixels should be. Sharp's `.ensureAlpha()` (#166,
+  #171) wrapped these in RGBA without changing the underlying pixels;
+  the #178 detection skipped the drop shadow but still pasted the
+  cutout layer as-is. Net effect: black-rectangle composites.
+
+  Fix: alpha validation moved upstream into `cutoutProduct()` itself.
+  After fetching from birefnet, the function now:
+  1. Logs the response Content-Type + URL extension for diagnostic
+     (so we can confirm in future whether the failure mode is
+     birefnet returning JPEG vs PNG-with-fake-alpha)
+  2. Normalises the buffer to RGBA via `sharp().ensureAlpha().png()`
+     and reads the alpha channel's stats
+  3. Applies the SAME threshold pair as the composite-side #178
+     check (alpha min < 250 AND mean < 240) — but uses it to REJECT
+     the cutout rather than silently render as a rectangle
+  4. Throws a clearly-labelled error when alpha is fake, with all
+     the diagnostic context (content-type, URL extension, length,
+     alpha stats) so the caller's `Promise.allSettled` in
+     `staging.ts` logs per-item detail in
+     `renders.auto_stage_error`
+
+  Net effect: the multi-stage modal will surface "we couldn't isolate
+  product X" failures cleanly instead of pasting black rectangles
+  onto the room. Worse-looking UX for those products, but honest;
+  the catch handler upstream can render a fallback placeholder or
+  surface the failure to the user.
+
+  Follow-up tracked separately: WHY is birefnet returning unusable
+  cutouts for Coco's hi-res 2560w product images? Coco's images have
+  clean neutral backgrounds — birefnet should handle them easily.
+  Suspects: image size too large for birefnet (2560w → could be
+  hitting an internal cap), or our `fetchProductImageAsDataUrl`
+  base64 encoding mid-pipe is corrupting bytes, or the model
+  genuinely struggles with certain product photography. Worth a
+  dedicated debugging session against the raw cutout bytes.
 - `2026-05-25` — **Render flow simplification: tighter upload page,
   1-per-category picker, brief render commentary with expand.** Owner
   directive — strip clutter from the upload → palette → product flow
