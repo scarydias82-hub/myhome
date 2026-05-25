@@ -44,9 +44,12 @@ jobs:
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          # Pinning the major version. Bump deliberately when the CLI
-          # gets a feature we want; auto-updates can break behaviour.
-          version: 2.x
+          # `version: 2.x` was rejected by setup-cli as "Invalid Version"
+          # — the action wants either `latest` or an exact semver
+          # (no wildcard ranges). Pinning to a recent stable so behaviour
+          # is reproducible; bump deliberately when we want a new CLI
+          # feature.
+          version: 2.30.4
 
       - name: Link project
         env:
