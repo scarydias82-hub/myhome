@@ -159,6 +159,75 @@ const MULTI_INSTANCE_CATEGORIES = new Set([
   'stools',
 ]);
 
+// Category-specific size thresholds for the "compact / standard /
+// oversized" descriptor in the render prompt. Each entry names the
+// dominant dimension (`width_cm` for most furniture; `height_cm`
+// for lamps + stools) and the thresholds in cm — below `compact`
+// is compact, above `oversized` is oversized, in between is standard.
+// Lowercase keys for the same case-insensitive match approach as
+// MULTI_INSTANCE_CATEGORIES.
+//
+// Numbers chosen from the AU furniture market's typical sizing
+// brackets — sofa width tracks seat count (2-seat ≈170, 3-seat
+// ≈220, modular >250); bed width tracks bed size (single ≈90,
+// queen ≈155, king ≈180); dining table tracks seat count.
+type SizeDimKey = 'width_cm' | 'depth_cm' | 'height_cm';
+const CATEGORY_SIZE_THRESHOLDS: Record<
+  string,
+  { dim: SizeDimKey; compact: number; oversized: number }
+> = {
+  'sofa': { dim: 'width_cm', compact: 180, oversized: 250 },
+  'sofas': { dim: 'width_cm', compact: 180, oversized: 250 },
+  'bed': { dim: 'width_cm', compact: 140, oversized: 180 },
+  'beds': { dim: 'width_cm', compact: 140, oversized: 180 },
+  'coffee table': { dim: 'width_cm', compact: 80, oversized: 150 },
+  'coffee tables': { dim: 'width_cm', compact: 80, oversized: 150 },
+  'dining table': { dim: 'width_cm', compact: 150, oversized: 220 },
+  'dining tables': { dim: 'width_cm', compact: 150, oversized: 220 },
+  'chair': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'chairs': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'lounge chair': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'lounge chairs': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'armchair': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'armchairs': { dim: 'width_cm', compact: 70, oversized: 100 },
+  'dining chair': { dim: 'width_cm', compact: 45, oversized: 60 },
+  'dining chairs': { dim: 'width_cm', compact: 45, oversized: 60 },
+  'bedside table': { dim: 'width_cm', compact: 40, oversized: 60 },
+  'bedside tables': { dim: 'width_cm', compact: 40, oversized: 60 },
+  'side table': { dim: 'width_cm', compact: 40, oversized: 60 },
+  'side tables': { dim: 'width_cm', compact: 40, oversized: 60 },
+  'floor lamp': { dim: 'height_cm', compact: 140, oversized: 180 },
+  'floor lamps': { dim: 'height_cm', compact: 140, oversized: 180 },
+  'table lamp': { dim: 'height_cm', compact: 40, oversized: 60 },
+  'table lamps': { dim: 'height_cm', compact: 40, oversized: 60 },
+  'rug': { dim: 'width_cm', compact: 150, oversized: 280 },
+  'rugs': { dim: 'width_cm', compact: 150, oversized: 280 },
+  'stool': { dim: 'height_cm', compact: 65, oversized: 80 },
+  'stools': { dim: 'height_cm', compact: 65, oversized: 80 },
+};
+
+// Returns "compact" / "standard" / "oversized" + the raw cm string
+// for a category-aware prompt clause. Falls through cleanly when
+// dimensions or category threshold are missing — returns null and
+// the caller skips the size clause entirely.
+function dimensionsClause(
+  category: string,
+  dimensions: { width_cm?: number | null; depth_cm?: number | null; height_cm?: number | null } | null | undefined,
+): string | null {
+  if (!dimensions) return null;
+  const { width_cm: w, depth_cm: d, height_cm: h } = dimensions;
+  // Need at least one dimension; "—" is used as a placeholder for the
+  // ones that are missing so a partial dim doesn't read like 0×0×0cm.
+  if (w == null && d == null && h == null) return null;
+  const dimStr = `${w ?? '—'}×${d ?? '—'}×${h ?? '—'}cm`;
+  const thresh = CATEGORY_SIZE_THRESHOLDS[category];
+  if (!thresh) return dimStr; // unknown category — still pass raw cm
+  const value = dimensions[thresh.dim];
+  if (value == null) return dimStr; // dominant dim missing
+  const descriptor = value <= thresh.compact ? 'compact' : value >= thresh.oversized ? 'oversized' : 'standard-sized';
+  return `${descriptor} at ${dimStr}`;
+}
+
 export function buildOpenAIImagePrompt({
   paletteName,
   paletteVibe,
@@ -181,6 +250,15 @@ export function buildOpenAIImagePrompt({
     category: string;
     retailer: string;
     silhouette?: string | null;
+    /** Scraped product dimensions (cm). When present, the per-product
+     *  directive gets a size descriptor ("compact / standard / oversized
+     *  at WxDxHcm") so gpt-image-1 doesn't default to its priors for
+     *  what "a sofa" or "a queen bed" should be sized like. */
+    dimensions?: {
+      width_cm?: number | null;
+      depth_cm?: number | null;
+      height_cm?: number | null;
+    } | null;
   }>;
 }): string {
   const lines: string[] = [];
@@ -210,9 +288,17 @@ export function buildOpenAIImagePrompt({
       // misread than a bare category like "armchair". Falls back to
       // the category when vision_profile.silhouette is missing
       // (older / un-vision-profiled rows).
-      const description = p.silhouette
-        ? `Image ${imgIdx}: ${p.silhouette} (${p.name}, from ${p.retailer}).`
-        : `Image ${imgIdx}: a ${cat} (${p.name} from ${p.retailer}).`;
+      const baseDescription = p.silhouette
+        ? `${p.silhouette}`
+        : `a ${cat}`;
+      // Append dimensions clause when available — gives gpt-image-1
+      // both a category-relative size cue ("oversized") and the raw
+      // cm so it doesn't default to whatever the model thinks "a
+      // queen bed" or "a 3-seat sofa" should look like at room scale.
+      const dimClause = dimensionsClause(cat, p.dimensions);
+      const description = dimClause
+        ? `Image ${imgIdx}: ${baseDescription} (${p.name}, ${dimClause}, from ${p.retailer}).`
+        : `Image ${imgIdx}: ${baseDescription} (${p.name}, from ${p.retailer}).`;
       // Multi-instance categories: room naturally takes multiple
       // matching pieces (dining chairs around a table, bedside tables
       // flanking a bed). Example dropped from the directive (#40 —

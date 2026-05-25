@@ -279,10 +279,15 @@ export async function POST(request: NextRequest) {
       product_url: string | null;
       affiliate_url: string | null;
       vision_profile: { silhouette?: string | null } | null;
+      dimensions: {
+        width_cm?: number | null;
+        depth_cm?: number | null;
+        height_cm?: number | null;
+      } | null;
     }
     const { data } = await admin
       .from('products')
-      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url, vision_profile')
+      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url, vision_profile, dimensions')
       .in('id', ids);
     const rows = (data ?? []) as PickedRow[];
     if (rows.length > 0) {
@@ -302,6 +307,12 @@ export async function POST(request: NextRequest) {
         // reference image fidelity. Falls back to category descriptor
         // when null (older products / pre-vision-profile rows).
         silhouette: p.vision_profile?.silhouette ?? null,
+        // Dimensions from the scraper — buildOpenAIImagePrompt derives
+        // a size descriptor (compact / standard / oversized) from
+        // these and includes both descriptor + raw cm in the
+        // per-product directive. Null when the scraper couldn't parse
+        // them from the source page.
+        dimensions: p.dimensions ?? null,
       }));
 
       // Build the picking list from the picks. Synthetic bboxes
@@ -638,17 +649,17 @@ export async function POST(request: NextRequest) {
       // multiple angles are sent. This keeps buildOpenAIImagePrompt's
       // existing N-product contract intact.
       //
-      // Silhouette is the vision_profile-derived physical description
-      // (3-8 words, e.g. "low-profile modern armchair with curved arms
-      // and round upholstered seat"). When present, buildOpenAIImage
-      // Prompt leads each per-product directive with it instead of
-      // the generic category descriptor — significantly stronger
-      // signal for gpt-image-1 to honour the reference image fidelity.
+      // Silhouette = the vision_profile-derived physical description
+      // (3-8 words). Dimensions = scraped cm. Both fed into the
+      // per-product directive so gpt-image-1 has concrete visual
+      // language + scale to anchor against, rather than relying on
+      // its priors for what "a sofa" / "a lounge chair" looks like.
       const refs = productsForRefs.map((p) => ({
         name: p.name,
         category: p.category,
         retailer: p.retailer,
         silhouette: p.silhouette ?? null,
+        dimensions: p.dimensions ?? null,
       }));
       const openaiPrompt = buildOpenAIImagePrompt({
         paletteName: palette.name,

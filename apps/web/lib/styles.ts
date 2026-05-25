@@ -143,6 +143,19 @@ export interface HeroProductDescriptor {
    *  hasn't been derived yet; the renderer falls back to the
    *  category descriptor in that case. */
   silhouette?: string | null;
+  /** Product dimensions from the scraper (cm). Used by
+   *  buildOpenAIImagePrompt to disambiguate scale — a "queen bed"
+   *  could be 140cm or 180cm wide depending on the SKU, and
+   *  gpt-image-1's defaults don't always match the actual proportions.
+   *  Combined with a category-derived size descriptor (compact /
+   *  standard / oversized) so the prompt reads natural-language
+   *  ("oversized at 240×95×78cm") rather than raw numbers. Null
+   *  when the scraper couldn't parse dimensions from the source. */
+  dimensions?: {
+    width_cm?: number | null;
+    depth_cm?: number | null;
+    height_cm?: number | null;
+  } | null;
 }
 
 // Render aggressiveness mode.
