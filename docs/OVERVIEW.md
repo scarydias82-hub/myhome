@@ -72,6 +72,40 @@ product, the system, or the business. Cross-reference SHAs with
   directives, the next move is the Flux Kontext A/B (re-test the
   model that was reverted in #175 — now with hi-res Coco refs that
   weren't available then). Tracked as a follow-up.
+
+  **Follow-up in the same PR — product dimensions threaded through.**
+  Owner's question post-PR-#41-first-test: "are we giving the render
+  engine dimension info of the product to help it render?" Honest
+  answer was no — `products.dimensions` (width/depth/height cm,
+  populated by every scraper's `parseDimensions`) sat unused in the
+  render path. gpt-image-1 was guessing scale from the reference
+  image alone, which let its defaults (a "queen bed" rendered at
+  single-bed proportions, a 3-seat sofa rendered at 2-seat width)
+  override the actual product proportions. Three additions to PR #41:
+  1. `HeroProductDescriptor` gains an optional `dimensions` field;
+     render route SELECTs `dimensions` and threads it into both
+     heroProducts and the per-render `refs` array sent to
+     buildOpenAIImagePrompt
+  2. New `CATEGORY_SIZE_THRESHOLDS` config + `dimensionsClause`
+     helper in `lib/openai-image.ts`. Per-category dominant-dimension
+     thresholds (width for most furniture, height for lamps and
+     stools) bucket each product into "compact / standard-sized /
+     oversized" relative to the AU market's typical sizing for that
+     category. Examples: sofa width 180/250 = compact below 180cm,
+     oversized above 250cm; bed width 140/180 (separates queen from
+     king); dining table 150/220 (4-seat vs 8-10-seat).
+  3. `buildOpenAIImagePrompt` appends a size clause to each
+     per-product directive when dimensions are present: *"Image 3:
+     low-profile modern armchair with curved arms and round
+     upholstered seat (Axel armchair, **oversized at 85×90×92cm**,
+     from Coco Republic)"*. Both the descriptive bucket AND the raw
+     cm pass through — image models often ignore raw numbers but
+     hold descriptive size language, so combining both gives the
+     strongest signal.
+
+  Backward compatible: products without dimensions (or scraper
+  output where parseDimensions failed) just don't get the size
+  clause; rest of the directive renders normally.
 - `2026-05-25` — **Render flow simplification: tighter upload page,
   1-per-category picker, brief render commentary with expand.** Owner
   directive — strip clutter from the upload → palette → product flow
