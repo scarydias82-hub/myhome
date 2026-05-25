@@ -88,7 +88,65 @@ export async function cutoutProduct(imageUrl: string): Promise<Buffer> {
   if (!cutoutUrl) throw new Error('birefnet returned no cutout image');
   const res = await fetch(cutoutUrl);
   if (!res.ok) throw new Error(`fetch cutout failed: HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  const buf = Buffer.from(await res.arrayBuffer());
+
+  // Diagnostic + alpha validation. Background removal that succeeded
+  // should produce a PNG with a meaningful alpha channel. When it
+  // doesn't, the downstream composite pipeline (#178) skips the drop
+  // shadow but still pastes the cutout layer as-is — which, if the
+  // cutout has black-where-transparent-should-be (the case we keep
+  // seeing in the multi-stage modal: lamp/bedside/bed each rendered
+  // with a clean black rectangle around the product), results in
+  // a literal black rectangle pasted onto the room. Better to fail
+  // the cutout here and let the per-item Promise.allSettled in
+  // staging.ts log it cleanly, than to render a black box and call
+  // it staging.
+  const contentType = res.headers.get('content-type') ?? 'unknown';
+  const urlExt = (cutoutUrl.split('.').pop() ?? '').toLowerCase().split('?')[0];
+  console.log(
+    `[cutoutProduct] birefnet returned ${buf.length}B · content-type=${contentType} · url-ext=${urlExt} (${imageUrl.slice(0, 80)}...)`,
+  );
+
+  // Apply ensureAlpha to normalise into RGBA, then check whether the
+  // alpha channel actually carries transparency information.
+  // ensureAlpha() adds a fully-opaque alpha layer when the input was
+  // RGB-only, so "alpha looks fully opaque" tells us birefnet didn't
+  // actually remove a background — same detection as #178 but used to
+  // REJECT the cutout rather than silently render as a rectangle.
+  let alphaStats: { min: number; mean: number; max: number } | null = null;
+  try {
+    const normalised = await sharp(buf).ensureAlpha().png().toBuffer();
+    const stats = await sharp(normalised).extractChannel('alpha').stats();
+    const ch0 = stats.channels[0];
+    if (ch0 && typeof ch0.min === 'number' && typeof ch0.mean === 'number' && typeof ch0.max === 'number') {
+      alphaStats = { min: ch0.min, mean: ch0.mean, max: ch0.max };
+    }
+  } catch (err) {
+    throw new Error(
+      `cutout alpha validation failed (content-type=${contentType} url-ext=${urlExt} len=${buf.length}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (alphaStats) {
+    // Same threshold pair as the composite-side detection in #178.
+    // If alpha is mostly opaque, birefnet produced an unusable cutout
+    // (either it failed silently and returned the source image
+    // re-encoded, or the model couldn't isolate the product, or the
+    // input retailer image was already non-transparent and birefnet
+    // gave up). Fail fast — caller's Promise.allSettled in
+    // staging.ts records the per-item failure cleanly.
+    const hasRealAlpha = alphaStats.min < 250 && alphaStats.mean < 240;
+    if (!hasRealAlpha) {
+      throw new Error(
+        `birefnet returned an unusable cutout (alpha min=${alphaStats.min} mean=${Math.round(alphaStats.mean)} max=${alphaStats.max}) — content-type=${contentType} url-ext=${urlExt}. This produces black-rectangle composites; failing the cutout instead.`,
+      );
+    }
+    console.log(
+      `[cutoutProduct] alpha looks real (min=${alphaStats.min} mean=${Math.round(alphaStats.mean)} max=${alphaStats.max}) — cutout valid`,
+    );
+  }
+
+  return buf;
 }
 
 // Fetch a product image with browser-like headers and encode it as a
