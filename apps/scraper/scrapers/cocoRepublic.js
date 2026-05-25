@@ -65,18 +65,23 @@ const HI_RES_WIDTH = '2560w';
 const HERO_INCLUDE = /(sofa|chair|bed|dining|lamp|nightstand|bedside|stool|ottoman|armchair|chesterfield|modular|headboard)/i;
 const HERO_EXCLUDE = /(take-home-swatch|fabric-swatch|sample|leg-cap|leg-extension|cushion-cover|throw|vase|tray|frame|candle|hook|knob|book|bowl|set-of|coaster|placemat|napkin|jewellery|jewelry|umbrella|outdoor-rug|spare|replacement|wall-art|artwork|rug-pad|abstract-study|chandeli|paint)/i;
 
-// The 9 canonical categories the owner asked for. categoryFromCoco()
+// The 9 canonical categories the owner asked for, in the singular
+// form the owner specified ("sofa, chair, bed, dining table, ..."
+// rather than the plural form other scrapers use). categoryFromCoco()
 // returns one of these or null (which filters the product out).
+// Existing CATEGORY_FAMILIES in apps/web/lib/curation.ts handles the
+// plural/singular drift so the matcher still finds these rows under
+// queries for the plural canonical (Sofas → ['Sofas', 'Sofa']).
 const TARGET_CATEGORIES = new Set([
-  'Sofas',
-  'Chairs',
-  'Lounge Chairs',
-  'Dining Chairs',
-  'Dining Tables',
-  'Beds',
-  'Bedside Tables',
-  'Floor Lamps',
-  'Table Lamps',
+  'Sofa',
+  'Chair',
+  'Lounge Chair',
+  'Dining Chair',
+  'Dining Table',
+  'Bed',
+  'Bedside Table',
+  'Floor Lamp',
+  'Table Lamp',
 ]);
 
 async function fetchText(url) {
@@ -151,19 +156,19 @@ function categoryFromCoco(p) {
 
   // Order matters: more-specific matches before broader ones (e.g.
   // "bedside" before "bed").
-  if (/bedside|nightstand/.test(haystack)) return 'Bedside Tables';
-  if (/floor.lamp|floor-lamp/.test(haystack)) return 'Floor Lamps';
-  if (/table.lamp|table-lamp|desk.lamp/.test(haystack)) return 'Table Lamps';
-  if (/dining.chair|dining-chair/.test(haystack)) return 'Dining Chairs';
-  if (/dining.table|dining-table|dining\/tables/.test(haystack)) return 'Dining Tables';
-  if (/sofa|chesterfield|modular/.test(haystack)) return 'Sofas';
-  if (/headboard|\bbed\b|beds\/|bedroom\/beds/.test(haystack)) return 'Beds';
+  if (/bedside|nightstand/.test(haystack)) return 'Bedside Table';
+  if (/floor.lamp|floor-lamp/.test(haystack)) return 'Floor Lamp';
+  if (/table.lamp|table-lamp|desk.lamp/.test(haystack)) return 'Table Lamp';
+  if (/dining.chair|dining-chair/.test(haystack)) return 'Dining Chair';
+  if (/dining.table|dining-table|dining\/tables/.test(haystack)) return 'Dining Table';
+  if (/sofa|chesterfield|modular/.test(haystack)) return 'Sofa';
+  if (/headboard|\bbed\b|beds\/|bedroom\/beds/.test(haystack)) return 'Bed';
   // "Lounge" / occasional / living-room armchairs land here.
   if (/lounge.chair|lounge-chair|armchair|tub.chair|wing.chair|occasional.chair|living\/chairs/.test(haystack)) {
-    return 'Lounge Chairs';
+    return 'Lounge Chair';
   }
-  // Bare "chair" not in dining / lounge taxonomy → generic Chairs.
-  if (/\bchair\b/.test(haystack)) return 'Chairs';
+  // Bare "chair" not in dining / lounge taxonomy → generic Chair.
+  if (/\bchair\b/.test(haystack)) return 'Chair';
 
   return null;
 }

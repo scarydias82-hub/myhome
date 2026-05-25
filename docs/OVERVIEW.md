@@ -48,13 +48,20 @@ product, the system, or the business. Cross-reference SHAs with
   Coco's images land at native 2560w (~1.5-2MB each) for vision
   profile fidelity + future render-substitution compositing. Other
   scrapers keep the resize default unchanged.
-  Coco taxonomy narrowed to the 9-category list the owner asked for
-  — Sofas, Chairs, Lounge Chairs, Dining Chairs, Dining Tables,
-  Beds, Bedside Tables, Floor Lamps, Table Lamps. Anything outside
-  that set is filtered at the category gate so we don't burn
-  requests / disk on artwork, cushions, swatches, etc. Per-URL = per-
-  variant naturally because Coco publishes per-variant pages — no
-  variants JSON column needed.
+  Coco taxonomy narrowed to the 9-category list the owner asked for,
+  written in the **singular form** the owner specified — Sofa, Chair,
+  Lounge Chair, Dining Chair, Dining Table, Bed, Bedside Table,
+  Floor Lamp, Table Lamp. (Other scrapers still write plural — both
+  forms are listed under each canonical in
+  `apps/web/lib/curation.ts` CATEGORY_FAMILIES so the matcher finds
+  Coco rows under existing plural queries. Lounge Chair + Lighting-
+  family aliases added in the same commit so Coco's Lamp /
+  Lounge Chair rows surface under the Lighting / Chairs canonicals
+  used by CORE_CATEGORIES_PER_ROOM.) Anything outside that set is
+  filtered at the category gate so we don't burn requests / disk on
+  artwork, cushions, swatches, etc. Per-URL = per-variant naturally
+  because Coco publishes per-variant pages — no variants JSON
+  column needed.
   Wipe + rescrape sequence: owner runs
   `DELETE FROM products WHERE retailer = 'Coco Republic';` (cascade
   removes any featured_products / user_wishlist / vision_boards rows

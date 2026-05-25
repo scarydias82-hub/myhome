@@ -43,19 +43,30 @@ const FALLBACK_CORE_CATEGORIES = ['Sofas', 'Coffee Tables', 'Rugs', 'Lighting'];
 
 // Same category-family expansion as lib/matching.ts + completeTheLook
 // — retailer spelling drift (Sofa vs Sofas) shouldn't drop matches.
+//
+// Coco Republic (#36) writes singular labels per owner directive
+// ("drop the s from your label"). Other scrapers still write plural.
+// Both forms are listed here so the room → core-categories queries
+// keep working regardless of which scraper produced the row.
 const CATEGORY_FAMILIES: Record<string, string[]> = {
   Sofas: ['Sofas', 'Sofa'],
   'Coffee Tables': ['Coffee Tables', 'Coffee Table'],
-  'Side Tables': ['Side Tables', 'Bedside Table', 'Bedside Tables', 'Occasional Tables'],
+  'Side Tables': ['Side Tables', 'Side Table', 'Bedside Table', 'Bedside Tables', 'Occasional Tables', 'Occasional Table'],
   'Bedside Tables': ['Bedside Tables', 'Bedside Table'],
   Beds: ['Beds', 'Bed'],
-  Chairs: ['Chairs', 'Chair', 'Armchair', 'Dining Chair'],
+  Chairs: ['Chairs', 'Chair', 'Armchair', 'Dining Chair', 'Lounge Chair', 'Lounge Chairs'],
   'Dining Tables': ['Dining Tables', 'Dining Table'],
-  Consoles: ['Consoles', 'Console Table'],
+  Consoles: ['Consoles', 'Console', 'Console Table'],
   Stools: ['Stools', 'Stool', 'Bar Stool'],
   Desks: ['Desks', 'Desk'],
   Tapware: ['Tapware'],
   Mirrors: ['Mirrors', 'Mirror'],
+  // Lighting is the canonical room-categories key (per CORE_CATEGORIES_
+  // PER_ROOM) — Coco surfaces specific lamp types as their own
+  // categories (Floor Lamp / Table Lamp), and Freedom writes plural
+  // 'Lamps' / 'Wall Lights'. Expand all of them under Lighting so a
+  // matcher query for Lighting finds rows from any scraper.
+  Lighting: ['Lighting', 'Lamp', 'Lamps', 'Floor Lamp', 'Floor Lamps', 'Table Lamp', 'Table Lamps', 'Wall Light', 'Wall Lights', 'Pendant', 'Pendants'],
 };
 
 function expandCategory(displayCategory: string): string[] {
