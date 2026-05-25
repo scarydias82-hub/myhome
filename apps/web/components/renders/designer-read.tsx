@@ -31,6 +31,11 @@ import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { DisplayHeading } from '@/components/saltbush/display-heading';
 
 export interface DesignerAdvice {
+  /** One-line product list ("Linen cream sofa, oak coffee table, ...").
+   *  Renders as the default at-a-glance read; the longer sections
+   *  collapse behind an expand affordance. Older rows lack this field —
+   *  the component falls back to showing the existing sections expanded. */
+  productSummary?: string;
   designerRead: string;
   paletteStory?: string;
   exploreInvite?: string;
@@ -186,35 +191,79 @@ function ReadingError({ message }: { message: string }) {
   );
 }
 
+// Renders the designer commentary. Defaults to showing only the brief
+// PRODUCT SUMMARY one-liner (so the page doesn't push down with a wall
+// of text); a "Read the designer's take" toggle reveals the three
+// longer sections (DESIGNER READ / PALETTE STORY / EXPLORE INVITE).
+// Older rows that lack productSummary auto-expand to the long form so
+// the user sees something useful — backward compatible.
 function AdviceBlock({ advice }: { advice: DesignerAdvice }) {
+  const hasLongForm = Boolean(
+    advice.designerRead || advice.paletteStory || advice.exploreInvite,
+  );
+  // Older rows had no productSummary — expand by default so the user
+  // sees the existing commentary instead of an empty card.
+  const [expanded, setExpanded] = useState(!advice.productSummary);
+
   return (
-    <div className="space-y-8 p-6 md:p-8">
-      {advice.designerRead ? (
+    <div className="p-6 md:p-8">
+      {/* PRODUCT SUMMARY — the at-a-glance read, always visible when
+          it exists. Tight one-liner so the page doesn't push down. */}
+      {advice.productSummary ? (
         <div>
-          <Eyebrow>The read</Eyebrow>
-          <p className="mt-3 max-w-3xl font-display text-[20px] leading-snug text-ink">
-            {advice.designerRead}
+          <Eyebrow>In the render</Eyebrow>
+          <p className="mt-3 max-w-3xl font-display text-[18px] leading-snug text-ink md:text-[20px]">
+            {advice.productSummary}
           </p>
         </div>
       ) : null}
 
-      {advice.paletteStory ? (
-        <div>
-          <Eyebrow>Palette story</Eyebrow>
-          <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-ink">
-            {advice.paletteStory}
-          </p>
-        </div>
+      {/* Expand toggle — only shows when there's something to expand AND
+          the productSummary is providing the at-a-glance read. Older
+          rows without productSummary auto-expand and don't need a
+          toggle. */}
+      {advice.productSummary && hasLongForm ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-4 inline-flex items-center gap-2 font-mono text-meta uppercase tracking-eyebrow text-clay transition hover:text-ink"
+        >
+          {expanded ? '— Hide the designer’s take' : '+ Read the designer’s take'}
+        </button>
       ) : null}
 
-      {advice.exploreInvite ? (
-        <div className="rounded-xl bg-ink p-5 text-paper">
-          <p className="font-mono text-meta uppercase tracking-eyebrow text-paper/70">
-            Keep exploring
-          </p>
-          <p className="mt-2 font-display text-[18px] leading-snug">
-            {advice.exploreInvite}
-          </p>
+      {/* Long-form sections — collapsed by default behind the toggle. */}
+      {expanded && hasLongForm ? (
+        <div className="mt-6 space-y-8 border-t border-ink/[0.06] pt-6">
+          {advice.designerRead ? (
+            <div>
+              <Eyebrow>The read</Eyebrow>
+              <p className="mt-3 max-w-3xl font-display text-[20px] leading-snug text-ink">
+                {advice.designerRead}
+              </p>
+            </div>
+          ) : null}
+
+          {advice.paletteStory ? (
+            <div>
+              <Eyebrow>Palette story</Eyebrow>
+              <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-ink">
+                {advice.paletteStory}
+              </p>
+            </div>
+          ) : null}
+
+          {advice.exploreInvite ? (
+            <div className="rounded-xl bg-ink p-5 text-paper">
+              <p className="font-mono text-meta uppercase tracking-eyebrow text-paper/70">
+                Keep exploring
+              </p>
+              <p className="mt-2 font-display text-[18px] leading-snug">
+                {advice.exploreInvite}
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

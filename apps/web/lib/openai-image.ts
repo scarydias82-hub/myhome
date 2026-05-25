@@ -139,6 +139,26 @@ export async function submitOpenAIImageRender(
 /** Build a natural-language prompt for gpt-image-1. Less verbose than
  *  the Flux Kontext prompt — gpt-image-1 follows clear instruction
  *  better with concise prose than with bullet-point directive lists. */
+// Categories where the room composition typically calls for multiple
+// matching instances of the same product (the picker enforces 1 pick
+// per category — the renderer multiplies it). Lowercase to match the
+// `.toLowerCase()` of the incoming category strings; includes both
+// the singular form (from Coco-style scrapers post-#36) and the
+// plural form (Freedom/Fantastic/etc.) so any retailer's product
+// triggers the multi-instance prompt directive.
+const MULTI_INSTANCE_CATEGORIES = new Set([
+  'dining chair',
+  'dining chairs',
+  'bedside table',
+  'bedside tables',
+  'lounge chair',
+  'lounge chairs',
+  'armchair',
+  'armchairs',
+  'stool',
+  'stools',
+]);
+
 export function buildOpenAIImagePrompt({
   paletteName,
   paletteVibe,
@@ -166,8 +186,18 @@ export function buildOpenAIImagePrompt({
     );
     productRefs.slice(0, 4).forEach((p, i) => {
       const imgIdx = 3 + i;
+      const cat = p.category.toLowerCase();
+      // The picker enforces 1 product per category. Some categories
+      // naturally need multiple matching instances in the room (a set
+      // of dining chairs around a dining table, two matching bedside
+      // tables flanking a queen bed, a pair of armchairs flanking a
+      // fireplace). For those, instruct the renderer to place
+      // coordinated copies; for everything else, a single instance.
+      const placement = MULTI_INSTANCE_CATEGORIES.has(cat)
+        ? `Place multiple matching instances of this exact piece as the room composition requires — e.g. a set of 4-6 around a dining table, a pair flanking a bed.`
+        : `Place it naturally in the scene at a position appropriate for a ${cat}.`;
       lines.push(
-        `- Image ${imgIdx}: a ${p.category.toLowerCase()} (${p.name} from ${p.retailer}). Place it naturally in the scene at a position appropriate for a ${p.category.toLowerCase()}.`,
+        `- Image ${imgIdx}: a ${cat} (${p.name} from ${p.retailer}). ${placement}`,
       );
     });
   }

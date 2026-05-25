@@ -101,6 +101,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   // (they chose them).
   const [curationOpen, setCurationOpen] = useState(false);
   const [curationLoading, setCurationLoading] = useState(false);
+  // Tracks which palette the curationCategories were last fetched for.
+  // Drives the auto-open effect: when the user picks a new palette,
+  // paletteId !== loadedForPaletteId, so curation refetches + reopens
+  // without needing a manual "Browse the designer's edit" click. Reset
+  // by openCuration() once the fetch lands.
+  const [loadedForPaletteId, setLoadedForPaletteId] = useState<string | null>(null);
   const [curationCategories, setCurationCategories] = useState<
     Array<{
       displayLabel: string;
@@ -230,6 +236,24 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   useEffect(() => {
     fetch('/api/warm', { method: 'POST' }).catch(() => {});
   }, [paletteId]);
+
+  // Auto-open the curation step once we have an analysed room AND a
+  // selected palette, so the user sees products immediately instead of
+  // clicking a "Browse the designer's edit" button. Refires when the
+  // user goes back and picks a different palette — `loadedForPaletteId`
+  // tracks which palette curationCategories were fetched for, so a
+  // palette change triggers a refetch + reopen. Guarded against
+  // concurrent fetches via curationLoading.
+  useEffect(() => {
+    if (!analysisConfirmed || !paletteId) return;
+    if (curationLoading) return;
+    if (loadedForPaletteId === paletteId) return;
+    void openCuration();
+    // openCuration captures `roomId`, `paletteId`, `style` from the
+    // surrounding scope and sets loadedForPaletteId on success — the
+    // deps below are the trigger conditions, not the closed-over vars.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisConfirmed, paletteId, loadedForPaletteId]);
 
   async function handleFile(next: File | null) {
     setError(null);
@@ -423,6 +447,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
       }
       setCurationCategories(json.categories);
       setCurationOpen(true);
+      setLoadedForPaletteId(paletteId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error.');
     } finally {
@@ -430,16 +455,22 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
     }
   }
 
+  // Single-select per category. Clicking a product:
+  //   - Selects it (replacing any other pick in that category) if the
+  //     user wasn't already on that product
+  //   - Deselects it if they were (allows re-thinking)
+  // Renderer multiplication of single picks (e.g. a set of dining
+  // chairs from one pick) is handled by the gpt-image-1 prompt, not
+  // by letting the user pick multiple.
   function togglePick(categoryLabel: string, productId: string) {
     setPicks((prev) => {
       const next = new Map(prev);
-      const curr = new Set(next.get(categoryLabel) ?? []);
-      if (curr.has(productId)) {
-        curr.delete(productId);
-      } else if (curr.size < 3) {
-        curr.add(productId);
+      const curr = next.get(categoryLabel);
+      if (curr?.has(productId)) {
+        next.delete(categoryLabel);
+      } else {
+        next.set(categoryLabel, new Set([productId]));
       }
-      next.set(categoryLabel, curr);
       return next;
     });
   }
@@ -569,33 +600,25 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           make — auto-confirm via #101 handled most cases silently
           already. This pulls the surface entirely. */}
 
-      {/* DesignerSummaryCard only renders when we have analysis data
-          (Phase 1 done). Commentary inside the card progressively
-          reveals — room read first, then the "why" once Phase 2 is
-          done. */}
-      {analysisConfirmed && analysis ? (
-        <DesignerSummaryCard
-          analysis={analysis}
-          briefPreFilled={briefPreFilled}
-          paletteId={paletteId}
-          reasoning={recommendationReasoning}
-        />
-      ) : null}
+      {/* DesignerSummaryCard removed per owner directive — the long
+          room-read + reasoning block crowded the page and pushed the
+          palette + product pickers below the fold. Step3Style below
+          IS the brief "here's the recommended palette" surface (the
+          pre-selected tile), and CurationStep auto-opens once the
+          palette is locked. The DesignerSummaryCard component itself
+          remains in the file (lines ~948+) as dead code; safe to
+          remove in a follow-up sweep. */}
 
-      {/* §6.11 Phase C (#155) — inheritance banner. Shows where the
-          recommendation's taste signal came from (project / user_prefs /
-          override) and offers the "Customise for this image" override.
-          Hidden when there's nothing to say (no recommendation yet, or
-          source is 'none' — the cold-start case we still allow). */}
-      {analysisConfirmed && roomId && recommendationSource && recommendationSource !== 'none' ? (
-        <RecommendationSourceBanner
-          source={recommendationSource}
-          appliedTags={appliedTags}
-          tagLabelBySlug={TAG_LABEL_BY_SLUG}
-          onCustomise={() => setOverrideOpen(true)}
-          onClear={recommendationSource === 'override' ? clearOverride : undefined}
-        />
-      ) : null}
+      {/* RecommendationSourceBanner (preferences chips + "Customise"
+          CTA) removed per owner directive — was clutter between the
+          designer summary and the palette/curation flow. The banner
+          was originally from #155 Phase C to surface per-render override
+          source; with the simplified flow (recommended palette →
+          override via picker → products) the user doesn't need to see
+          the source-of-recommendation chips inline. RecommendationSource
+          state + override modal stays in code (unused for now;
+          PreferencesModal is dead code that can be removed in a
+          follow-up sweep once we're sure no other surface uses it). */}
 
       {/* Carousels mount as soon as analysis kicks off — not waiting
           for Phase 1 to complete. Single carousel overlay spans
@@ -1704,8 +1727,13 @@ function UnifiedPaletteCard({
 // render. Each core category for the room (4 max — sofas, coffee
 // tables, etc.) gets a horizontal row of 6-8 cards. Wishlist items
 // are pinned to the front of each row with a ♥ marker. User picks
-// 1-3 per category; those become both the heroProducts for the
-// renderer AND the picking_list shown after the render.
+// exactly 1 per category (single-select; selecting a second product
+// replaces the first); those become both the heroProducts for the
+// renderer AND the picking_list shown after the render. Rooms that
+// visually need multiple of the same type (a set of dining chairs,
+// matching armchairs flanking a fireplace) are handled by the
+// renderer prompt — the user picks one chair model and gpt-image-1
+// places multiple matching instances as the room requires.
 function CurationStep({
   categories,
   picks,
@@ -1729,11 +1757,11 @@ function CurationStep({
   return (
     <section>
       <Eyebrow>The designer&rsquo;s edit · pick what you love</Eyebrow>
-      <h2 className="mt-2 font-display text-h3 text-ink">Choose 1–3 per category</h2>
+      <h2 className="mt-2 font-display text-h3 text-ink">Choose 1 per category</h2>
       <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
-        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Pick what
-        you&rsquo;d actually buy — these are what the render shows. Items you&rsquo;ve
-        liked before are pinned to the front of each row.
+        We&rsquo;ve narrowed the catalogue to what fits your palette + room. Pick
+        one per category — these are the products that appear in your render.
+        Items you&rsquo;ve liked before are pinned to the front of each row.
       </p>
 
       {categories.map((cat) => {
@@ -1745,7 +1773,9 @@ function CurationStep({
               <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
                 {cat.items.length === 0
                   ? 'No matches'
-                  : `${catPicks.size} / 3 picked${catPicks.size === 0 ? ' · required' : ''}`}
+                  : catPicks.size > 0
+                    ? 'Selected'
+                    : 'Pick one'}
               </p>
             </div>
 
@@ -1758,7 +1788,10 @@ function CurationStep({
                 <ul className="flex snap-x snap-mandatory gap-3 px-2">
                   {cat.items.map((item) => {
                     const selected = catPicks.has(item.id);
-                    const canPick = selected || catPicks.size < 3;
+                    // Single-select model: any product is always
+                    // pickable; clicking a new one replaces the prior
+                    // pick. No 'disabled' state — keeps the experience
+                    // forgiving when the user changes their mind.
                     return (
                       <li
                         key={item.id}
@@ -1767,15 +1800,12 @@ function CurationStep({
                         <button
                           type="button"
                           onClick={() => onTogglePick(cat.displayLabel, item.id)}
-                          disabled={!canPick}
                           aria-pressed={selected}
                           className={cn(
                             'flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-cream text-left transition',
                             selected
                               ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                              : canPick
-                                ? 'border-ink/[0.06] hover:border-ink/20'
-                                : 'border-ink/[0.06] opacity-40 cursor-not-allowed',
+                              : 'border-ink/[0.06] hover:border-ink/20',
                           )}
                         >
                           <div className="relative aspect-square w-full bg-paper-warm bg-grain">
