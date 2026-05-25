@@ -36,9 +36,9 @@ export interface OpenAIImageInput {
   roomBuf: Buffer;
   /** Optional palette swatch (image 2). Skip if you don't have one. */
   paletteSwatchBuf?: Buffer | null;
-  /** Optional product reference images (images 3+). Cap at 4 caller-side
-   *  to keep payload + token cost manageable; gpt-image-1 accepts up
-   *  to 16 but quality degrades past 5-6. */
+  /** Optional product reference images (images 3+). Cap at 10 caller-side
+   *  to allow multi-angle references (4 products × 2-3 angles each);
+   *  gpt-image-1 accepts up to 16 but quality degrades past 8-10. */
   productImageBufs?: Buffer[];
   /** Output size. 1024x1024 default; landscape / portrait options also
    *  supported by the model. */
@@ -84,7 +84,12 @@ export async function submitOpenAIImageRender(
       'palette.png',
     );
   }
-  const productBufs = (input.productImageBufs ?? []).slice(0, 4);
+  // Cap bumped from 4 to 10 with the multi-angle render path (#36
+  // multi-image + this PR). The caller decides the actual product
+  // count × angle count product; this cap is the safety upper bound
+  // before gpt-image-1's 16-image hard limit (room + palette = 2
+  // implicit, leaves 14 free slots).
+  const productBufs = (input.productImageBufs ?? []).slice(0, 10);
   for (let i = 0; i < productBufs.length; i++) {
     const buf = productBufs[i];
     if (!buf) continue;

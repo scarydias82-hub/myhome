@@ -34,6 +34,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { detectObjects, dedupeBoxes, categoryForLabel, type Bbox } from '@/lib/detection';
 import { withAnthropicRetry } from '@/lib/anthropic-retry';
 import { embedImage } from '@/lib/embeddings';
+import { getRenderRetailerAllowlist } from '@/lib/env';
 
 export interface PickingMatch {
   productId: string;
@@ -597,7 +598,16 @@ async function fetchCandidates({
   const cats = categoryCandidates(category);
   const canonicalRoom = normaliseRoomTag(roomType);
   const selectCols =
-    'id, name, retailer, category, price_aud, image_url, product_url, affiliate_url, dimensions';
+    'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions';
+
+  // Test-mode retailer scoping (RENDER_RETAILER_ALLOWLIST). Applied
+  // to BOTH RPC results (post-filter — the RPCs don't accept a
+  // retailer param) and the non-RPC fallback queries. Paint queries
+  // earlier in this file are deliberately exempt (paint is its own
+  // pipeline and scoping it would zero out wall colour rendering).
+  const retailerAllowlist = getRenderRetailerAllowlist();
+  const filterByAllowlist = (rows: ProductRow[]): ProductRow[] =>
+    retailerAllowlist ? rows.filter((r) => retailerAllowlist.includes(r.retailer)) : rows;
 
   // CLIP pre-rank path — visually-similar candidates beat price-sorted
   // ones every time. Embedding lives behind @/lib/embeddings; on Vercel
@@ -635,10 +645,11 @@ async function fetchCandidates({
       if (vp.error) {
         console.error('[matching] vision_profile RPC failed', vp.error);
       } else if (vp.data && vp.data.length > 0) {
+        const filtered = filterByAllowlist(vp.data as ProductRow[]);
         console.log(
-          `[matching] vision_profile pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${vp.data.length} candidates in ${embedMs}ms embed`,
+          `[matching] vision_profile pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${vp.data.length} candidates in ${embedMs}ms embed (${filtered.length} after retailer filter)`,
         );
-        return vp.data as ProductRow[];
+        if (filtered.length > 0) return filtered;
       }
 
       // Tier 2: palette_tags + room_tags (#146 contract). Reusing the
@@ -653,10 +664,11 @@ async function fetchCandidates({
       if (tagged.error) {
         console.error('[matching] CLIP pre-rank RPC failed', tagged.error);
       } else if (tagged.data && tagged.data.length > 0) {
+        const filtered = filterByAllowlist(tagged.data as ProductRow[]);
         console.log(
-          `[matching] palette_tags pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${tagged.data.length} candidates`,
+          `[matching] palette_tags pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): ${tagged.data.length} candidates (${filtered.length} after retailer filter)`,
         );
-        return tagged.data as ProductRow[];
+        if (filtered.length > 0) return filtered;
       } else {
         console.log(
           `[matching] CLIP pre-rank(${category}, palette=${paletteId}, room=${canonicalRoom}): 0 across both tiers — falling back to non-RPC filter`,
@@ -672,13 +684,15 @@ async function fetchCandidates({
   // pieces — cheap accessories can dominate categories like "Lighting"
   // otherwise. Used when CLIP pre-rank is unavailable or returned empty.
   if (paletteId && canonicalRoom) {
-    const filtered = await admin
+    let qb = admin
       .from('products')
       .select(selectCols)
       .in('category', cats)
       .not('image_url', 'is', null)
       .contains('palette_tags', [paletteId])
-      .overlaps('room_tags', [canonicalRoom, 'any'])
+      .overlaps('room_tags', [canonicalRoom, 'any']);
+    if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+    const filtered = await qb
       .order('price_aud', { ascending: false, nullsFirst: false })
       .limit(CANDIDATES_PER_ITEM);
     if (filtered.error) {
@@ -695,11 +709,13 @@ async function fetchCandidates({
     }
   }
 
-  const { data, error } = await admin
+  let qbFallback = admin
     .from('products')
     .select(selectCols)
     .in('category', cats)
-    .not('image_url', 'is', null)
+    .not('image_url', 'is', null);
+  if (retailerAllowlist) qbFallback = qbFallback.in('retailer', retailerAllowlist);
+  const { data, error } = await qbFallback
     .order('price_aud', { ascending: false, nullsFirst: false })
     .limit(CANDIDATES_PER_ITEM);
   if (error) {

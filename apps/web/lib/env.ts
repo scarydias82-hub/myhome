@@ -18,6 +18,17 @@ const serverEnvSchema = z.object({
   // /api/render falls through to the Flux Kontext path. Required for
   // FLUX_PROVIDER='openai-image-1'.
   OPENAI_API_KEY: z.string().min(1).optional(),
+  // Optional comma-separated allowlist scoping render-pipeline product
+  // candidate fetches to a subset of retailers. Used as a temporary
+  // test mode — e.g. `RENDER_RETAILER_ALLOWLIST=Coco Republic` to
+  // isolate the catalogue while validating new imagery / variants /
+  // vision profile coverage. When unset (the production default),
+  // every retailer's products are eligible. Applied in:
+  //   - lib/curation.ts  (picking-step candidate fetch)
+  //   - lib/designer.ts  (narrator candidate fetch)
+  //   - lib/matching.ts  (any matcher candidate fetch)
+  // Names are matched case-sensitively against `products.retailer`.
+  RENDER_RETAILER_ALLOWLIST: z.string().optional(),
 });
 
 // In dev we let the app boot without Supabase so you can render the landing page
@@ -56,5 +67,20 @@ export function getServerEnv() {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     HF_TOKEN: process.env.HF_TOKEN,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    RENDER_RETAILER_ALLOWLIST: process.env.RENDER_RETAILER_ALLOWLIST,
   });
+}
+
+// Parse RENDER_RETAILER_ALLOWLIST into a string[] of retailer names.
+// Empty / unset returns null (meaning "no filter — every retailer
+// eligible"). Trims whitespace and drops empty entries so trailing
+// commas don't matter.
+export function getRenderRetailerAllowlist(): string[] | null {
+  const raw = process.env.RENDER_RETAILER_ALLOWLIST;
+  if (!raw) return null;
+  const names = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return names.length > 0 ? names : null;
 }

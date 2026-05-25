@@ -126,6 +126,13 @@ export interface HeroProductDescriptor {
    *  callers pass undefined and the renderer falls back to text-only
    *  prompt biasing. */
   imageUrl?: string | null;
+  /** Multi-image array for retailers that publish multiple hero shots
+   *  per product (Coco Republic hi-res rebuild #36). When present, the
+   *  render route picks the best 2 product-only angles per product to
+   *  send to gpt-image-1's multi-image reference input — gives the
+   *  renderer 3D-perspective info the single hero shot can't convey.
+   *  When null, falls back to the single `imageUrl`. */
+  imageUrls?: string[] | null;
 }
 
 // Render aggressiveness mode.

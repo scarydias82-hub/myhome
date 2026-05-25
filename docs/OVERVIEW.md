@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-24 · most recent material commit: `fb8dad7` (will
+**Last verified:** 2026-05-25 · most recent material commit: `45ae4fd` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,34 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-25` — **Render test mode: retailer allowlist + multi-angle
+  product references.** Two related changes to support the post-Coco-
+  rescrape render quality test.
+  (1) New `RENDER_RETAILER_ALLOWLIST` env var (comma-separated retailer
+  names). When set, scopes every render-pipeline product candidate
+  fetch to those retailers only — `lib/curation.ts` (the picking-step
+  candidate fetch + the wishlist join), `lib/designer.ts` (narrator
+  candidate fetch), and `lib/matching.ts` (vision_profile RPC, CLIP
+  pre-rank RPC, and both fallback queries). RPC results are post-
+  filtered in memory since the RPCs don't accept a retailer param.
+  Paint queries in matching.ts are intentionally exempt — wall paint
+  is its own pipeline and scoping it would zero out wall colour
+  rendering. Unset in production = no filter (default behaviour).
+  Used during the Coco-only render quality test as
+  `RENDER_RETAILER_ALLOWLIST=Coco Republic`.
+  (2) Renderer now sends up to 2 angles per product to gpt-image-1's
+  multi-image reference input. `HeroProductDescriptor.imageUrls?: string[]`
+  threaded from `products.image_urls[]` through `/api/render` →
+  `lib/openai-image.ts`. `pickRenderReferenceUrls()` filters out
+  lifestyle / styled-room shots via a BigCommerce filename heuristic
+  (`_Lifestyle_` substring) so the renderer only sees product-on-
+  neutral-background references — lifestyle shots carry surrounding
+  context the model can splice into the output scene. Cap = 4 products
+  × 2 angles = 8 product images, plus 1 room + 1 palette = 10 total,
+  well under gpt-image-1's 16-image hard limit. `openai-image.ts`
+  productImageBufs cap bumped 4 → 10. Caller-side caps in render
+  route. Backward compatible — products without `image_urls` fall back
+  to single `imageUrl` and the renderer behaves exactly as before.
 - `2026-05-24` — **Coco Republic scraper rebuilt — bcJsContext +
   multi-image + hi-res, owner-narrowed to 9 hero categories.** Owner
   directive: get the premium-tier catalogue right before relying on

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getServerEnv } from '@/lib/env';
+import { getServerEnv, getRenderRetailerAllowlist } from '@/lib/env';
 import type { Palette } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { fetchKnowledgeContext, formatKnowledgeContext } from '@/lib/knowledge';
@@ -159,23 +159,29 @@ async function fetchCandidates(
   ];
   const out: CandidateProduct[] = [];
   const perCat = Math.max(1, Math.ceil(limit / preferredCategories.length));
+  // Test-mode retailer scoping. When set the narrator only sees products
+  // from the allowlisted retailers — keeps the post-render commentary
+  // honest about what the catalogue actually contains in test mode.
+  const retailerAllowlist = getRenderRetailerAllowlist();
   for (const category of preferredCategories) {
-    const { data, error } = await admin
+    let qb = admin
       .from('products')
       .select('id, name, retailer, category, price_aud, product_url, image_url')
       .eq('category', category)
-      .not('image_url', 'is', null)
-      .limit(perCat);
+      .not('image_url', 'is', null);
+    if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+    const { data, error } = await qb.limit(perCat);
     if (error) continue;
     out.push(...((data as CandidateProduct[]) ?? []));
     if (out.length >= limit) break;
   }
   if (out.length === 0) {
-    // Last-resort: any products at all.
-    const { data } = await admin
+    // Last-resort: any products at all (subject to test-mode allowlist).
+    let qb = admin
       .from('products')
-      .select('id, name, retailer, category, price_aud, product_url, image_url')
-      .limit(limit);
+      .select('id, name, retailer, category, price_aud, product_url, image_url');
+    if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+    const { data } = await qb.limit(limit);
     out.push(...((data as CandidateProduct[]) ?? []));
   }
   // Optional palette-style hint: prepend palette name to product metadata
