@@ -21,7 +21,8 @@
 // Invocation:
 //   pnpm --filter @myhome/scraper run vision-profile
 //   pnpm --filter @myhome/scraper run vision-profile -- --dry --limit=10
-//   pnpm --filter @myhome/scraper run vision-profile -- --retailer=globewest
+//   pnpm --filter @myhome/scraper run vision-profile -- --retailer=GlobeWest
+//   pnpm --filter @myhome/scraper run vision-profile -- --retailer="Coco Republic"
 //   pnpm --filter @myhome/scraper run vision-profile -- --rebuild
 
 // override:true so the .env file is authoritative — some dev shells
@@ -58,12 +59,17 @@ const DRY = process.argv.includes('--dry');
 const REBUILD = process.argv.includes('--rebuild');
 const limitArg = process.argv.find((a) => a.startsWith('--limit='));
 const LIMIT = limitArg ? Number(limitArg.slice('--limit='.length)) : null;
+// --retailer values are matched case-and-space-sensitively against
+// products.retailer (which is stored in the canonical mixed-case form
+// the scraper writes: "Coco Republic", "GlobeWest", "Fantastic
+// Furniture", etc.). Quote multi-word names in the shell:
+//   --retailer="Coco Republic,GlobeWest"
 const retailerArg = process.argv.find((a) => a.startsWith('--retailer='));
 const RETAILER_FILTER = retailerArg
   ? retailerArg
       .slice('--retailer='.length)
       .split(',')
-      .map((s) => s.trim().toLowerCase())
+      .map((s) => s.trim())
       .filter(Boolean)
   : null;
 
