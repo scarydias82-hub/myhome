@@ -37,6 +37,15 @@ if (RETAILER_FILTER) {
 }
 
 function toRow(raw) {
+  // Coco-style scrapers populate raw.images.all_sources with every
+  // hero source URL the retailer publishes. Older scrapers only
+  // surface a single image — leave image_urls NULL for those rows
+  // (the migration comment treats NULL as "no multi-image data
+  // available", distinct from "[] explicitly empty").
+  const imageUrls = Array.isArray(raw.images?.all_sources) && raw.images.all_sources.length > 0
+    ? raw.images.all_sources
+    : null;
+
   return {
     retailer: raw.retailer,
     sku: raw.id, // we don't have a true SKU yet; the URL slug is unique per retailer.
@@ -44,6 +53,7 @@ function toRow(raw) {
     category: raw.category || 'Furniture',
     price_aud: raw.price ?? null,
     image_url: raw.images?.source ?? raw.images?.hero ?? '',
+    image_urls: imageUrls,
     product_url: raw.product_url,
     affiliate_url: null,
     dimensions: raw.dimensions ?? null,
