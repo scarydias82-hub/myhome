@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-24 · most recent material commit: `e88af66` (will
+**Last verified:** 2026-05-24 · most recent material commit: `fb8dad7` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,43 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-24` — **Coco Republic scraper rebuilt — bcJsContext +
+  multi-image + hi-res, owner-narrowed to 9 hero categories.** Owner
+  directive: get the premium-tier catalogue right before relying on
+  it for render-substitution + vision matching. Three shape changes:
+  (1) **Source** flipped from JSON-LD to BigCommerce's inline
+  `bcJsContext` JSON blob. JSON-LD only ever exposed `image[0]` and a
+  single price; bcJsContext carries the full product object — all
+  5-20 images, full breadcrumb category path, full price model
+  (sale/non-sale), structured options for the variant on the page,
+  and richer custom_fields. (2) **Multi-image** — every image
+  returned by the product, not just the hero. Substituted into the
+  CDN URL via the `{:size}` placeholder for hi-res. Threaded through
+  ingest into the new `products.image_urls text[]` column
+  (migration `20260524000000_products_image_urls.sql`); existing
+  `image_url` text column stays as the canonical primary, image_urls
+  carries the rest in display order. NULL for retailers that surface
+  only a single image — no backfill needed. (3) **Hi-res** — new
+  `downloadImage({ resize: false })` mode bypasses the default
+  1200px / JPEG-q85 transcode and writes source bytes as-is.
+  Extension detected from Content-Type (jpg / png / webp / avif).
+  Coco's images land at native 2560w (~1.5-2MB each) for vision
+  profile fidelity + future render-substitution compositing. Other
+  scrapers keep the resize default unchanged.
+  Coco taxonomy narrowed to the 9-category list the owner asked for
+  — Sofas, Chairs, Lounge Chairs, Dining Chairs, Dining Tables,
+  Beds, Bedside Tables, Floor Lamps, Table Lamps. Anything outside
+  that set is filtered at the category gate so we don't burn
+  requests / disk on artwork, cushions, swatches, etc. Per-URL = per-
+  variant naturally because Coco publishes per-variant pages — no
+  variants JSON column needed.
+  Wipe + rescrape sequence: owner runs
+  `DELETE FROM products WHERE retailer = 'Coco Republic';` (cascade
+  removes any featured_products / user_wishlist / vision_boards rows
+  linking to old Coco products — minimal in closed beta), then
+  `pnpm --filter @myhome/scraper scrape:coco`, then ingest, then
+  `pnpm --filter @myhome/scraper run vision-profile -- --retailer=coco-republic`
+  to re-derive vision_profile for the new rows.
 - `2026-05-24` — **Tighter "no shadow" gate in the cutout pipeline
   — kill the dark-blob artifact when birefnet barely-cuts a
   lifestyle-scene product.** Owner ran a post-render compositing
