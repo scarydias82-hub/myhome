@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-25 · most recent material commit: `5876a25` (will
+**Last verified:** 2026-05-25 · most recent material commit: `86f3d9c` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,53 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-25` — **Render prompt: silhouette-anchored + tighter
+  fidelity directives (issues #39 #40 follow-up).** First Coco-rebuild
+  render test revealed two related failures: (a) generic dining
+  chairs rendered instead of the picked Axel armchair (lounge chair),
+  (b) the multi-instance directive's "a set of 4-6 around a dining
+  table" example leaked into non-dining-chair picks (#40). Both
+  symptoms trace to weak per-product anchoring in
+  `buildOpenAIImagePrompt` — the directive said *"a [category] ([SKU]
+  from [retailer])"* which gave gpt-image-1 nothing concrete to hold
+  against its room-composition priors.
+
+  Three changes:
+  1. **Silhouette threaded through to the renderer.** Every picked
+     product now carries the `vision_profile.silhouette` field (the
+     3-8 word Haiku-derived physical description, e.g. *"low-profile
+     modern armchair with curved arms and round upholstered seat"*)
+     from DB → render route → heroProducts → buildOpenAIImagePrompt.
+     `HeroProductDescriptor` gains an optional `silhouette` field;
+     null falls back to the generic category descriptor for
+     un-vision-profiled rows.
+  2. **Prompt per-product directive leads with the silhouette.** When
+     present, the line reads *"Image 3: low-profile modern armchair
+     with curved arms and round upholstered seat (Axel armchair, from
+     Coco Republic). Place this SAME exact piece multiple times in
+     the configuration the room calls for, every instance matching
+     the silhouette and material from this image. Never substitute
+     with a different style of armchair."* Concrete visual anchor,
+     not a category gpt-image-1 can interpret loosely.
+  3. **#40 fix: multi-instance example dropped.** The previous
+     *"a set of 4-6 around a dining table"* example no longer
+     appears in the directive — it's replaced with category-agnostic
+     wording ("the configuration the room calls for"). Lounge chair
+     picks no longer get re-rendered as dining chairs because of a
+     stale example clause.
+
+  Stronger lead-in clause too: *"These products MUST appear... do
+  NOT substitute a stylistically-similar generic."* Plus a softer
+  closer on the room-type context line: *"ALWAYS the specific pieces
+  in the reference images above — never generic substitutes from the
+  model's defaults."*
+
+  This is the "try prompt-engineering harder first" path before
+  considering a model swap. If subsequent test renders STILL show
+  generic substitutes despite the silhouette anchor + tighter
+  directives, the next move is the Flux Kontext A/B (re-test the
+  model that was reverted in #175 — now with hi-res Coco refs that
+  weren't available then). Tracked as a follow-up.
 - `2026-05-25` — **Render flow simplification: tighter upload page,
   1-per-category picker, brief render commentary with expand.** Owner
   directive — strip clutter from the upload → palette → product flow

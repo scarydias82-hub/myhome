@@ -170,7 +170,18 @@ export function buildOpenAIImagePrompt({
   paletteVibe?: string | null;
   styleName: string;
   roomType?: string | null;
-  productRefs?: Array<{ name: string; category: string; retailer: string }>;
+  /** Product reference shape now includes the vision_profile-derived
+   *  silhouette ("low-profile modern armchair with curved arms and
+   *  round upholstered seat"). The prompt leads with this descriptor
+   *  for each pick — gives gpt-image-1 concrete visual language to
+   *  anchor to the reference image, rather than a generic category
+   *  that lets the model's priors take over. */
+  productRefs?: Array<{
+    name: string;
+    category: string;
+    retailer: string;
+    silhouette?: string | null;
+  }>;
 }): string {
   const lines: string[] = [];
   lines.push(
@@ -181,35 +192,50 @@ export function buildOpenAIImagePrompt({
 
   if (productRefs && productRefs.length > 0) {
     lines.push('');
+    // Strong lead-in. The previous prompt said "match the silhouette,
+    // material, and finish" — which is good but gpt-image-1 still
+    // routinely substituted style-similar generics. Tightening with
+    // explicit "MUST appear", "precisely", and "do NOT substitute"
+    // language gives the model a stronger constraint to hold against
+    // its room-composition priors.
     lines.push(
-      `Feature these specific pieces — match the silhouette, material, and finish from each reference image:`,
+      `These products MUST appear in the rendered scene exactly as shown in the reference images that follow. Match each piece's silhouette, proportion, material, and finish precisely. Do NOT substitute a stylistically-similar generic — if the reference shows a wooden armchair with curved arms, render that exact armchair, not a generic dining chair or a different armchair style.`,
     );
     productRefs.slice(0, 4).forEach((p, i) => {
       const imgIdx = 3 + i;
       const cat = p.category.toLowerCase();
-      // The picker enforces 1 product per category. Some categories
-      // naturally need multiple matching instances in the room (a set
-      // of dining chairs around a dining table, two matching bedside
-      // tables flanking a queen bed, a pair of armchairs flanking a
-      // fireplace). For those, instruct the renderer to place
-      // coordinated copies; for everything else, a single instance.
+      // Lead each directive with the Haiku-derived silhouette when
+      // available. "low-profile modern armchair with curved arms and
+      // round upholstered seat" is much harder for gpt-image-1 to
+      // misread than a bare category like "armchair". Falls back to
+      // the category when vision_profile.silhouette is missing
+      // (older / un-vision-profiled rows).
+      const description = p.silhouette
+        ? `Image ${imgIdx}: ${p.silhouette} (${p.name}, from ${p.retailer}).`
+        : `Image ${imgIdx}: a ${cat} (${p.name} from ${p.retailer}).`;
+      // Multi-instance categories: room naturally takes multiple
+      // matching pieces (dining chairs around a table, bedside tables
+      // flanking a bed). Example dropped from the directive (#40 —
+      // the previous "a set of 4-6 around a dining table" example
+      // leaked into non-dining-chair picks, overriding the reference
+      // image and producing dining-chair-shaped seating regardless
+      // of what was picked). Let the room context + reference image
+      // decide the configuration.
       const placement = MULTI_INSTANCE_CATEGORIES.has(cat)
-        ? `Place multiple matching instances of this exact piece as the room composition requires — e.g. a set of 4-6 around a dining table, a pair flanking a bed.`
-        : `Place it naturally in the scene at a position appropriate for a ${cat}.`;
-      lines.push(
-        `- Image ${imgIdx}: a ${cat} (${p.name} from ${p.retailer}). ${placement}`,
-      );
+        ? `Place this SAME exact piece multiple times in the configuration the room calls for, every instance matching the silhouette and material from this image. Never substitute with a different style of ${cat}.`
+        : `Place this exact piece at a position appropriate for a ${cat}. Match the silhouette exactly from this image.`;
+      lines.push(`- ${description} ${placement}`);
     });
   }
 
   lines.push('');
   lines.push(
-    `Critical: preserve the room's architecture exactly — same walls, windows, doors, ceiling, camera angle, dimensions. Do not invent new windows, walls, or openings. Only the decor, furniture, soft furnishings, and finishes change. The result should look like the same physical room professionally restyled.`,
+    `Critical: preserve the room's architecture exactly — same walls, windows, doors, ceiling, camera angle, dimensions. Do not invent new windows, walls, or openings. Only the decor, furniture, soft furnishings, paint colour, and finishes change. The result should look like the same physical room professionally restyled.`,
   );
 
   if (roomType) {
     lines.push(
-      `Room type context: ${roomType.replace(/_/g, ' ')}. Use furniture and styling appropriate for this room.`,
+      `Room type context: ${roomType.replace(/_/g, ' ')}. Use styling appropriate for this room, but ALWAYS the specific pieces in the reference images above — never generic substitutes from the model's defaults.`,
     );
   }
 
