@@ -25,6 +25,36 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Coco lifestyle ingest script — Phase 2 (ii).**
+  Populates the image RAG (shipped by Phase 2 (i) in
+  `20260526110000_design_knowledge_image_url.sql`) from the multi-
+  image Coco product rows we already have. Coco's rebuilt scraper
+  (PR #36) pulls 5-20 hi-res images per product; position 0 is the
+  isolated product shot and positions 1+ are typically lifestyle
+  scenes (sofa in a living room, chair in a styled setting, rug in
+  a bedroom). Those secondary shots ARE the "this is what
+  contemporary Coco looks like" reference set the renderer needs.
+  Rather than crawl Coco's website separately (DataDome-gated,
+  brittle, would need a separate Playwright pass) the new
+  `apps/scraper/scripts/seedDesignKnowledgeFromCoco.js` harvests
+  image refs from data we already have in `products`: queries Coco
+  rows where `image_urls` length > 1, takes up to `--per-product`
+  (default 2) secondary images per product, tags each with
+  `['coco', 'contemporary', 'lifestyle', category, ...palette_tags,
+  ...room_tags, ...style_tags]`, and inserts into `design_knowledge`
+  with `image_url` set. Idempotent (deletes `source='coco republic'`
+  rows before inserting). Caps total inserts at `--limit` (default
+  80) to avoid flooding the RAG while we're validating. CLI flags:
+  `--limit=N`, `--per-product=N`, `--dry-run`. Caveat: not every
+  secondary image is a true lifestyle scene; some are alternative
+  product angles. Acceptable for MVP — the renderer consumes
+  multiple refs and Claude can lean on the lifestyle-looking ones.
+  A vision-pass filter ("is this a lifestyle scene or a product
+  angle?") would be a future quality lift. Not run automatically —
+  invoke manually with `cd apps/scraper && node scripts/seedDesignKnowledgeFromCoco.js`
+  after a Coco re-scrape, or via the periodic scraper job once it's
+  wired in. Mode B render-path consumption is the next ship in this
+  workstream.
 - `2026-05-26` — **Bound vision retry budget inside maxDuration —
   fixes "TypeError: Load failed" on slow Anthropic responses.** Owner
   reported the upload step failing with "load failed" during the
