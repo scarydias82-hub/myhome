@@ -37,6 +37,23 @@ import type { RoomAnalysis } from '@/lib/vision';
 import sharp from 'sharp';
 import { submitOpenAIImageRender, buildOpenAIImagePrompt, buildModeBPrompt } from '@/lib/openai-image';
 import { fetchKnowledgeImages } from '@/lib/knowledge';
+import { cutoutProduct } from '@/lib/composite';
+
+// R4 (2026-05-26) — categories that render better as transparent
+// cutouts than as raw retailer images. For these (rugs primarily),
+// the route runs the picked image through fal birefnet before
+// sending to gpt-image-1, so the model sees ONLY the product —
+// not the styled-room context retailers typically publish around
+// rugs (cushions, lamps, foliage). Mirror of FLOOR_COVERING_
+// CATEGORIES in lib/curation.ts and lib/openai-image.ts; keep
+// these in sync when adding a category.
+const RENDER_CUTOUT_CATEGORIES = new Set([
+  'rug',
+  'rugs',
+  'carpet',
+  'carpets',
+  'flooring',
+]);
 import { buildPickingList, type PickingListItem } from '@/lib/matching';
 
 // #173 — light helper for fetching catalogue product images and
@@ -97,6 +114,20 @@ function pickRenderReferenceUrls(p: HeroProductDescriptor): string[] {
       : p.imageUrl
         ? [p.imageUrl]
         : [];
+
+  // R3 (2026-05-26) — when the product has a preferredRenderImageIndex
+  // (set by R2's vision-classification pass for rugs), surface that
+  // URL FIRST. The aerial/flat-lay rug shot at index N is a far
+  // better render reference than the lifestyle scene that retailers
+  // typically publish at index 0. Reorder rather than filter so the
+  // remaining angles still get sent as additional refs.
+  const idx = p.preferredRenderImageIndex;
+  if (typeof idx === 'number' && idx >= 0 && idx < candidates.length) {
+    const preferred = candidates[idx]!;
+    const rest = candidates.filter((_, i) => i !== idx);
+    return [preferred, ...rest].slice(0, MAX_ANGLES_PER_PRODUCT);
+  }
+
   const productOnly = candidates.filter((url) => !LIFESTYLE_FILENAME_RE.test(url));
   // If the lifestyle filter empties the list (e.g. a product page where
   // every shot is styled), fall back to the original candidates rather
@@ -300,10 +331,11 @@ export async function POST(request: NextRequest) {
         depth_cm?: number | null;
         height_cm?: number | null;
       } | null;
+      preferred_render_image_index: number | null;
     }
     const { data } = await admin
       .from('products')
-      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url, vision_profile, dimensions')
+      .select('id, name, category, retailer, price_aud, image_url, image_urls, product_url, affiliate_url, vision_profile, dimensions, preferred_render_image_index')
       .in('id', ids);
     const rows = (data ?? []) as PickedRow[];
     if (rows.length > 0) {
@@ -312,23 +344,16 @@ export async function POST(request: NextRequest) {
         category: p.category,
         retailer: p.retailer,
         imageUrl: p.image_url ?? null,
-        // Multi-image array (Coco hi-res rebuild #36). NULL for older
-        // single-image scrapers — renderer falls back to imageUrl in
-        // that case.
         imageUrls: p.image_urls ?? null,
-        // Silhouette from vision_profile (post-#145 Haiku pre-pass).
-        // 3-8 word physical description used by buildOpenAIImagePrompt
-        // to anchor each per-product directive — much stronger signal
-        // than "a lounge chair" for gpt-image-1 to honour the
-        // reference image fidelity. Falls back to category descriptor
-        // when null (older products / pre-vision-profile rows).
         silhouette: p.vision_profile?.silhouette ?? null,
-        // Dimensions from the scraper — buildOpenAIImagePrompt derives
-        // a size descriptor (compact / standard / oversized) from
-        // these and includes both descriptor + raw cm in the
-        // per-product directive. Null when the scraper couldn't parse
-        // them from the source page.
         dimensions: p.dimensions ?? null,
+        // R3 (2026-05-26) — index into image_urls[] that the R2
+        // vision-classification pass determined is the best render
+        // reference (the aerial/flat-lay shot for rugs, etc.).
+        // NULL on everything that hasn't been classified yet;
+        // pickRenderReferenceUrls falls back to imageUrls[0] in that
+        // case (existing behaviour).
+        preferredRenderImageIndex: p.preferred_render_image_index ?? null,
       }));
 
       // Build the picking list from the picks. Synthetic bboxes
@@ -652,8 +677,34 @@ export async function POST(request: NextRequest) {
 
       // Fetch all reference images in parallel. allSettled keeps a
       // single broken URL from killing the whole render.
+      //
+      // R4 (2026-05-26) — for products in RENDER_CUTOUT_CATEGORIES
+      // (rugs etc.), route the picked URL through fal birefnet so
+      // gpt-image-1 receives a transparent PNG of only the rug,
+      // not the styled-room context retailers typically publish.
+      // Combined with R2's preferredRenderImageIndex (the aerial
+      // shot rather than the lifestyle scene), this means the
+      // renderer sees a clean top-down silhouette of the actual
+      // rug — much higher-fidelity reference than the raw URL.
+      // Other categories use the raw fetch (studio shots are
+      // usually fine as-is). On birefnet failure, fall back to
+      // the raw image — better something than nothing.
       const productBufResults = await Promise.allSettled(
-        refPairs.map(({ url }) => fetchAndResizeProductImage(url)),
+        refPairs.map(async ({ product, url }) => {
+          const cat = (product.category ?? '').toLowerCase();
+          if (RENDER_CUTOUT_CATEGORIES.has(cat)) {
+            try {
+              return await cutoutProduct(url);
+            } catch (err) {
+              console.warn(
+                '[render-openai] cutoutProduct failed for floor covering, falling back to raw image:',
+                err instanceof Error ? err.message : err,
+              );
+              return fetchAndResizeProductImage(url);
+            }
+          }
+          return fetchAndResizeProductImage(url);
+        }),
       );
       const productImageBufs: Buffer[] = [];
       for (const r of productBufResults) {

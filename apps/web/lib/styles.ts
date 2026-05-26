@@ -156,6 +156,13 @@ export interface HeroProductDescriptor {
     depth_cm?: number | null;
     height_cm?: number | null;
   } | null;
+  /** Index into image_urls[] that the R2 vision-classification pass
+   *  determined is the best render reference for this product (R2,
+   *  2026-05-26). Today only populated on Coco rug rows; null on
+   *  everything else. When set AND inside the imageUrls bounds, the
+   *  render route uses that index as the first product reference
+   *  instead of imageUrls[0]. */
+  preferredRenderImageIndex?: number | null;
 }
 
 // Render aggressiveness mode.
