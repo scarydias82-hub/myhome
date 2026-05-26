@@ -66,10 +66,20 @@ export const isSupabaseConfigured = Boolean(
 
 // True when the Mode B floorplan-confirm flow is opted in via env var.
 // Reads from NEXT_PUBLIC_FLOORPLAN_MODE so the same answer is available
-// on the client and the server. Production default is false — Mode A
-// (existing photo-restyle flow) is the only one users see.
+// on the client and the server.
+//
+// Default flipped 2026-05-26: previously OFF unless env=true (production
+// default disabled). Now ON unless env=false explicitly — owner asked
+// to unlock Mode B without needing to set the env var in Vercel after
+// shipping the full A1-A5 + R1-R4 workstream. To roll back to gated:
+// set NEXT_PUBLIC_FLOORPLAN_MODE=false in Vercel.
+//
+// Mode B degrades gracefully when its supporting data isn't populated
+// (Coco lifestyle RAG empty → fallback to room photo as starter; rug
+// classification not run → R4 cutout still operates on image_urls[0]).
+// So defaulting on is safe even when the manual scripts haven't run.
 export const isFloorplanModeEnabled =
-  (publicEnv.NEXT_PUBLIC_FLOORPLAN_MODE ?? '').toLowerCase() === 'true';
+  (publicEnv.NEXT_PUBLIC_FLOORPLAN_MODE ?? '').toLowerCase() !== 'false';
 
 export function getServerEnv() {
   return serverEnvSchema.parse({
