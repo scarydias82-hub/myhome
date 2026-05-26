@@ -25,6 +25,37 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Rug image quality — vision classification + aerial
+  preference + transparent cutouts (R2 + R3 + R4).** Three coordinated
+  layers closing the remaining gap from R1's prompt-only fix.
+  (R2) New migration `20260526130000_products_preferred_render_image_
+  index.sql` adds a nullable `preferred_render_image_index integer`
+  column to products (with non-negative check). New script
+  `apps/scraper/scripts/classifyRugImages.js` walks each Coco rug
+  product's `image_urls[]`, classifies each via claude-haiku-4-5
+  vision as `aerial` / `lifestyle` / `detail` / `other`, and sets
+  the column to the first `aerial` index found (NULL when no aerial
+  exists). Costs ~$0.001 per rug; trivial for the catalogue.
+  (R3) Render route's `pickRenderReferenceUrls(p)` now honours
+  `preferredRenderImageIndex` when set — surfaces that URL FIRST in
+  the reference set so gpt-image-1 sees the aerial as the primary
+  visual anchor for rugs (rather than the lifestyle scene retailers
+  publish at index 0).
+  (R4) For products in `RENDER_CUTOUT_CATEGORIES` (rugs / carpets /
+  flooring — mirror of `FLOOR_COVERING_CATEGORIES`), the picked URL
+  is run through `cutoutProduct()` (fal birefnet) to produce a
+  TRANSPARENT PNG before being passed to gpt-image-1. This means
+  the renderer sees ONLY the rug — no surrounding styled-scene
+  context, no foliage, no neighbouring cushions. Combined with R2's
+  aerial preference, the rug reference now reads as "top-down
+  silhouette of just the rug" — exactly the visual the model can
+  preserve faithfully. Birefnet failure (rare) falls back to the
+  raw image so renders don't 500. The supabase-push.yml workflow
+  applies the new migration automatically when this lands on main;
+  `classifyRugImages.js` is invoked manually after a Coco scrape
+  re-run. HeroProductDescriptor gains an optional
+  `preferredRenderImageIndex` field threading the value from DB →
+  render route → reference-URL selection.
 - `2026-05-26` — **Rug-aware render prompt directives (R1).** Owner
   flagged that rugs need explicit replace-or-add semantics — the
   generic "place this piece at a position appropriate for a
