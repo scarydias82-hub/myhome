@@ -34,6 +34,10 @@ interface RenderRow {
   picking_list_status: 'not_started' | 'building' | 'ready' | 'failed' | null;
   cost_estimate_aud: number | null;
   designer_read: DesignerAdvice | null;
+  /** A4 (2026-05-26) — distinguishes Mode A's photo-restyle path
+   *  from Mode B's blank-canvas Coco-design path. Defaults to
+   *  'restyle' for pre-migration rows via the column default. */
+  render_mode: 'restyle' | 'design' | null;
   /** #174 — pre-selected hero products written by /api/render at
    *  submit time. Visible on the page from the moment the render is
    *  queued, separate from the post-render Florence-2 picking_list. */
@@ -81,7 +85,7 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   // as missing (no migration applied yet).
   const renderRes = await supabase
     .from('renders')
-    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud')
+    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud, render_mode')
     .eq('id', id)
     .single();
   const render = renderRes.data as RenderRow | null;
@@ -239,6 +243,15 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
 
   const isDone = render.status === 'succeeded' && afterSigned?.data?.signedUrl;
   const isFailed = render.status === 'failed' || render.status === 'cancelled';
+  // A5 (2026-05-26) — Mode B renders carry render_mode='design' and
+  // get different page copy ("Your bedroom, reimagined") that frames
+  // the output as the user's space designed from scratch in the
+  // Coco aesthetic, rather than the existing "The restyle" framing
+  // which implies their room was edited in place. Mode A rows
+  // (render_mode='restyle' or null for pre-migration rows) keep the
+  // original copy unchanged.
+  const isDesignMode = render.render_mode === 'design';
+  const roomLabel = (room?.room_type ?? 'room').replace(/_/g, ' ');
 
   // Complete-the-look (#116) — category-aligned picking list under the
   // hotspot one. Resolves the palette id from style_profile.palette hexes
@@ -316,7 +329,17 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
               {new Date(render.created_at).toLocaleString('en-AU')}
             </Eyebrow>
             <DisplayHeading level={2} className="mt-3">
-              {isDone ? <>The <em>restyle</em>.</> : isFailed ? <>Render <em>failed</em>.</> : <>Rendering…</>}
+              {isDone ? (
+                isDesignMode ? (
+                  <>Your {roomLabel}, <em>reimagined</em>.</>
+                ) : (
+                  <>The <em>restyle</em>.</>
+                )
+              ) : isFailed ? (
+                <>Render <em>failed</em>.</>
+              ) : (
+                <>Rendering…</>
+              )}
             </DisplayHeading>
           </div>
           {isDone && afterSigned?.data?.signedUrl ? (
