@@ -154,33 +154,73 @@ interface FetchOptions {
   perCategory?: number;
 }
 
+// Categories that read as floor coverings — rugs, broadloom carpet,
+// flooring rolls. The standard "doesn't dwarf the wall" rule (largest
+// dim ≤ 75% shortest wall) was designed for furniture like sofas and
+// beds; it makes no sense for floor coverings, which span the floor
+// by design. A 240-300cm anchor rug for a 3m × 4m living room is
+// exactly what the room calls for, but 240cm > (3m × 0.75 = 225cm)
+// → the standard rule rejects almost every quality rug in that
+// room. Owner reported "no rugs matching for the room with the black
+// couches" — this is the bug.
+//
+// Tiles deliberately excluded — they're sold as individual ceramic
+// units (60×60cm typical), not whole-floor coverings.
+const FLOOR_COVERING_CATEGORIES = new Set([
+  'Rugs',
+  'Rug',
+  'Carpet',
+  'Carpets',
+  'Flooring',
+]);
+
 // Build a predicate that returns true when a product's footprint fits
-// the room. The rule of thumb: a product's largest horizontal dimension
-// can't exceed 75% of the shortest room wall. 75% gives ~25% breathing
-// room for circulation + adjacent furniture. Below that threshold the
-// picker would otherwise surface, e.g., a 3.2m sofa in a 3m-wall bedroom
-// which is technically grouped under "Sofas" but physically nonsense.
+// the room. Two rules layered:
+//
+//   - Furniture (sofas, beds, tables, lighting, etc.) — largest
+//     horizontal dimension ≤ 75% of the shortest room wall. 25%
+//     breathing room for circulation + adjacent pieces. A 3.2m sofa
+//     in a 3m bedroom is correctly rejected.
+//
+//   - Floor coverings (rugs, carpet, flooring per
+//     FLOOR_COVERING_CATEGORIES) — longer side ≤ 95% of the longer
+//     wall AND shorter side ≤ 95% of the shorter wall. The 95%
+//     leaves a small floor-trim margin without rejecting standard
+//     anchor-rug sizes. Lets a 280cm rug into a 3m room (it fits);
+//     rejects a 380cm rug in the same room (it'd cover wall-to-wall).
 //
 // Tolerant by design: when EITHER side is missing data (room.width null,
 // or product.dimensions null) the predicate returns true. We'd rather
 // surface an unverifiable candidate than hide it.
 function makeDimensionFilter(
   room: RoomDimensions | null | undefined,
-): (dims: ProductRow['dimensions']) => boolean {
+): (dims: ProductRow['dimensions'], category: string) => boolean {
   if (!room) return () => true;
   const walls = [room.width_m, room.depth_m].filter(
     (m): m is number => typeof m === 'number' && m > 0,
   );
   if (walls.length === 0) return () => true;
   const shortestWallCm = Math.min(...walls) * 100;
-  const maxProductCm = shortestWallCm * 0.75;
-  return (dims) => {
+  const longestWallCm = Math.max(...walls) * 100;
+  const furnitureMaxCm = shortestWallCm * 0.75;
+  const floorCoveringMaxCm = longestWallCm * 0.95;
+  const floorCoveringMinCm = shortestWallCm * 0.95;
+  return (dims, category) => {
     if (!dims) return true;
     const w = typeof dims.width_cm === 'number' ? dims.width_cm : 0;
     const d = typeof dims.depth_cm === 'number' ? dims.depth_cm : 0;
     const maxDim = Math.max(w, d);
+    const minDim = Math.min(w, d);
     if (maxDim === 0) return true;
-    return maxDim <= maxProductCm;
+    if (FLOOR_COVERING_CATEGORIES.has(category)) {
+      // Longer side fits along longer wall, shorter side along shorter
+      // wall. If only one dimension is populated (minDim === 0 because
+      // depth_cm was null), only constrain on the maxDim axis.
+      const longOk = maxDim <= floorCoveringMaxCm;
+      const shortOk = minDim === 0 || minDim <= floorCoveringMinCm;
+      return longOk && shortOk;
+    }
+    return maxDim <= furnitureMaxCm;
   };
 }
 
@@ -321,12 +361,29 @@ export async function fetchCurationCandidates({
       const merged: Array<{ row: ProductRow; isWishlisted: boolean }> = wishlistItems.map(
         (r) => ({ row: r, isWishlisted: true }),
       );
+      let droppedByDim = 0;
       for (const r of designerRows) {
         if (seen.has(r.id)) continue;
         seen.add(r.id);
-        if (!dimensionFilter(r.dimensions)) continue;
+        if (!dimensionFilter(r.dimensions, r.category)) {
+          droppedByDim++;
+          continue;
+        }
         merged.push({ row: r, isWishlisted: false });
         if (merged.length >= perCategory) break;
+      }
+      // Diagnostic: if the dimension filter is the reason a category
+      // came back empty, log it so the silent-UX-failure case (owner
+      // saw 0 rugs for the room with the black couches, 2026-05-26)
+      // surfaces in Vercel function logs without the user having to
+      // report it.
+      if (droppedByDim > 0 && merged.length - wishlistItems.length === 0) {
+        const dimsLog = roomDimensions
+          ? `${roomDimensions.width_m ?? '?'}m × ${roomDimensions.depth_m ?? '?'}m`
+          : 'no room dimensions';
+        console.log(
+          `[curation] "${displayLabel}" — dimension filter dropped all ${droppedByDim} candidates (room ${dimsLog}). Consider widening the filter for this category or relaxing room dims.`,
+        );
       }
 
       return {

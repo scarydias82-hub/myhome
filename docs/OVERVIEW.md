@@ -25,6 +25,27 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Category-aware dimension filter — rugs no
+  longer dropped en masse from the picker.** Owner reported "no
+  rugs matching for the room with the black couches" after PR #45's
+  dimension-aware filter shipped. Root cause: the standard rule
+  (largest horizontal dim ≤ 75% of shortest wall) was designed for
+  furniture like sofas and beds — it doesn't apply to floor
+  coverings. A 240-300cm anchor rug for a 3m × 4m room is exactly
+  what the room calls for, but 240cm > (3m × 0.75 = 225cm) so the
+  standard rule rejected almost every quality rug. Fix in
+  `lib/curation.ts`: new `FLOOR_COVERING_CATEGORIES` set (Rugs,
+  Rug, Carpet, Carpets, Flooring — tiles deliberately excluded
+  because they're sold as individual ceramic units). Rugs get a
+  different rule: longer side ≤ 95% of longer wall AND shorter
+  side ≤ 95% of shorter wall. Lets a 280cm rug into a 3m room
+  (it fits); rejects a 380cm rug there (covers wall-to-wall).
+  Plus a diagnostic log: when the dimension filter drops ALL
+  designer candidates for a category, Vercel logs the room dims +
+  count so future silent-UX-failures surface without the user
+  having to report. Filter signature updated to take category as
+  a second arg; single call site updated. Mode A + Mode B both
+  benefit — the fix isn't gated. No DB / schema change.
 - `2026-05-26` — **Mode B floorplan confirmation step (A2).** Sits
   between vision and the palette picker in the new design flow. New
   pure-function `apps/web/lib/floorplan.ts:generateFloorplanSvg`
