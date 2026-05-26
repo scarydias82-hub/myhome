@@ -114,3 +114,90 @@ export function formatKnowledgeContext(chunks: KnowledgeChunk[]): string {
     })
     .join('\n\n');
 }
+
+// -----------------------------------------------------------------
+// Image RAG (2026-05-26)
+// -----------------------------------------------------------------
+//
+// Mode B grounds its render aesthetic in retrieved lifestyle imagery
+// rather than pre-baked "contemporary materials" text in the system
+// prompt. The catalogue lives in design_knowledge rows where
+// `image_url IS NOT NULL` — added by migration 20260526110000. Rows
+// without an image_url stay text-only RAG (unchanged behaviour for
+// Mode A).
+//
+// Retrieval mirrors the text path: tag overlap on the same `tags`
+// column, additionally filtered to rows that have an image. Mode B's
+// downstream consumer (the render call) passes the resulting image
+// URLs as multimodal reference inputs alongside the user's picked
+// products. The chunk_text accompanying each row is alt-text / caption
+// the model can use as additional context.
+
+export interface KnowledgeImage {
+  id: string;
+  source: string;
+  source_url: string | null;
+  title: string | null;
+  /** Alt-text / caption. Short — the model interprets the image, not
+   *  the prose. */
+  chunk_text: string;
+  tags: string[];
+  image_url: string;
+}
+
+interface FetchKnowledgeImagesInput {
+  admin: SupabaseClient;
+  /** Tags to overlap on. Same vocabulary as the text path — typical
+   *  values: 'coco', 'contemporary', 'lifestyle', '<room_type>',
+   *  palette style_tags. Empty array → no tag filter, returns recent
+   *  image refs. */
+  tags?: string[];
+  /** Max image refs to return. Default 4 — enough to give the renderer
+   *  a strong visual cue without flooding the context. */
+  limit?: number;
+}
+
+/** Retrieve image references from design_knowledge for use as
+ *  multimodal render context. Filters to rows with an image_url; if
+ *  `tags` is non-empty, additionally overlaps the rows' tag arrays.
+ *  Falls back to the most recently ingested image refs when the tag
+ *  overlap returns zero — never returns an empty list if any image
+ *  refs exist. */
+export async function fetchKnowledgeImages({
+  admin,
+  tags,
+  limit = 4,
+}: FetchKnowledgeImagesInput): Promise<KnowledgeImage[]> {
+  const cols = 'id, source, source_url, title, chunk_text, tags, image_url';
+
+  if (tags && tags.length > 0) {
+    const primary = await admin
+      .from('design_knowledge')
+      .select(cols)
+      .not('image_url', 'is', null)
+      .overlaps('tags', tags)
+      .order('ingested_at', { ascending: false })
+      .limit(limit);
+    if (!primary.error && primary.data && primary.data.length > 0) {
+      return primary.data as KnowledgeImage[];
+    }
+    if (primary.error) {
+      console.error('design_knowledge image overlap fetch failed', primary.error);
+    }
+  }
+
+  // Fallback — any image refs, most-recently-ingested first. Returns
+  // empty array when the corpus has no image rows yet (which is true
+  // until the Coco lifestyle ingest script runs for the first time).
+  const fallback = await admin
+    .from('design_knowledge')
+    .select(cols)
+    .not('image_url', 'is', null)
+    .order('ingested_at', { ascending: false })
+    .limit(limit);
+  if (fallback.error) {
+    console.error('design_knowledge image fallback fetch failed', fallback.error);
+    return [];
+  }
+  return (fallback.data ?? []) as KnowledgeImage[];
+}

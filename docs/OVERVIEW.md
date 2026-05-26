@@ -25,6 +25,33 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Image RAG infrastructure — Phase 2 (i) of the new
+  floorplan-mode flow.** Owner directive: rather than pre-bake a
+  static "this is what contemporary Coco looks like" structured
+  profile and feed it to the renderer as text, put images directly
+  into the existing RAG and let Claude interpret the aesthetic from
+  them on the fly. The pivot from the original Phase 2 plan (heavy
+  Coco vision pre-pass + new style profile table) saves ~2 days of
+  pipeline work and lands a better architecture: retrieval is
+  context-aware (a bedroom render pulls bedroom Coco refs; kitchen
+  pulls kitchen refs), reuses the existing `design_knowledge`
+  RAG table + tag-overlap retrieval pattern (embeddings stayed off
+  per the 2026-05 HF-died decision in `apps/web/lib/knowledge.ts:1-19`),
+  and adding more imagery later is just inserting rows. Two changes:
+  (a) migration `20260526110000_design_knowledge_image_url.sql` adds
+  a nullable `image_url` column + a partial index where image_url is
+  not null. Existing text-only rows keep working unchanged (column is
+  nullable). (b) `lib/knowledge.ts` gains `fetchKnowledgeImages`
+  helper — mirrors the text-path tag-overlap fetch, additionally
+  filters to rows with image_url, returns up to `limit` (default 4)
+  image refs. Has the same primary-then-fallback pattern as
+  `fetchKnowledgeContext`: tag overlap first, then most-recently-
+  ingested any-image-ref if the overlap is empty. Never returns an
+  empty list if the corpus has any image refs at all. Out of scope
+  for this PR: the Coco lifestyle ingest script (populates rows) and
+  the Mode B render-path wire-up (consumes the images). Both ship in
+  follow-up PRs — this one lands the data-layer + retrieval helper
+  so the consumers have something to call.
 - `2026-05-26` — **Swap composite harmonisation from Flux img2img to
   IC-Light v2.** Owner-flagged staging issue: post-render composites
   read as "pasted" — product edges soft, shadows synthetic, fabric
@@ -2219,7 +2246,7 @@ making sure each user has a great first render — concierge-style if needed.
 | `shortlist_items`  | Per-project picks promoted from a render or a staged image.          |
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
 | `palette_likes`    | Per-user palette hearts. `palette_id` is a text slug (no FK — palettes are compile-time JSON). Unique on `(user_id, palette_id)`. RLS: authenticated read (aggregate counts), insert/delete own rows. |
-| `design_knowledge` | Curated AU design corpus + CLIP-text embeddings for RAG.             |
+| `design_knowledge` | Curated AU design corpus + CLIP-text embeddings for RAG. Text-only chunks (the original 25-chunk seed) coexist with image refs (added 2026-05-26) — rows with `image_url IS NOT NULL` are lifestyle imagery for Mode B's render path; tag-overlap retrieval via `fetchKnowledgeImages` in `lib/knowledge.ts`. |
 
 ### 4.4 Storage buckets
 
