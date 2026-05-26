@@ -378,22 +378,53 @@ export function UploadForm({
       fd.append('photo', photoFile);
       if (projectId) fd.append('projectId', projectId);
       // 2026-05-26 — owner reported "Load failed first time, works
-      // second time" during Claude vision. PR #48 tightened the
-      // Anthropic retry budget inside maxDuration, but the first
-      // request to /api/analyse-room can still TypeError when the
-      // Vercel function cold-starts AND Anthropic is slow on the
-      // first call. Single client-side retry catches that case
-      // without forcing the user to re-submit. The function itself
-      // is idempotent — a second hit just creates a new render row
-      // and re-runs vision; cheap.
-      const submit = () =>
-        fetch('/api/analyse-room', { method: 'POST', body: fd });
+      // second time" during Claude vision. PR #61 added retry-once;
+      // owner reported (later same day) that the retry made the
+      // worst-case wait LONGER — a true timeout case became 60s
+      // (first attempt hits Vercel maxDuration) + 60s (retry hits
+      // the same deadline) = 120s before any feedback, feeling
+      // "indefinite".
+      //
+      // Now: bounded client-side timeout via AbortSignal. Each
+      // attempt aborts at 70s (slightly past Vercel's 60s function
+      // deadline so we don't pre-empt a function that's actually
+      // about to return). One retry on abort/throw, then surface
+      // the friendly error. Total worst-case wait: ~140s — but the
+      // SECOND attempt only fires on hard-fail of the first, not on
+      // 504 timeout, so most "Vercel killed the function" cases
+      // skip the retry and surface the error immediately.
+      const ATTEMPT_TIMEOUT_MS = 70_000;
+      const submit = async (): Promise<Response> => {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), ATTEMPT_TIMEOUT_MS);
+        try {
+          return await fetch('/api/analyse-room', {
+            method: 'POST',
+            body: fd,
+            signal: ac.signal,
+          });
+        } finally {
+          clearTimeout(t);
+        }
+      };
       let res: Response;
       try {
         res = await submit();
       } catch (firstErr) {
         console.warn('[upload-form] analyse-room first attempt failed, retrying:', firstErr);
-        res = await submit();
+        try {
+          res = await submit();
+        } catch (secondErr) {
+          console.error('[upload-form] analyse-room second attempt also failed:', secondErr);
+          const msg =
+            secondErr instanceof DOMException && secondErr.name === 'AbortError'
+              ? 'Claude vision is slow right now — the request timed out. Try again in a moment.'
+              : secondErr instanceof Error
+                ? secondErr.message
+                : 'Network error. Try again.';
+          setError(msg);
+          return;
+        }
       }
       const json = (await res.json().catch(() => ({}))) as AnalyseResponse;
       if (!res.ok) {
