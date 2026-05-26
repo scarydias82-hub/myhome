@@ -25,6 +25,31 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Rug-aware render prompt directives (R1).** Owner
+  flagged that rugs need explicit replace-or-add semantics — the
+  generic "place this piece at a position appropriate for a
+  {category}" instruction reads wrong for floor coverings, and
+  gpt-image-1 was either ignoring the picked rug or placing it
+  alongside an existing one. New `rugDirective` helper in
+  `lib/openai-image.ts`: when any picked product is in
+  `FLOOR_COVERING_CATEGORIES` (rug, rugs, carpet, carpets,
+  flooring — mirror of the curation.ts set), the prompt appends a
+  rug-specific clause. Three branches keyed on `RugRoomContext`:
+  `'present'` (room photo shows an existing rug → REPLACE in same
+  floor location, match colour/pile/pattern, no two rugs);
+  `'absent'` (no existing rug → ADD anchoring the main furniture
+  grouping, match colour/pile/pattern); `'unknown'` (vision didn't
+  signal either way → soft REPLACE-OR-ADD hedging).
+  `apps/web/app/api/render/route.ts` derives the context from
+  `rooms.analysis.existing_furniture` (`/rug/i` match on item
+  names) + `rooms.analysis.flooring` (`/\brug\b/i`) — vision
+  extraction already catalogues this, just unused until now.
+  Mode B's `buildModeBPrompt` hardcodes `'absent'` internally
+  because a blank-canvas render by definition has no existing rug
+  to replace. Ships immediately as a prompt-only change; R2/R3
+  (vision-classify aerial vs lifestyle rug images at ingest +
+  prefer aerial at render time) is the higher-fidelity follow-up
+  that will close the remaining gap.
 - `2026-05-26` — **Mode B result-page copy + dashboard CTA (A5).**
   Final phase of the Mode B rollout. Two changes:
   (1) `apps/web/app/renders/[id]/page.tsx` — render row query now

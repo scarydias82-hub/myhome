@@ -194,6 +194,27 @@ const MULTI_INSTANCE_CATEGORIES = new Set([
   'stools',
 ]);
 
+// Floor coverings — categories that lie on the floor rather than
+// stand vertically as furniture. Triggers the rug-specific prompt
+// directive (R1, 2026-05-26): rugs need explicit "replace existing"
+// or "add new" semantics rather than the generic "place this piece"
+// instruction. Mirror of FLOOR_COVERING_CATEGORIES in lib/curation.ts
+// — keep these in sync when adding a category.
+const FLOOR_COVERING_CATEGORIES = new Set([
+  'rug',
+  'rugs',
+  'carpet',
+  'carpets',
+  'flooring',
+]);
+
+// Whether the source room photo shows an existing rug already on the
+// floor. Drives the rug directive's verb choice (REPLACE vs ADD).
+// Derived in the render route from `rooms.analysis.existing_furniture`
+// (vision-extracted) — if any item matches /rug/i, we treat the room
+// as having an existing rug. Mode B sends 'absent' (blank canvas).
+export type RugRoomContext = 'present' | 'absent' | 'unknown';
+
 // Category-specific size thresholds for the "compact / standard /
 // oversized" descriptor in the render prompt. Each entry names the
 // dominant dimension (`width_cm` for most furniture; `height_cm`
@@ -263,12 +284,43 @@ function dimensionsClause(
   return `${descriptor} at ${dimStr}`;
 }
 
+// Compose the rug-specific directive when any picked product is a
+// floor covering (R1, 2026-05-26). Generic per-product instruction
+// ("place this piece at a position appropriate for a {category}")
+// doesn't read right for rugs — they go on the floor, with explicit
+// replace-or-add semantics relative to whatever was already there.
+// Returns null when the picks don't include a rug; caller skips
+// appending in that case.
+function rugDirective(
+  productRefs: ReadonlyArray<{ name: string; category: string }> | undefined,
+  rugRoomContext: RugRoomContext,
+): string | null {
+  if (!productRefs || productRefs.length === 0) return null;
+  const rugs = productRefs.filter((p) =>
+    FLOOR_COVERING_CATEGORIES.has(p.category.toLowerCase()),
+  );
+  if (rugs.length === 0) return null;
+
+  const rugNames = rugs.map((r) => r.name).join(', ');
+  if (rugRoomContext === 'present') {
+    return `Floor covering: the source room photo shows an existing rug on the floor. REPLACE that rug with the picked rug (${rugNames}). Match the picked rug's exact colour, pile texture, and pattern. The new rug sits in the same floor location and orientation as the original. Do not show two rugs.`;
+  }
+  if (rugRoomContext === 'absent') {
+    return `Floor covering: the room has no existing rug. ADD the picked rug (${rugNames}) to the floor as a new piece, anchoring the main furniture grouping (sofa + coffee table, or under the dining table, or at the foot of the bed depending on room type). Render its exact colour, pile texture, and pattern from the reference image.`;
+  }
+  // 'unknown' fallback — vision didn't tell us either way. Let the
+  // model decide based on the source photo but be explicit about
+  // the rug's identity.
+  return `Floor covering: place the picked rug (${rugNames}) on the floor. If the source photo already has a rug, REPLACE it with this one; if not, ADD this rug as a new piece. Either way, render its exact colour, pile texture, and pattern from the reference image.`;
+}
+
 export function buildOpenAIImagePrompt({
   paletteName,
   paletteVibe,
   styleName,
   roomType,
   productRefs,
+  rugRoomContext = 'unknown',
 }: {
   paletteName: string;
   paletteVibe?: string | null;
@@ -295,6 +347,12 @@ export function buildOpenAIImagePrompt({
       height_cm?: number | null;
     } | null;
   }>;
+  /** Whether the source room photo shows an existing rug. Drives
+   *  the rug directive's verb choice (REPLACE vs ADD vs let-the-
+   *  model-decide). Derived from `rooms.analysis.existing_furniture`
+   *  in the render route. Default 'unknown' keeps the prompt
+   *  intentionally hedging when vision didn't tell us. */
+  rugRoomContext?: RugRoomContext;
 }): string {
   const lines: string[] = [];
   lines.push(
@@ -358,6 +416,12 @@ export function buildOpenAIImagePrompt({
     lines.push(
       `Room type context: ${roomType.replace(/_/g, ' ')}. Use styling appropriate for this room, but ALWAYS the specific pieces in the reference images above — never generic substitutes from the model's defaults.`,
     );
+  }
+
+  const rugLine = rugDirective(productRefs, rugRoomContext);
+  if (rugLine) {
+    lines.push('');
+    lines.push(rugLine);
   }
 
   return lines.join('\n');
@@ -473,6 +537,15 @@ export function buildModeBPrompt({
   }
 
   // Final mode-specific framing.
+  // Mode B is blank-canvas — by definition there's no existing rug
+  // to replace. Any picked rug is always 'absent' context (a new
+  // addition to the room being designed).
+  const rugLine = rugDirective(productRefs, 'absent');
+  if (rugLine) {
+    lines.push('');
+    lines.push(rugLine);
+  }
+
   lines.push('');
   lines.push(
     `Output: photorealistic interior photography, magazine-editorial quality, soft natural daylight, considered minimalism. Do not include people, pets, or decorative styling (no draped throws, no laundry, no clutter). The user is going to see their picked products composed into this new room.`,

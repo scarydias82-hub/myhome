@@ -719,6 +719,21 @@ export async function POST(request: NextRequest) {
       // and writes a blank-canvas brief (no "preserve architecture"
       // clause). Mode A keeps the existing buildOpenAIImagePrompt
       // behaviour exactly.
+      // R1 (2026-05-26) — derive rug presence from vision so the
+      // prompt knows whether to REPLACE the existing rug or ADD a
+      // new one. `rooms.analysis.existing_furniture` is a vision-
+      // extracted list of items with /rug/i indicating the source
+      // photo shows one. `null` analysis → 'unknown' (let the model
+      // decide based on the photo). Mode B is always blank-canvas
+      // so buildModeBPrompt hardcodes 'absent' internally.
+      const existingFurniture =
+        (room.analysis as RoomAnalysis | null)?.existing_furniture ?? [];
+      const flooringText = (room.analysis as RoomAnalysis | null)?.flooring ?? '';
+      const hasExistingRug =
+        existingFurniture.some((f) => typeof f?.item === 'string' && /rug/i.test(f.item)) ||
+        /\brug\b/i.test(flooringText);
+      const rugRoomContext: 'present' | 'absent' | 'unknown' =
+        room.analysis == null ? 'unknown' : hasExistingRug ? 'present' : 'absent';
       const openaiPrompt =
         mode === 'b' && styleRefBufs.length > 0
           ? buildModeBPrompt({
@@ -736,6 +751,7 @@ export async function POST(request: NextRequest) {
               styleName: style.name,
               roomType,
               productRefs: refs,
+              rugRoomContext,
             });
       // If Mode B was requested but the RAG returned zero refs, fall
       // back to using the room photo as starter — the user gets a
