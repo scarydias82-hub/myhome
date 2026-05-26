@@ -90,6 +90,19 @@ export interface CurationItem {
   /** True when this product is in the user's wishlist — UI pins these
    *  to the front and renders a ♥ marker. */
   isWishlisted: boolean;
+  /** Sibling-link uuid for colour-variant grouping (PR #43). Same
+   *  value across every colour/material variant of the same product;
+   *  null when the product is standalone or the scraper didn't
+   *  derive a group. The picker uses this to collapse sibling rows
+   *  into a single card with colour swatches (A3). */
+  variantGroupId: string | null;
+  /** Display label for this specific variant ("Charcoal Linen",
+   *  "Oat Bouclé"). Null when the product is standalone. */
+  variantLabel: string | null;
+  /** Cached dominant hex for the swatch dot (lifted from
+   *  classifyProduct's dominant-colour extraction; PR #43). Null
+   *  when colour wasn't extractable. */
+  colourHex: string | null;
 }
 
 export interface CurationCategory {
@@ -119,6 +132,12 @@ interface ProductRow {
     depth_cm?: number | null;
     height_cm?: number | null;
   } | null;
+  /** Variant-grouping columns (PR #43). NULL on standalone products
+   *  or rows where the backfill regex didn't match (most non-Coco
+   *  rows today). */
+  variant_group_id: string | null;
+  variant_label: string | null;
+  colour_hex: string | null;
 }
 
 /** Room dimensions in metres as `rooms.analysis.dimensions_approximate_m`
@@ -253,7 +272,7 @@ export async function fetchCurationCandidates({
   const wlRes = await admin
     .from('user_wishlist')
     .select(
-      'products(id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions)',
+      'products(id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions, variant_group_id, variant_label, colour_hex)',
     )
     .eq('user_id', userId);
   const wishlistRows = (wlRes.data ?? []) as unknown as Array<{
@@ -285,7 +304,7 @@ export async function fetchCurationCandidates({
     categories.map(async (displayLabel) => {
       const cats = expandCategory(displayLabel);
       const selectCols =
-        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions';
+        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions, variant_group_id, variant_label, colour_hex';
 
       // 1. Wishlist items in this category (pinned). Filter by
       //    expanded category family so wishlist items tagged
@@ -399,6 +418,9 @@ export async function fetchCurationCandidates({
           productUrl: row.product_url,
           affiliateUrl: row.affiliate_url,
           isWishlisted,
+          variantGroupId: row.variant_group_id,
+          variantLabel: row.variant_label,
+          colourHex: row.colour_hex,
         })) as CurationItem[],
       } satisfies CurationCategory;
     }),

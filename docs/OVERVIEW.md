@@ -25,6 +25,35 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Picker variant grouping + colour swatches (A3).**
+  Third phase of the Mode B rollout. Colour-sibling products (same
+  `variant_group_id` from PR #43) now collapse into a single picker
+  card with a swatch strip below the image — tapping a swatch swaps
+  the displayed variant; tapping a selected card's swatch also
+  transfers the pick to the new variant (saves a tap). Standalone
+  products (variantGroupId === null) render identically to pre-A3
+  behaviour — no swatch row, single image. Ships on both Mode A and
+  Mode B since variant data is universally beneficial when it
+  exists; gating on flowMode would be arbitrary. Implementation in
+  `apps/web/components/rooms/upload-form.tsx`: new inline
+  `PickerItem` interface (mirror of `CurationItem` from
+  `lib/curation.ts`, kept inline to avoid cross-file type
+  threading); `groupVariants(items)` helper assembles colour
+  siblings preserving first-occurrence order; new `ProductCard`
+  sub-component owns the per-card variant state (`activeIdx`),
+  defaults to the wishlisted sibling when one is present in the
+  group, falls back to index 0 otherwise. Card stays selected
+  visually when ANY sibling is in the picks set (so swapping
+  swatches doesn't make the border flicker). Plus
+  `lib/curation.ts` updated to SELECT `variant_group_id`,
+  `variant_label`, `colour_hex` from `products`, thread them
+  through `ProductRow` → `CurationItem` → API response. The
+  wishlist join also gets the new columns. Swatch styling: 16px
+  circles, active one bordered + scaled 110%, hover state on
+  inactive ones. The active variant's `variantLabel` ("Charcoal
+  Linen") shows next to the swatches as a soft caption. Out of
+  scope: swipe-up-down gesture (tap-to-swap works on both desktop
+  and mobile; gesture handling is a follow-up if users complain).
 - `2026-05-26` — **Category-aware dimension filter — rugs no
   longer dropped en masse from the picker.** Owner reported "no
   rugs matching for the room with the black couches" after PR #45's
