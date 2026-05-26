@@ -271,18 +271,36 @@ export async function POST(request: NextRequest) {
   const mode: 'a' | 'b' = body.mode === 'b' ? 'b' : 'a';
   const renderMode = mode === 'b' ? 'design' : 'restyle';
 
-  const renderRes = await admin
+  // Resilient insert. If the render_mode column hasn't been applied
+  // to prod yet (migration 20260526120000 didn't run cleanly), the
+  // insert errors with "column 'render_mode' does not exist" and
+  // EVERY render fails — owner reported 2026-05-26 "could not
+  // create render record" hitting this exact path. Retry without
+  // render_mode on error. Mode A renders are fine either way; Mode
+  // B loses the design-mode flag on the row but still produces a
+  // render (downstream defaults to 'restyle' on null).
+  const baseInsert = {
+    user_id: user.id,
+    room_id: room.id,
+    style_profile_id: profile.id,
+    status: 'running',
+    project_id: verifiedProjectId,
+  };
+  let renderRes = await admin
     .from('renders')
-    .insert({
-      user_id: user.id,
-      room_id: room.id,
-      style_profile_id: profile.id,
-      status: 'running',
-      project_id: verifiedProjectId,
-      render_mode: renderMode,
-    })
+    .insert({ ...baseInsert, render_mode: renderMode })
     .select('id')
     .single();
+  if (renderRes.error) {
+    console.warn(
+      `[render] insert with render_mode failed (${renderRes.error.message}); retrying without it (likely 20260526120000 migration not applied to this DB).`,
+    );
+    renderRes = await admin
+      .from('renders')
+      .insert(baseInsert)
+      .select('id')
+      .single();
+  }
   const render = renderRes.data as { id: string } | null;
   if (renderRes.error || !render) {
     console.error('render insert failed', renderRes.error);
