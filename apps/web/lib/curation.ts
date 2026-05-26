@@ -416,15 +416,40 @@ export async function fetchCurationCandidates({
         (r) => ({ row: r, isWishlisted: true }),
       );
       let droppedByDim = 0;
+      // Track filtered-out rows separately so we can fall back to
+      // them when the dimension filter drops EVERYTHING (Tier 6 below).
+      const dimensionRejects: ProductRow[] = [];
       for (const r of designerRows) {
         if (seen.has(r.id)) continue;
         seen.add(r.id);
         if (!dimensionFilter(r.dimensions, r.category)) {
           droppedByDim++;
+          dimensionRejects.push(r);
           continue;
         }
         merged.push({ row: r, isWishlisted: false });
         if (merged.length >= perCategory) break;
+      }
+      // Tier 6 (2026-05-26) — dimension-filter escape hatch. If
+      // designerRows had candidates but the dimension filter
+      // dropped ALL of them (small room, oversized catalogue, or
+      // a category where vision-extracted dims don't quite match
+      // the AU sizing brackets), surface the rejects anyway. Better
+      // to show the user products that are technically too big for
+      // their room than show an empty category. They can choose to
+      // ignore or re-measure.
+      if (
+        merged.length === wishlistItems.length &&
+        designerRows.length > 0 &&
+        dimensionRejects.length > 0
+      ) {
+        for (const r of dimensionRejects) {
+          merged.push({ row: r, isWishlisted: false });
+          if (merged.length >= perCategory) break;
+        }
+        console.log(
+          `[curation] "${displayLabel}" — Tier 6: dimension filter dropped all ${droppedByDim} candidates; surfaced anyway (room ${roomDimensions?.width_m ?? '?'}m × ${roomDimensions?.depth_m ?? '?'}m). User sees products that may be oversized for their space.`,
+        );
       }
       // Diagnostic: if the dimension filter is the reason a category
       // came back empty, log it so the silent-UX-failure case (owner
