@@ -25,6 +25,29 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Revert IC-Light v2 swap (PR #46) — multi-stage
+  failing with JSON-schema validation error.** Owner-reported live
+  blocker after testing on prod: the multi-stage modal returned
+  "The string did not match the expected pattern" — the JSON schema
+  validation message fal returns when an input fails pattern
+  matching. Most likely culprits in the IC-Light v2 call I added:
+  (a) IC-Light v2's data-URI handling in production may differ from
+  the docs (fal says data URIs are accepted, but very large
+  composites may exceed practical limits), or (b) `output_format:
+  'png'` may not match IC-Light v2's accepted enum. The try/catch in
+  `harmoniseComposite` was supposed to swallow this and return the
+  raw composite, but the error still surfaced in the UI — suggesting
+  either the catch was being bypassed by an early-stage validation
+  error before fal.subscribe even ran, or the error was leaking from
+  a related code path. Either way, reverting unblocks live use
+  immediately. Single-file revert of composite.ts only — kept the
+  changelog entries from #46 intact for history, plus a clear
+  "REVERTED" comment block in the file describing what to investigate
+  before retrying IC-Light: fal storage upload (vs data URI) for
+  large composites, exact accepted schema for output_format, and a
+  hard test of the try/catch boundary against this exact error mode.
+  The dark-blob staging quality issue (which #46 was trying to fix)
+  returns; we'll re-attempt with proper investigation in a follow-up.
 - `2026-05-26` — **Coco lifestyle ingest script — Phase 2 (ii).**
   Populates the image RAG (shipped by Phase 2 (i) in
   `20260526110000_design_knowledge_image_url.sql`) from the multi-
