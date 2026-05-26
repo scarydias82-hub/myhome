@@ -16,13 +16,30 @@ import sharp from 'sharp';
 import { getFal } from '@/lib/fal';
 
 const REMBG_ENDPOINT = 'fal-ai/birefnet/v2';
-const HARMONIZE_ENDPOINT = 'fal-ai/flux/dev/image-to-image';
+const HARMONIZE_ENDPOINT = 'fal-ai/iclight-v2';
 
-// Low-strength Flux img2img pass that takes a pasted composite and
-// blends the edges, casts shadows that match the room's light
-// direction, harmonises colour temperature. Strength 0.18 is the sweet
-// spot: high enough to integrate the product into the scene, low
-// enough to preserve the SKU's identity (colour, silhouette, material).
+// Relight a pasted composite via fal IC-Light v2. IC-Light is purpose-
+// built for this exact problem: take an image with a foreground subject
+// pasted onto a background, identify the subject, and re-render only
+// the lighting / contact shadows / colour temperature so the subject
+// reads as native to the scene. The subject's structural pixels (fabric
+// weave, hardware, edge fidelity) are left intact — that's the whole
+// premise of the model.
+//
+// Why this is better than the previous Flux dev img2img pass at
+// strength=0.18: img2img is a general-purpose denoiser. Even at low
+// strength it softens product details indiscriminately because it has
+// no concept of "what to preserve". The user reported pasted-looking
+// composites and dark-blob harmonised shadows in 2026-05 — that's the
+// img2img's general-purpose denoise applied to a subject it doesn't
+// know it's supposed to preserve. IC-Light was trained on subject-
+// pasted-onto-background pairs specifically; preservation of identity
+// is the model's prior, not a hyperparameter we have to thread.
+//
+// API shape (fal-ai/iclight-v2): image_url + prompt + standard sampler
+// params. No `strength`, no mask channel — the model doesn't take an
+// inpaint mask because it doesn't need one. The relight is content-
+// aware, not bbox-aware.
 //
 // Skips silently if FAL_KEY isn't set or the call errors — the
 // un-harmonised composite is still a valid result, just more "placed".
@@ -34,13 +51,12 @@ export async function harmoniseComposite(compositeBuf: Buffer): Promise<Buffer> 
     const result = await fal.subscribe(HARMONIZE_ENDPOINT, {
       input: {
         prompt:
-          'photorealistic interior photography, natural lighting integration, soft realistic shadows, coherent colour temperature, seamless composition, editorial magazine quality',
+          'photorealistic interior photography, natural lighting integration, soft realistic contact shadows beneath each piece of furniture, coherent colour temperature matching the room ambient light, seamless composition, editorial magazine quality',
         image_url: dataUrl,
-        strength: 0.18,
-        num_inference_steps: 18,
+        num_inference_steps: 20,
         guidance_scale: 3.0,
         num_images: 1,
-        enable_safety_checker: true,
+        output_format: 'png',
       } as never,
       logs: false,
     });

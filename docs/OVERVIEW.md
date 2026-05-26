@@ -25,6 +25,30 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Swap composite harmonisation from Flux img2img to
+  IC-Light v2.** Owner-flagged staging issue: post-render composites
+  read as "pasted" — product edges soft, shadows synthetic, fabric
+  weave subtly off. Three prior PRs (#178, #35 my tightened no-shadow
+  gate, #42 reject-black-cutouts-at-source) shipped patches around
+  the edges of the failure mode but the root issue was deeper. The
+  previous `harmoniseComposite` in `apps/web/lib/composite.ts` ran a
+  general-purpose Flux dev img2img pass at strength 0.18 — that's a
+  denoiser with no concept of "subject vs background", so even at
+  low strength it indiscriminately softens product details. IC-Light
+  v2 (`fal-ai/iclight-v2`) was trained specifically on the
+  subject-pasted-onto-background composite-blending task. The model's
+  prior is "preserve subject identity, re-render only lighting /
+  contact shadows / colour temperature" — what we always wanted the
+  harmonisation pass to do but couldn't get out of img2img. Single-
+  function swap in `composite.ts`: endpoint changed, `strength` and
+  `enable_safety_checker` removed (IC-Light doesn't take them),
+  `num_inference_steps` 18→20, prompt tightened to explicitly request
+  contact shadows + colour temperature match. The try/catch fallback
+  remains — if IC-Light errors for any reason, we return the
+  un-harmonised composite (better "placed" output than no output).
+  No new infrastructure, no API contract changes, no UI changes.
+  Closes the staging-quality gap the second piece of research the
+  owner shared flagged as the highest-ROI single change.
 - `2026-05-26` — **Dimension-aware filtering in the curation step.**
   Final Phase 1 ship. The picker now drops products that physically
   couldn't fit in the user's room — a 3.2m sofa surfaced for a 3m-wall
