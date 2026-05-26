@@ -111,6 +111,23 @@ interface ProductRow {
   image_urls: string[] | null;
   product_url: string;
   affiliate_url: string | null;
+  /** Physical dimensions in cm. Parsed at scrape time by
+   *  apps/scraper/utils/parseDimensions.js (~70-80% coverage on
+   *  Coco furniture rows). Any axis can be null. */
+  dimensions: {
+    width_cm?: number | null;
+    depth_cm?: number | null;
+    height_cm?: number | null;
+  } | null;
+}
+
+/** Room dimensions in metres as `rooms.analysis.dimensions_approximate_m`
+ *  carries them — vision-extracted, any axis can be null when the model
+ *  couldn't infer it confidently. */
+export interface RoomDimensions {
+  width_m: number | null;
+  depth_m: number | null;
+  height_m: number | null;
 }
 
 interface FetchOptions {
@@ -125,9 +142,46 @@ interface FetchOptions {
   /** Optional style tags from the picked style — used in the
    *  palette+room+style tier so curation feels editorially aligned. */
   styleTags?: string[];
+  /** Optional room dimensions. When supplied, products whose largest
+   *  horizontal dimension would exceed 75% of the room's shortest wall
+   *  are dropped — they wouldn't fit along any wall comfortably anyway,
+   *  and the picker shouldn't waste a slot on them. Missing axes (vision
+   *  failed to infer) → no filter on that axis. Missing product
+   *  dimensions → product is kept (we can't tell — trust curation). */
+  roomDimensions?: RoomDimensions | null;
   /** Max items per category. Default 8 — leaves room for ~2 wishlist
    *  pinned + 6 designer picks on a typical category. */
   perCategory?: number;
+}
+
+// Build a predicate that returns true when a product's footprint fits
+// the room. The rule of thumb: a product's largest horizontal dimension
+// can't exceed 75% of the shortest room wall. 75% gives ~25% breathing
+// room for circulation + adjacent furniture. Below that threshold the
+// picker would otherwise surface, e.g., a 3.2m sofa in a 3m-wall bedroom
+// which is technically grouped under "Sofas" but physically nonsense.
+//
+// Tolerant by design: when EITHER side is missing data (room.width null,
+// or product.dimensions null) the predicate returns true. We'd rather
+// surface an unverifiable candidate than hide it.
+function makeDimensionFilter(
+  room: RoomDimensions | null | undefined,
+): (dims: ProductRow['dimensions']) => boolean {
+  if (!room) return () => true;
+  const walls = [room.width_m, room.depth_m].filter(
+    (m): m is number => typeof m === 'number' && m > 0,
+  );
+  if (walls.length === 0) return () => true;
+  const shortestWallCm = Math.min(...walls) * 100;
+  const maxProductCm = shortestWallCm * 0.75;
+  return (dims) => {
+    if (!dims) return true;
+    const w = typeof dims.width_cm === 'number' ? dims.width_cm : 0;
+    const d = typeof dims.depth_cm === 'number' ? dims.depth_cm : 0;
+    const maxDim = Math.max(w, d);
+    if (maxDim === 0) return true;
+    return maxDim <= maxProductCm;
+  };
 }
 
 export async function fetchCurationCandidates({
@@ -136,9 +190,11 @@ export async function fetchCurationCandidates({
   roomType,
   paletteId,
   styleTags,
+  roomDimensions,
   perCategory = 8,
 }: FetchOptions): Promise<CurationCategory[]> {
   const canonicalRoom = normaliseRoomTag(roomType);
+  const dimensionFilter = makeDimensionFilter(roomDimensions);
   const categories = canonicalRoom
     ? (CORE_CATEGORIES_PER_ROOM[canonicalRoom] ?? FALLBACK_CORE_CATEGORIES)
     : FALLBACK_CORE_CATEGORIES;
@@ -157,7 +213,7 @@ export async function fetchCurationCandidates({
   const wlRes = await admin
     .from('user_wishlist')
     .select(
-      'products(id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url)',
+      'products(id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions)',
     )
     .eq('user_id', userId);
   const wishlistRows = (wlRes.data ?? []) as unknown as Array<{
@@ -189,7 +245,7 @@ export async function fetchCurationCandidates({
     categories.map(async (displayLabel) => {
       const cats = expandCategory(displayLabel);
       const selectCols =
-        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url';
+        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions';
 
       // 1. Wishlist items in this category (pinned). Filter by
       //    expanded category family so wishlist items tagged
@@ -257,7 +313,10 @@ export async function fetchCurationCandidates({
         if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
       }
 
-      // 3. Merge wishlist-pinned + designer, dedupe by id, cap.
+      // 3. Merge wishlist-pinned + designer, dedupe by id, apply
+      //    dimension filter, cap. Wishlist items deliberately bypass
+      //    the dimension filter — the user explicitly chose them, so
+      //    don't second-guess; if it doesn't fit, that's their call.
       const seen = new Set<string>(wishlistItems.map((r) => r.id));
       const merged: Array<{ row: ProductRow; isWishlisted: boolean }> = wishlistItems.map(
         (r) => ({ row: r, isWishlisted: true }),
@@ -265,6 +324,7 @@ export async function fetchCurationCandidates({
       for (const r of designerRows) {
         if (seen.has(r.id)) continue;
         seen.add(r.id);
+        if (!dimensionFilter(r.dimensions)) continue;
         merged.push({ row: r, isWishlisted: false });
         if (merged.length >= perCategory) break;
       }
