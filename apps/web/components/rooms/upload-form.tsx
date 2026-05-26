@@ -161,15 +161,7 @@ export function UploadForm({
   const [curationCategories, setCurationCategories] = useState<
     Array<{
       displayLabel: string;
-      items: Array<{
-        id: string;
-        name: string;
-        retailer: string;
-        category: string;
-        priceAud: number | null;
-        imageUrl: string;
-        isWishlisted: boolean;
-      }>;
+      items: PickerItem[];
     }>
   >([]);
   const [picks, setPicks] = useState<Map<string, Set<string>>>(new Map());
@@ -1845,6 +1837,48 @@ function UnifiedPaletteCard({
 // MULTI_INSTANCE_CATEGORIES in lib/openai-image.ts — picking 2
 // Dining Chairs lets the user MIX styles in the rendered scene
 // while picking 1 still gets multiplied into a coordinated set.
+// Item passed into the picker UI. Mirror of CurationItem from
+// lib/curation.ts (kept inline here so the file doesn't need a
+// cross-cutting type import). The variant fields (variantGroupId /
+// variantLabel / colourHex) drive A3's colour-swipe grouping —
+// siblings of the same product share a variantGroupId and render as
+// a single card with swatches.
+interface PickerItem {
+  id: string;
+  name: string;
+  retailer: string;
+  category: string;
+  priceAud: number | null;
+  imageUrl: string;
+  isWishlisted: boolean;
+  variantGroupId: string | null;
+  variantLabel: string | null;
+  colourHex: string | null;
+}
+
+// Group sibling variants (same variantGroupId) into single visual
+// cards, preserving the first-occurrence order of each group. Items
+// with null variantGroupId stay as their own group of one — the
+// card renders identically to pre-A3 behaviour for them.
+function groupVariants(items: PickerItem[]): PickerItem[][] {
+  const result: PickerItem[][] = [];
+  const groupIndex = new Map<string, number>();
+  for (const item of items) {
+    if (!item.variantGroupId) {
+      result.push([item]);
+      continue;
+    }
+    const existingIdx = groupIndex.get(item.variantGroupId);
+    if (existingIdx !== undefined) {
+      result[existingIdx]!.push(item);
+    } else {
+      groupIndex.set(item.variantGroupId, result.length);
+      result.push([item]);
+    }
+  }
+  return result;
+}
+
 function CurationStep({
   categories,
   picks,
@@ -1852,15 +1886,7 @@ function CurationStep({
 }: {
   categories: Array<{
     displayLabel: string;
-    items: Array<{
-      id: string;
-      name: string;
-      retailer: string;
-      category: string;
-      priceAud: number | null;
-      imageUrl: string;
-      isWishlisted: boolean;
-    }>;
+    items: PickerItem[];
   }>;
   picks: Map<string, Set<string>>;
   onTogglePick: (categoryLabel: string, productId: string) => void;
@@ -1912,73 +1938,15 @@ function CurationStep({
             ) : (
               <div className="-mx-2 mt-3 overflow-x-auto pb-3 [scrollbar-width:thin]">
                 <ul className="flex snap-x snap-mandatory gap-3 px-2">
-                  {cat.items.map((item) => {
-                    const selected = catPicks.has(item.id);
-                    // Disabled when this category is at capacity AND
-                    // this card isn't already selected — user has to
-                    // deselect another card first to swap. Cards always
-                    // remain clickable when selected (so users can
-                    // deselect freely).
-                    const canPick = selected || !atCapacity;
-                    return (
-                      <li
-                        key={item.id}
-                        className="snap-start shrink-0 basis-[160px] md:basis-[200px]"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => onTogglePick(cat.displayLabel, item.id)}
-                          disabled={!canPick}
-                          aria-pressed={selected}
-                          className={cn(
-                            'flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-cream text-left transition',
-                            selected
-                              ? 'border-clay shadow-soft ring-1 ring-clay/40'
-                              : canPick
-                                ? 'border-ink/[0.06] hover:border-ink/20'
-                                : 'border-ink/[0.06] opacity-40 cursor-not-allowed',
-                          )}
-                        >
-                          <div className="relative aspect-square w-full bg-paper-warm bg-grain">
-                            <Image
-                              src={item.imageUrl}
-                              alt={item.name}
-                              fill
-                              sizes="(max-width: 768px) 50vw, 200px"
-                              className="object-cover"
-                              unoptimized
-                            />
-                            {item.isWishlisted ? (
-                              <span
-                                aria-label="You liked this before"
-                                className="absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-cream/95 text-clay shadow-sm"
-                              >
-                                ♥
-                              </span>
-                            ) : null}
-                            {selected ? (
-                              <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-clay text-paper font-mono text-meta">
-                                ✓
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="p-3">
-                            <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
-                              {item.retailer}
-                            </p>
-                            <p className="mt-1 line-clamp-2 font-dmsans text-[12px] leading-tight text-ink">
-                              {item.name}
-                            </p>
-                            {item.priceAud != null ? (
-                              <p className="mt-1 font-display text-[14px] text-ink">
-                                ${Math.round(item.priceAud).toLocaleString('en-AU')}
-                              </p>
-                            ) : null}
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
+                  {groupVariants(cat.items).map((group) => (
+                    <ProductCard
+                      key={group[0]!.variantGroupId ?? group[0]!.id}
+                      group={group}
+                      catPicks={catPicks}
+                      atCapacity={atCapacity}
+                      onTogglePick={(productId) => onTogglePick(cat.displayLabel, productId)}
+                    />
+                  ))}
                 </ul>
               </div>
             )}
@@ -1986,6 +1954,159 @@ function CurationStep({
         );
       })}
     </section>
+  );
+}
+
+// ProductCard — picker tile for one product (or one group of colour
+// siblings). Added A3 (2026-05-26) to support the variant-grouping
+// UX: products that share a variant_group_id collapse into a single
+// card with a colour-swatch strip; tapping a swatch swaps the
+// displayed variant AND (if the previous variant was selected)
+// transfers the pick to the new variant. Standalone products
+// (variantGroupId === null) render identically to pre-A3 behaviour:
+// no swatch row, single image, tap to toggle selection.
+//
+// Local state: `activeIdx` — index into the group array of the
+// currently-displayed variant. Default = index of a wishlisted
+// sibling if present, else 0. Reset when the parent re-renders with
+// a different group (rare — palette change triggers a re-fetch).
+function ProductCard({
+  group,
+  catPicks,
+  atCapacity,
+  onTogglePick,
+}: {
+  group: PickerItem[];
+  catPicks: Set<string>;
+  atCapacity: boolean;
+  onTogglePick: (productId: string) => void;
+}) {
+  // Prefer a wishlisted sibling as the default-shown variant — the
+  // user has signal they like that colour. Falls back to the first
+  // item in the group when nothing's wishlisted.
+  const wishlistedIdx = group.findIndex((g) => g.isWishlisted);
+  const [activeIdx, setActiveIdx] = useState<number>(wishlistedIdx >= 0 ? wishlistedIdx : 0);
+  const active = group[activeIdx] ?? group[0]!;
+  const selected = catPicks.has(active.id);
+  // Also consider the card "selected" when ANY sibling in the group
+  // is picked — this is a visual safety net for the case where the
+  // user picked variant A, then the active card index is variant B.
+  // Without this the card border would show unselected even though
+  // a sibling is in the picks set.
+  const groupHasPick = group.some((g) => catPicks.has(g.id));
+  // Disabled when at capacity AND no sibling in this group is
+  // already picked. If a sibling IS picked, the card stays
+  // interactive so the user can deselect or swap colours.
+  const canPick = groupHasPick || !atCapacity;
+
+  function handleCardTap() {
+    if (!canPick) return;
+    onTogglePick(active.id);
+  }
+
+  function handleSwatchTap(idx: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (idx === activeIdx) return;
+    const wasSelected = catPicks.has(active.id);
+    setActiveIdx(idx);
+    // Transfer the pick to the new variant if the old one was
+    // selected — saves a tap. The toggle is idempotent on the
+    // outgoing variant (off) and applies to the incoming (on).
+    if (wasSelected) {
+      onTogglePick(active.id); // deselect outgoing
+      onTogglePick(group[idx]!.id); // select incoming
+    }
+  }
+
+  const hasVariants = group.length > 1;
+
+  return (
+    <li className="snap-start shrink-0 basis-[160px] md:basis-[200px]">
+      <button
+        type="button"
+        onClick={handleCardTap}
+        disabled={!canPick}
+        aria-pressed={selected}
+        className={cn(
+          'flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-cream text-left transition',
+          groupHasPick
+            ? 'border-clay shadow-soft ring-1 ring-clay/40'
+            : canPick
+              ? 'border-ink/[0.06] hover:border-ink/20'
+              : 'border-ink/[0.06] opacity-40 cursor-not-allowed',
+        )}
+      >
+        <div className="relative aspect-square w-full bg-paper-warm bg-grain">
+          <Image
+            src={active.imageUrl}
+            alt={active.name}
+            fill
+            sizes="(max-width: 768px) 50vw, 200px"
+            className="object-cover"
+            unoptimized
+          />
+          {active.isWishlisted ? (
+            <span
+              aria-label="You liked this before"
+              className="absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-cream/95 text-clay shadow-sm"
+            >
+              ♥
+            </span>
+          ) : null}
+          {selected ? (
+            <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-clay text-paper font-mono text-meta">
+              ✓
+            </span>
+          ) : null}
+        </div>
+        <div className="p-3">
+          <p className="font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+            {active.retailer}
+          </p>
+          <p className="mt-1 line-clamp-2 font-dmsans text-[12px] leading-tight text-ink">
+            {active.name}
+          </p>
+          {active.priceAud != null ? (
+            <p className="mt-1 font-display text-[14px] text-ink">
+              ${Math.round(active.priceAud).toLocaleString('en-AU')}
+            </p>
+          ) : null}
+          {hasVariants ? (
+            // Colour swatch row. Each swatch is its own button so
+            // tapping swaps the active variant without toggling the
+            // pick. stopPropagation on swatch handler prevents the
+            // outer card's onClick from also firing.
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              {group.map((sib, idx) => {
+                const isActive = idx === activeIdx;
+                const swatchColour = sib.colourHex ?? '#CCC';
+                return (
+                  <button
+                    key={sib.id}
+                    type="button"
+                    onClick={(e) => handleSwatchTap(idx, e)}
+                    title={sib.variantLabel ?? sib.name}
+                    aria-label={`Switch to ${sib.variantLabel ?? sib.name}`}
+                    className={cn(
+                      'h-4 w-4 rounded-full border transition',
+                      isActive
+                        ? 'border-ink shadow-sm scale-110'
+                        : 'border-ink/30 hover:border-ink/60',
+                    )}
+                    style={{ backgroundColor: swatchColour }}
+                  />
+                );
+              })}
+              {active.variantLabel ? (
+                <span className="ml-1 font-mono text-[10px] uppercase tracking-eyebrow text-ink-faint">
+                  {active.variantLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </button>
+    </li>
   );
 }
 
