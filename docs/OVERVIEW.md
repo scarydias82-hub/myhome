@@ -25,6 +25,31 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Mode B entry flow — A1 of the floorplan-mode
+  rollout.** New route `/design/new` exposes a "Your room, reimagined"
+  entry point for the Coco-only blank-canvas design flow. Gated on
+  `NEXT_PUBLIC_FLOORPLAN_MODE`; redirects to `/rooms/new` when the
+  flag is off so any bookmark falls through cleanly to Mode A. Reuses
+  the existing `UploadForm` component (same upload + vision step as
+  Mode A) but threads a new `flowMode: 'a' | 'b'` prop down to
+  `Step3Style` and the default-palette initialiser. When `flowMode='b'`,
+  the palette picker filters to the 5 ultra-contemporary palettes in
+  `MODE_B_PALETTE_IDS` (bone-and-black, mushroom-and-bone,
+  scandinavian-white, modernist-restraint, chocolate-brown-modern)
+  via the `listPalettesForMode` helper from PR #44. Everything else
+  stays identical between modes for now; A2 (floorplan SVG +
+  confirmation UI), A3 (Coco-only colour-swipe picker), A4 (blank-
+  canvas render path consuming the Coco image RAG from PR #47/49),
+  and A5 (result-page copy + dashboard CTA) diverge from here. No
+  Mode A regression risk — the prop defaults to 'a', existing
+  call sites unchanged. Owner-confirmed product decisions before
+  build: (1) Mode B keeps the photo upload — vision derives
+  dimensions + room type, but the render uses a blank canvas (not
+  the messy-room input); preserves the "your space" emotional pull
+  without inheriting existing-furniture inertia. (2) Floorplan
+  editability deferred to v2 — v1 just shows the architectural
+  plan + measurements with confirm/reject. (3) Result copy reads
+  "Your [room], reimagined" (it's still theirs).
 - `2026-05-26` — **Revert IC-Light v2 swap (PR #46) — multi-stage
   failing with JSON-schema validation error.** Owner-reported live
   blocker after testing on prod: the multi-stage modal returned

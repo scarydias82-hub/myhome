@@ -11,6 +11,7 @@ import {
   isTrendForward,
   isTimeless,
   listPalettes,
+  listPalettesForMode,
   paletteDirection,
   paletteSwatch,
   type Palette,
@@ -115,7 +116,23 @@ interface FeaturedProduct {
   image_url: string;
 }
 
-export function UploadForm({ projectId }: { projectId?: string | null }) {
+/** Flow mode determines which palette catalogue + entry-flow copy
+ *  the picker exposes. Mode A (default) is the original photo-restyle
+ *  flow with the full 56-palette catalogue. Mode B is the new
+ *  floorplan-confirm + Coco-only design flow added 2026-05-26 —
+ *  curated to the 5 ultra-contemporary palettes in MODE_B_PALETTE_IDS
+ *  (see lib/palettes.ts). Everything else in this component stays
+ *  identical between the modes for now; A2-A5 will diverge further
+ *  (separate render path, floorplan UI, etc.). */
+export type UploadFormMode = 'a' | 'b';
+
+export function UploadForm({
+  projectId,
+  flowMode = 'a',
+}: {
+  projectId?: string | null;
+  flowMode?: UploadFormMode;
+}) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -164,7 +181,12 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
   const [analysisConfirmed, setAnalysisConfirmed] = useState(false);
 
   const [style, setStyle] = useState<StyleSlug>('japandi');
-  const [paletteId, setPaletteId] = useState<string>(listPalettes()[0]?.id ?? '');
+  // Default selected palette. For Mode B, picks the first palette in
+  // MODE_B_PALETTE_IDS (editorial order). For Mode A, the first
+  // palette in the full catalogue — unchanged from prior behaviour.
+  const [paletteId, setPaletteId] = useState<string>(
+    listPalettesForMode(flowMode)[0]?.id ?? '',
+  );
   // Direction state was removed 2026-05-23 (#168). The three-carousel
   // picker collapsed into a single carousel + filter chips, so
   // direction is now a derived value (via paletteDirection() helper)
@@ -680,6 +702,7 @@ export function UploadForm({ projectId }: { projectId?: string | null }) {
           paletteId={paletteId}
           onPaletteChange={setPaletteId}
           trendPreviews={trendPreviews}
+          flowMode={flowMode}
         />
       ) : null}
 
@@ -1573,13 +1596,18 @@ function Step3Style({
   paletteId,
   onPaletteChange,
   trendPreviews,
+  flowMode,
 }: {
   paletteId: string;
   onPaletteChange: (p: string) => void;
   trendPreviews: Map<string, TrendPreview>;
+  flowMode: UploadFormMode;
 }) {
   const [filter, setFilter] = useState<PaletteFilter>('all');
-  const all = listPalettes();
+  // Mode B filters the picker to the 5 ultra-contemporary palettes
+  // signed off 2026-05-26 (MODE_B_PALETTE_IDS in lib/palettes.ts).
+  // Mode A retains the full 56-palette catalogue.
+  const all = listPalettesForMode(flowMode);
   const filtered =
     filter === 'trends'
       ? all.filter(isTrendForward)
