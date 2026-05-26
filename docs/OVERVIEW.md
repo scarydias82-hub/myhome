@@ -25,6 +25,21 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Strategic memo — retailer-curated palette × product
+  mappings (docs only).** Owner observation after testing
+  scandinavian-white against the Coco catalogue: algorithmic
+  palette-product matching at ingest treats palette + furniture as if
+  they should *blend* by tonal family, which misses the entire
+  *contrast* aesthetic where a warm linen sofa against a crisp
+  scandinavian-white palette is the defining editorial moment. The
+  right long-term fix isn't a smarter matcher — it's letting retailers
+  curate which products go with which palettes editorially. Memo'd as
+  new §6.14 with the shape (small `palette_product_curations` table,
+  picker Tier 0 checks it first, matcher stays as the fallback for
+  uncurated combos) and an adjacent note recommending Mode B's
+  palette set get warmed-up (swap scandinavian-white for one of
+  japandi-quiet / oat-and-linen / wabi-sabi-cream) as a stopgap until
+  §6.14 ships. No code change in this commit — strategy memo only.
 - `2026-05-26` — **Rug image quality — vision classification + aerial
   preference + transparent cutouts (R2 + R3 + R4).** Three coordinated
   layers closing the remaining gap from R1's prompt-only fix.
@@ -3443,6 +3458,50 @@ feature becomes possible:
   is the lever that turns a single render into multiple shopping lists
   at multiple price points — increasing the chance the user actually
   buys something rather than bouncing off "too expensive" pricing.
+
+### 6.14 Retailer-curated palette × product mappings
+
+**The insight (owner memo, 2026-05-26).** Algorithmic palette-product
+matching (`paletteMatch.classifyProduct` at ingest, which tags products
+by dominant-colour similarity to each palette's tonal family) treats
+palette + furniture as if they should **blend**. That's one valid
+design aesthetic but it misses the entire *contrast* tradition — a warm
+linen sofa against a crisp `scandinavian-white` palette can be the
+*defining* editorial moment, not a mismatch. Right now if a Coco-warm
+sofa doesn't auto-tag against `scandinavian-white` it never surfaces
+when that palette is picked, even though a designer might say "this is
+exactly the sofa I'd pick for this room".
+
+**The strategic move.** Have the retailer's own designers curate which
+products go with which palettes. Editorial > algorithmic for this
+specific decision. The matcher stays as a fallback (and as the bulk
+tagger for retailers without curation), but explicit curation overrides
+it where it exists.
+
+**Shape, when it lands.**
+- New `palette_product_curations` table:
+  `(retailer, palette_id, product_id, rank, note)` — small set,
+  hand-maintained per retailer.
+- Picker's Tier 0 (new) checks this table first; if curations exist
+  for the palette + retailer combo, they pin to the front.
+- Tier 1+ retain the existing palette_tag-based matching for everything
+  not curated.
+- Retailer interface: simple CSV upload or a small admin page.
+
+**Why this is in the backlog, not Phase 1.** It needs retailer
+engagement (Coco's design team or our internal stylist as a first pass)
+which is an account-management workflow more than a code workflow. Code
+side is half a day.
+
+**Adjacent: revisit Mode B palette set.** The current 5
+(bone-and-black, mushroom-and-bone, scandinavian-white,
+modernist-restraint, chocolate-brown-modern) skews cooler than
+Coco's warm-neutral catalogue actually carries. Until §6.14 ships,
+swapping `scandinavian-white` for `mushroom-and-bone`-adjacent
+warmer options (`japandi-quiet`, `oat-and-linen`, `wabi-sabi-cream`)
+would lift picker coverage for Coco-only test mode. Tracked here so
+the swap doesn't get done without considering §6.14 as the proper
+fix.
 
 ### 6.7 Legal & compliance
 - **#76 — Terms & Conditions acceptance at sign-up.** Today the live
