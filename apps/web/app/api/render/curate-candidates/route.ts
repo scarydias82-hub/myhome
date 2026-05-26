@@ -44,12 +44,36 @@ export async function POST(req: Request) {
     .select('id, user_id, analysis')
     .eq('id', body.roomId)
     .single();
-  const room = roomRes.data as { id: string; user_id: string; analysis: { room_type?: string | null } | null } | null;
+  const room = roomRes.data as {
+    id: string;
+    user_id: string;
+    analysis: {
+      room_type?: string | null;
+      dimensions_approximate_m?: {
+        width?: number | null;
+        depth?: number | null;
+        height?: number | null;
+      } | null;
+    } | null;
+  } | null;
   if (!room || room.user_id !== user.id) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 });
   }
 
   const roomType = room.analysis?.room_type ?? null;
+  // dimensions_approximate_m is the vision-extracted room footprint (any
+  // axis can be null when Claude couldn't infer it confidently). The
+  // curation step uses it to drop products too large to fit along the
+  // shortest wall — see makeDimensionFilter in lib/curation.ts. When the
+  // analysis lacks dimensions entirely, the filter is a no-op.
+  const rawDims = room.analysis?.dimensions_approximate_m;
+  const roomDimensions = rawDims
+    ? {
+        width_m: typeof rawDims.width === 'number' ? rawDims.width : null,
+        depth_m: typeof rawDims.depth === 'number' ? rawDims.depth : null,
+        height_m: typeof rawDims.height === 'number' ? rawDims.height : null,
+      }
+    : null;
   const style = body.styleSlug ? getStyle(body.styleSlug) : null;
   const styleTags = style ? [...(style.mood ?? []), style.slug] : [];
 
@@ -61,6 +85,7 @@ export async function POST(req: Request) {
       roomType,
       paletteId: body.paletteId,
       styleTags,
+      roomDimensions,
       perCategory: 8,
     });
     return NextResponse.json({ categories });

@@ -25,6 +25,29 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Dimension-aware filtering in the curation step.**
+  Final Phase 1 ship. The picker now drops products that physically
+  couldn't fit in the user's room — a 3.2m sofa surfaced for a 3m-wall
+  bedroom is technically grouped under "Sofas" but a UX dud. Ships
+  on both Mode A AND Mode B (no flag gate) because the win applies
+  to the existing photo-restyle flow too: vision already extracts
+  `rooms.analysis.dimensions_approximate_m` and product
+  dimensions are populated for ~70-80% of Coco furniture rows
+  (parseDimensions.js coverage). Rule of thumb in `apps/web/lib/
+  curation.ts:makeDimensionFilter` — a product's largest horizontal
+  dimension (max of width_cm, depth_cm) can't exceed 75% of the
+  shortest room wall (min of room width/depth, in cm). 75% gives
+  ~25% breathing room for circulation + adjacent furniture. Tolerant
+  by design: either side missing data → predicate returns true (we'd
+  rather surface an unverifiable candidate than hide it). Wishlist
+  items deliberately bypass the filter — the user explicitly chose
+  them, so don't second-guess. The route at `app/api/render/curate-
+  candidates/route.ts` now reads `rooms.analysis.dimensions_approximate_m`
+  and threads it through as the new `roomDimensions` option on
+  `fetchCurationCandidates`. The `products.dimensions` JSONB is now
+  included in every curation SELECT (it was already populated, just
+  not pulled). No DB migration, no UI change visible to the user
+  beyond "the products that show up actually fit".
 - `2026-05-26` — **Mode B feature flag + curated palette subset —
   Phase 1 plumbing for the new floorplan-mode flow.** Owner directive
   is "remove most of our palettes for the new flow and just keep the
