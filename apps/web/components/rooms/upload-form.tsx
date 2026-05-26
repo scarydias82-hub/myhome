@@ -377,7 +377,24 @@ export function UploadForm({
       const fd = new FormData();
       fd.append('photo', photoFile);
       if (projectId) fd.append('projectId', projectId);
-      const res = await fetch('/api/analyse-room', { method: 'POST', body: fd });
+      // 2026-05-26 — owner reported "Load failed first time, works
+      // second time" during Claude vision. PR #48 tightened the
+      // Anthropic retry budget inside maxDuration, but the first
+      // request to /api/analyse-room can still TypeError when the
+      // Vercel function cold-starts AND Anthropic is slow on the
+      // first call. Single client-side retry catches that case
+      // without forcing the user to re-submit. The function itself
+      // is idempotent — a second hit just creates a new render row
+      // and re-runs vision; cheap.
+      const submit = () =>
+        fetch('/api/analyse-room', { method: 'POST', body: fd });
+      let res: Response;
+      try {
+        res = await submit();
+      } catch (firstErr) {
+        console.warn('[upload-form] analyse-room first attempt failed, retrying:', firstErr);
+        res = await submit();
+      }
       const json = (await res.json().catch(() => ({}))) as AnalyseResponse;
       if (!res.ok) {
         setError(json.error ?? 'Could not analyse the room. Try another photo.');

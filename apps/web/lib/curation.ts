@@ -361,6 +361,7 @@ export async function fetchCurationCandidates({
       // taxonomy drift (or a vision slug we don't yet alias) leaves
       // tiers 1-3 empty, surface SOMETHING in the category so the
       // user is never stuck with an empty picker.
+      const tier4StartCount = designerRows.length;
       if (designerRows.length < designerNeeded) {
         let qb = admin.from('products').select(selectCols);
         if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
@@ -371,6 +372,40 @@ export async function fetchCurationCandidates({
           .limit(designerNeeded * 2);
         if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
       }
+      // Tier 5 (2026-05-26) — if Tier 4 returned zero AND a retailer
+      // allowlist is in play, retry once with the allowlist dropped.
+      // Owner reported empty product picker on Mode B renders where
+      // the catalogue is Coco-only and Coco has zero rows in the
+      // category (e.g. kitchen Stools, bathroom Tapware). Mixing in
+      // products from other retailers beats showing the user a dead
+      // category. Only fires when the allowlist was set, so renders
+      // that already use the full catalogue see no change.
+      if (
+        retailerAllowlist &&
+        designerRows.length === tier4StartCount &&
+        designerRows.length < designerNeeded
+      ) {
+        const q = await admin
+          .from('products')
+          .select(selectCols)
+          .in('category', cats)
+          .not('image_url', 'is', null)
+          .order('price_aud', { ascending: false, nullsFirst: false })
+          .limit(designerNeeded * 2);
+        if (!q.error && q.data && q.data.length > 0) {
+          designerRows.push(...(q.data as ProductRow[]));
+          console.log(
+            `[curation] "${displayLabel}" — Tier 5: allowlist (${retailerAllowlist.join(',')}) had zero matches, surfaced ${q.data.length} from any retailer`,
+          );
+        }
+      }
+      // Per-tier diagnostic — Vercel logs the count for each category
+      // so the silent-empty-picker case (owner reported 2026-05-26
+      // "no products available for the room") shows up in logs
+      // without the user having to repro.
+      console.log(
+        `[curation] "${displayLabel}" — designerRows=${designerRows.length}, wishlist=${wishlistItems.length}, allowlist=${retailerAllowlist ? retailerAllowlist.join(',') : 'none'}, palette=${paletteId ?? 'none'}, room=${canonicalRoom ?? 'none'}`,
+      );
 
       // 3. Merge wishlist-pinned + designer, dedupe by id, apply
       //    dimension filter, cap. Wishlist items deliberately bypass
