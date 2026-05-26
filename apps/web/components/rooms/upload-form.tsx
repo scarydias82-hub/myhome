@@ -588,7 +588,17 @@ export function UploadForm({
       const res = await fetch('/api/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ roomId, style, paletteId, featuredProductIds: pickedIds, projectId: projectId ?? undefined }),
+        body: JSON.stringify({
+          roomId,
+          style,
+          paletteId,
+          featuredProductIds: pickedIds,
+          projectId: projectId ?? undefined,
+          // A4: forward the flow mode to the render route so it can
+          // branch into the blank-canvas Coco design pipeline when
+          // the user came in via /design/new.
+          mode: flowMode,
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !json.id) {

@@ -32,13 +32,24 @@ const OPENAI_IMAGES_EDITS = 'https://api.openai.com/v1/images/edits';
 
 export interface OpenAIImageInput {
   prompt: string;
-  /** Room photo bytes (image 1 — the structure-source / base). */
-  roomBuf: Buffer;
-  /** Optional palette swatch (image 2). Skip if you don't have one. */
+  /** Mode A starter: the user's room photo (preserved-architecture
+   *  base). Optional because Mode B (A4, 2026-05-26) uses
+   *  styleRefBufs as the starter image set instead — it generates a
+   *  new room rather than restyling an existing one. At least one
+   *  of roomBuf or styleRefBufs must be non-empty; gpt-image-1's
+   *  images.edit endpoint requires ≥1 input image. */
+  roomBuf?: Buffer | null;
+  /** Mode B style anchor: Coco lifestyle imagery from design_knowledge
+   *  (PR #47/49). Prepended to the image[] sequence (images 1..N)
+   *  so gpt-image-1 reads them as the aesthetic ground truth before
+   *  any product references. Empty array in Mode A. */
+  styleRefBufs?: Buffer[];
+  /** Optional palette swatch (image after styleRefs / roomBuf). */
   paletteSwatchBuf?: Buffer | null;
-  /** Optional product reference images (images 3+). Cap at 10 caller-side
-   *  to allow multi-angle references (4 products × 2-3 angles each);
-   *  gpt-image-1 accepts up to 16 but quality degrades past 8-10. */
+  /** Optional product reference images (always last). Cap at 10
+   *  caller-side to allow multi-angle references (4 products × 2-3
+   *  angles each); gpt-image-1 accepts up to 16 but quality
+   *  degrades past 8-10. */
   productImageBufs?: Buffer[];
   /** Output size. 1024x1024 default; landscape / portrait options also
    *  supported by the model. */
@@ -70,13 +81,37 @@ export async function submitOpenAIImageRender(
   form.append('quality', input.quality ?? 'medium');
 
   // image[] is the multi-input field. Order matters: the prompt
-  // references images by index, so we keep the same convention as
-  // the Flux Kontext path — [room, palette, ...products].
-  form.append(
-    'image[]',
-    new Blob([new Uint8Array(input.roomBuf)], { type: 'image/png' }),
-    'room.png',
-  );
+  // references images by index. Two layouts depending on mode:
+  //   - Mode A:  [room, palette?, ...products]
+  //   - Mode B:  [...styleRefs, palette?, ...products]
+  // The starter images (style refs in Mode B, room in Mode A) come
+  // first so gpt-image-1 reads them as the visual anchor before any
+  // product directives.
+  const styleRefBufs = input.styleRefBufs ?? [];
+  for (let i = 0; i < styleRefBufs.length; i++) {
+    const buf = styleRefBufs[i];
+    if (!buf) continue;
+    form.append(
+      'image[]',
+      new Blob([new Uint8Array(buf)], { type: 'image/png' }),
+      `style-${i}.png`,
+    );
+  }
+  if (input.roomBuf) {
+    form.append(
+      'image[]',
+      new Blob([new Uint8Array(input.roomBuf)], { type: 'image/png' }),
+      'room.png',
+    );
+  }
+  // Defensive: gpt-image-1 rejects zero-image submissions. If both
+  // roomBuf and styleRefBufs are empty there's nothing to send — the
+  // caller violated the contract.
+  if (styleRefBufs.length === 0 && !input.roomBuf) {
+    throw new Error(
+      'submitOpenAIImageRender: at least one of roomBuf or styleRefBufs must be provided',
+    );
+  }
   if (input.paletteSwatchBuf) {
     form.append(
       'image[]',
@@ -324,6 +359,124 @@ export function buildOpenAIImagePrompt({
       `Room type context: ${roomType.replace(/_/g, ' ')}. Use styling appropriate for this room, but ALWAYS the specific pieces in the reference images above — never generic substitutes from the model's defaults.`,
     );
   }
+
+  return lines.join('\n');
+}
+
+// Mode B prompt — blank-canvas Coco-only design flow (A4, 2026-05-26).
+// Key difference from buildOpenAIImagePrompt above: this prompt does
+// NOT instruct the model to preserve the user's room photo. Mode B
+// generates a NEW room of the supplied dimensions, in the
+// contemporary Coco Republic aesthetic shown by the lifestyle
+// reference images, featuring the user's picked products.
+//
+// Image-ordering contract (caller is responsible — see /api/render):
+//   - Images 1..N    : Coco lifestyle references from design_knowledge
+//                      (the visual style anchor; replaces the user's
+//                      room photo as the "starter")
+//   - Image  N+1     : palette swatch (optional)
+//   - Images N+2..M  : product references (the user's picks; same
+//                      silhouette + dimension language as Mode A)
+//
+// The prompt enumerates these explicitly so gpt-image-1 knows which
+// images are *style* references vs *product* commitments.
+export function buildModeBPrompt({
+  paletteName,
+  paletteVibe,
+  roomType,
+  width_m,
+  depth_m,
+  cocoLifestyleCount,
+  productRefs,
+}: {
+  paletteName: string;
+  paletteVibe?: string | null;
+  roomType?: string | null;
+  /** Room dimensions vision extracted (m). Either or both may be null
+   *  when vision couldn't infer them; the prompt omits the dimension
+   *  clause when both are null. */
+  width_m: number | null;
+  depth_m: number | null;
+  /** How many Coco lifestyle reference images the caller is sending
+   *  as image[1..cocoLifestyleCount]. The prompt names this count
+   *  so gpt-image-1 knows where style-references end and product-
+   *  references begin. */
+  cocoLifestyleCount: number;
+  productRefs?: Array<{
+    name: string;
+    category: string;
+    retailer: string;
+    silhouette?: string | null;
+    dimensions?: {
+      width_cm?: number | null;
+      depth_cm?: number | null;
+      height_cm?: number | null;
+    } | null;
+  }>;
+}): string {
+  const lines: string[] = [];
+  const roomLabel = roomType?.replace(/_/g, ' ') ?? 'room';
+
+  lines.push(
+    `Design a new ${roomLabel} from scratch. This is not a restyle of an existing space — generate the room itself: walls, floor, ceiling, natural light source, and all furnishings.`,
+  );
+
+  // Dimension clause when vision provided them. Image models don't
+  // honour raw cm faithfully, but the proportional cue (long vs
+  // square, generous vs compact) does land.
+  if (width_m && depth_m) {
+    const proportion =
+      Math.max(width_m, depth_m) / Math.min(width_m, depth_m) > 1.4
+        ? 'rectangular' : 'roughly square';
+    lines.push(
+      `Approximate dimensions: ${width_m.toFixed(1)} m × ${depth_m.toFixed(1)} m. ${proportion.charAt(0).toUpperCase() + proportion.slice(1)} layout. Render at a camera angle and focal length that shows the whole room comfortably, the way an architectural interior photographer would compose it.`,
+    );
+  } else {
+    lines.push(
+      `Render at a camera angle and focal length that shows the whole room comfortably, the way an architectural interior photographer would compose it.`,
+    );
+  }
+
+  // Style anchor — palette + Coco lifestyle visual reference.
+  lines.push('');
+  lines.push(
+    `Aesthetic: ${paletteName}${paletteVibe ? ` (${paletteVibe})` : ''}. Contemporary, restrained, editorial. The palette card is one of the reference images sent with this prompt; use those hex codes for the walls + soft furnishings.`,
+  );
+
+  if (cocoLifestyleCount > 0) {
+    lines.push('');
+    lines.push(
+      `The FIRST ${cocoLifestyleCount} reference image(s) are contemporary Coco Republic interior photographs. Use these as the ground truth for material palette, lighting quality, soft natural daylight, considered restraint, and overall mood. Match how those interiors handle texture (linen, oak, plaster, sculptural form), how they compose negative space, and how they treat natural light. Do NOT copy specific furniture from those images — they are STYLE references, not product commitments.`,
+    );
+  }
+
+  // Product anchors — same silhouette + dimension treatment as Mode A.
+  if (productRefs && productRefs.length > 0) {
+    lines.push('');
+    const productOffset = cocoLifestyleCount + 1 + 1; // +1 for palette swatch
+    lines.push(
+      `These products MUST appear in the rendered scene exactly as shown in the reference images that follow (starting at image ${productOffset + 1}). Match each piece's silhouette, proportion, material, and finish precisely. Do NOT substitute a stylistically-similar generic.`,
+    );
+    productRefs.slice(0, 4).forEach((p, i) => {
+      const imgIdx = productOffset + 1 + i;
+      const cat = p.category.toLowerCase();
+      const baseDescription = p.silhouette ?? `a ${cat}`;
+      const dimClause = p.dimensions ? dimensionsClause(cat, p.dimensions) : null;
+      const description = dimClause
+        ? `Image ${imgIdx}: ${baseDescription} (${p.name}, ${dimClause}, from ${p.retailer}).`
+        : `Image ${imgIdx}: ${baseDescription} (${p.name}, from ${p.retailer}).`;
+      const placement = MULTI_INSTANCE_CATEGORIES.has(cat)
+        ? `Place this SAME exact piece multiple times in the configuration the room calls for, every instance matching the silhouette and material from this image. Never substitute with a different style of ${cat}.`
+        : `Place this exact piece at a position appropriate for a ${cat}. Match the silhouette exactly from this image.`;
+      lines.push(`- ${description} ${placement}`);
+    });
+  }
+
+  // Final mode-specific framing.
+  lines.push('');
+  lines.push(
+    `Output: photorealistic interior photography, magazine-editorial quality, soft natural daylight, considered minimalism. Do not include people, pets, or decorative styling (no draped throws, no laundry, no clutter). The user is going to see their picked products composed into this new room.`,
+  );
 
   return lines.join('\n');
 }
