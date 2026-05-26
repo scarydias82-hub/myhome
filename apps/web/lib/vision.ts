@@ -126,13 +126,20 @@ export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis
   // handles vision more than well enough. Sonnet was occasionally taking
   // >60s on Vercel and getting silently killed by the function timeout.
   //
-  // Wrapped in retry-with-backoff because Anthropic returns 529 overloaded
-  // intermittently — a single transient failure shouldn't break the user's
-  // first impression of the product. Tight schedule [0, 2s, 5s] (3 attempts,
-  // 7s of backoff budget) — overloads usually clear within a few seconds
-  // and longer waits compound user-perceived latency. Per-call SDK timeout
-  // of 25s prevents a single hung call from burning the entire 60s Vercel
-  // function budget (SDK default is 600s).
+  // Retry budget MUST stay inside the analyse-room route's maxDuration
+  // (60s). Worst case = (timeout × attempts) + (sum of delays). Previous
+  // [0, 2s, 5s] × 25s timeout gave 82s worst case — when Anthropic
+  // returns slow-hanging responses (not fast 529s), the third retry can
+  // still be in flight when Vercel kills the function. The function
+  // returns no response and Safari shows "TypeError: Load failed" at
+  // the upload-form's fetch catch. Tightened 2026-05-26 to bound at
+  // 53s worst case (timeout 25s × 2 attempts + 3s delay) — fits inside
+  // 60s with ~5-7s buffer for upload + room insert + setup.
+  //
+  // Lost: one retry slot. Acceptable trade-off — when Anthropic is
+  // hanging (not 529-fast), a third retry rarely succeeds anyway, and
+  // we'd rather return a friendly "Claude is overloaded" error inside
+  // the function budget than have the browser see a network failure.
   const message = await withAnthropicRetry(
     () =>
       anthropic.messages.create(
@@ -159,7 +166,7 @@ export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis
         },
         { timeout: 25_000 },
       ),
-    { label: 'vision', delaysMs: [0, 2000, 5000] },
+    { label: 'vision', delaysMs: [0, 3000] },
   );
 
   const text = message.content
