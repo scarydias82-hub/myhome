@@ -35,7 +35,8 @@ import { buildKontextPrompt } from '@/lib/kontextPrompt';
 import { trimBlackBorders, resizeForFlux } from '@/lib/imagePrep';
 import type { RoomAnalysis } from '@/lib/vision';
 import sharp from 'sharp';
-import { submitOpenAIImageRender, buildOpenAIImagePrompt } from '@/lib/openai-image';
+import { submitOpenAIImageRender, buildOpenAIImagePrompt, buildModeBPrompt } from '@/lib/openai-image';
+import { fetchKnowledgeImages } from '@/lib/knowledge';
 import { buildPickingList, type PickingListItem } from '@/lib/matching';
 
 // #173 — light helper for fetching catalogue product images and
@@ -116,6 +117,12 @@ interface Body {
   paletteId?: string;
   featuredProductIds?: string[];
   projectId?: string;
+  /** Flow mode (A4, 2026-05-26). 'a' = original photo-restyle flow
+   *  (default — every existing caller). 'b' = the new floorplan-
+   *  confirm + blank-canvas + Coco-only design flow. Persisted on
+   *  the render row as render_mode = 'restyle' | 'design' so
+   *  downstream surfaces can branch cleanly. */
+  mode?: 'a' | 'b';
 }
 
 interface RoomRow {
@@ -225,6 +232,14 @@ export async function POST(request: NextRequest) {
     if (p && p.user_id === user.id) verifiedProjectId = p.id;
   }
 
+  // Mode flag (A4). 'b' opts into the blank-canvas Coco design flow;
+  // anything else (including undefined) stays on the original
+  // photo-restyle path. Persisted on the render row as render_mode
+  // so result-page + analytics surfaces can branch on a single
+  // typed column rather than re-deriving from request context.
+  const mode: 'a' | 'b' = body.mode === 'b' ? 'b' : 'a';
+  const renderMode = mode === 'b' ? 'design' : 'restyle';
+
   const renderRes = await admin
     .from('renders')
     .insert({
@@ -233,6 +248,7 @@ export async function POST(request: NextRequest) {
       style_profile_id: profile.id,
       status: 'running',
       project_id: verifiedProjectId,
+      render_mode: renderMode,
     })
     .select('id')
     .single();
@@ -661,20 +677,83 @@ export async function POST(request: NextRequest) {
         silhouette: p.silhouette ?? null,
         dimensions: p.dimensions ?? null,
       }));
-      const openaiPrompt = buildOpenAIImagePrompt({
-        paletteName: palette.name,
-        paletteVibe: palette.vibe ?? null,
-        styleName: style.name,
-        roomType,
-        productRefs: refs,
-      });
+
+      // Mode B (A4): fetch Coco lifestyle references from design_knowledge
+      // RAG (PR #47/49) and use them as the visual style anchor in
+      // place of the user's room photo. Tag overlap = ['coco',
+      // 'contemporary', <room_type>, <palette_id>] so the retrieval
+      // is context-aware (a bedroom render pulls bedroom Coco refs).
+      // Falls back to the room photo if no refs come back (e.g. on
+      // an environment where seedDesignKnowledgeFromCoco.js hasn't
+      // been run yet) — better to render with the user's room as
+      // starter than to 500.
+      const styleRefBufs: Buffer[] = [];
+      if (mode === 'b') {
+        const ragTags = ['coco', 'contemporary'];
+        if (roomType) ragTags.push(roomType);
+        if (palette.id) ragTags.push(palette.id);
+        const imageRefs = await fetchKnowledgeImages({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          admin: admin as any,
+          tags: ragTags,
+          limit: 4,
+        });
+        const cocoBufResults = await Promise.allSettled(
+          imageRefs.map((r) => fetchAndResizeProductImage(r.image_url)),
+        );
+        for (const r of cocoBufResults) {
+          if (r.status === 'fulfilled') styleRefBufs.push(r.value);
+          else
+            console.warn(
+              '[render-openai] coco lifestyle ref fetch failed:',
+              r.reason instanceof Error ? r.reason.message : r.reason,
+            );
+        }
+        console.log(
+          `[render-openai] Mode B — fetched ${styleRefBufs.length}/${imageRefs.length} Coco lifestyle refs (tags=${ragTags.join(',')})`,
+        );
+      }
+
+      // Build the prompt according to mode. Mode B branches into
+      // buildModeBPrompt which knows about the styleRef image ordering
+      // and writes a blank-canvas brief (no "preserve architecture"
+      // clause). Mode A keeps the existing buildOpenAIImagePrompt
+      // behaviour exactly.
+      const openaiPrompt =
+        mode === 'b' && styleRefBufs.length > 0
+          ? buildModeBPrompt({
+              paletteName: palette.name,
+              paletteVibe: palette.vibe ?? null,
+              roomType,
+              width_m: (room.analysis as RoomAnalysis | null)?.dimensions_approximate_m?.width ?? null,
+              depth_m: (room.analysis as RoomAnalysis | null)?.dimensions_approximate_m?.depth ?? null,
+              cocoLifestyleCount: styleRefBufs.length,
+              productRefs: refs,
+            })
+          : buildOpenAIImagePrompt({
+              paletteName: palette.name,
+              paletteVibe: palette.vibe ?? null,
+              styleName: style.name,
+              roomType,
+              productRefs: refs,
+            });
+      // If Mode B was requested but the RAG returned zero refs, fall
+      // back to using the room photo as starter — the user gets a
+      // Mode-A-flavoured render rather than a hard error.
+      const useStyleRefsAsStarter = mode === 'b' && styleRefBufs.length > 0;
+      if (mode === 'b' && styleRefBufs.length === 0) {
+        console.warn(
+          '[render-openai] Mode B requested but no Coco lifestyle refs in design_knowledge — falling back to Mode A render. Run apps/scraper/scripts/seedDesignKnowledgeFromCoco.js to populate.',
+        );
+      }
       console.log(
-        `[render-openai] submitting gpt-image-1: ${productImageBufs.length} product refs (${productsForRefs.length} products × up to ${MAX_ANGLES_PER_PRODUCT} angles) · ${roomType ?? '?'} · ${palette.id}`,
+        `[render-openai] submitting gpt-image-1 (mode=${mode}): ${productImageBufs.length} product refs · ${styleRefBufs.length} style refs · ${roomType ?? '?'} · ${palette.id}`,
       );
       try {
         const result = await submitOpenAIImageRender({
           prompt: openaiPrompt,
-          roomBuf: resizedRoomBuf,
+          roomBuf: useStyleRefsAsStarter ? null : resizedRoomBuf,
+          styleRefBufs: useStyleRefsAsStarter ? styleRefBufs : undefined,
           paletteSwatchBuf,
           productImageBufs,
           size: '1024x1024',

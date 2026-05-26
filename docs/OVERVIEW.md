@@ -25,6 +25,38 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Mode B blank-canvas render path (A4).** Fourth
+  phase of the Mode B rollout. Render route now branches on a new
+  `mode: 'a' | 'b'` field in the request body. Mode B replaces the
+  user's room photo as gpt-image-1's starter image with Coco
+  lifestyle imagery retrieved from `design_knowledge` (PRs #47/49)
+  via tag-overlap (`['coco', 'contemporary', <room_type>,
+  <palette_id>]`), so the render generates a new room in Coco's
+  contemporary aesthetic for the user's dimensions rather than
+  restyling their existing space. New migration
+  `20260526120000_renders_render_mode.sql` adds a `render_mode
+  text default 'restyle' check (render_mode in ('restyle',
+  'design'))` column so downstream surfaces (result page,
+  analytics, shop-the-look) can branch on a single typed signal.
+  Backfill is implicit via the default. New `buildModeBPrompt`
+  helper in `lib/openai-image.ts` writes a blank-canvas brief —
+  no "preserve architecture" clause, dimension proportions called
+  out ("rectangular" / "roughly square"), the first N images
+  named as Coco STYLE refs vs the later product COMMITMENTS,
+  explicit "do not include people, pets, or decorative styling"
+  to avoid laundry-in-the-render outputs. `OpenAIImageInput`
+  extends with an optional `styleRefBufs: Buffer[]` field —
+  Mode A leaves it empty and uses `roomBuf` as starter; Mode B
+  populates it with up to 4 Coco lifestyle bufs and passes
+  `roomBuf: null`. Defensive throw added when both are empty.
+  Graceful fallback: if Mode B is requested but the RAG returns
+  zero refs (e.g. ingest hasn't run yet on this env), the route
+  logs a warning and falls back to the Mode A render path so the
+  user gets *something* rather than a 500. Upload-form now passes
+  `mode: flowMode` in the render submit body so the existing
+  `/design/new` entry (PR #52) routes traffic to Mode B without
+  any further wiring. A5 (result-page copy + dashboard CTA) is
+  the final phase.
 - `2026-05-26` — **Picker variant grouping + colour swatches (A3).**
   Third phase of the Mode B rollout. Colour-sibling products (same
   `variant_group_id` from PR #43) now collapse into a single picker
