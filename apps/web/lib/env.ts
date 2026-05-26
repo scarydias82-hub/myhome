@@ -41,6 +41,13 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
   NEXT_PUBLIC_API_URL: z.string().url().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
+  // Mode-B opt-in flag. When set to "true", the new floorplan-confirm +
+  // blank-canvas Coco-only flow is enabled in the UI (entry path,
+  // restricted palette set, dimension-aware picker, contemporary
+  // reference render). When unset / "false" (the production default),
+  // the existing photo-restyle flow remains the only flow exposed.
+  // See OVERVIEW §6 for the Mode B spec.
+  NEXT_PUBLIC_FLOORPLAN_MODE: z.string().optional(),
 });
 
 export const publicEnv = publicEnvSchema.parse({
@@ -50,11 +57,19 @@ export const publicEnv = publicEnvSchema.parse({
   NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  NEXT_PUBLIC_FLOORPLAN_MODE: process.env.NEXT_PUBLIC_FLOORPLAN_MODE,
 });
 
 export const isSupabaseConfigured = Boolean(
   publicEnv.NEXT_PUBLIC_SUPABASE_URL && publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 );
+
+// True when the Mode B floorplan-confirm flow is opted in via env var.
+// Reads from NEXT_PUBLIC_FLOORPLAN_MODE so the same answer is available
+// on the client and the server. Production default is false — Mode A
+// (existing photo-restyle flow) is the only one users see.
+export const isFloorplanModeEnabled =
+  (publicEnv.NEXT_PUBLIC_FLOORPLAN_MODE ?? '').toLowerCase() === 'true';
 
 export function getServerEnv() {
   return serverEnvSchema.parse({
