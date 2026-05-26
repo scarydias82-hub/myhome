@@ -25,6 +25,32 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Mode B floorplan confirmation step (A2).** Sits
+  between vision and the palette picker in the new design flow. New
+  pure-function `apps/web/lib/floorplan.ts:generateFloorplanSvg`
+  produces a top-down architectural SVG from the vision-extracted
+  dimensions: room outline at 80px/m, dimensional labels (W × D in
+  metres), title, and deterministic furniture-suggestion boxes per
+  room type (sofa + coffee table + side table + rug for living_room;
+  bed + bedsides + rug for bedroom; etc.). Boxes are clipped to fit
+  the actual room dimensions so unusually small rooms don't render
+  with overflowing suggestions. The companion
+  `components/rooms/floorplan-confirmation.tsx` renders the SVG via
+  dangerouslySetInnerHTML (safe — only inputs are the room_type
+  enum and toFixed-formatted dimensions) with two CTAs: "Looks right
+  — continue" advances to the palette/picker; "Dimensions wrong —
+  re-upload" resets back to the upload step. Both `Step3Style` and
+  the auto-openCuration `useEffect` in upload-form.tsx now gate on
+  `floorplanConfirmed` AND `analysisConfirmed` — Mode A initialises
+  `floorplanConfirmed=true` so the gate is a no-op; Mode B starts
+  it `false` and the confirmation step flips it `true`. No-dimensions
+  fallback: when vision returns null width/depth (rare — happens on
+  skylit ceiling or extreme wide-angle shots) the confirmation
+  surface shows a "Couldn't read dimensions, proceed anyway or
+  re-upload" path instead of the SVG. Owner directives honoured:
+  no editability (deferred to v2 — just confirm/reject); generic
+  furniture silhouettes overlaid; reuses existing upload + vision
+  pipeline. A3 (Coco-only colour-swipe picker) is the next phase.
 - `2026-05-26` — **Mode B entry flow — A1 of the floorplan-mode
   rollout.** New route `/design/new` exposes a "Your room, reimagined"
   entry point for the Coco-only blank-canvas design flow. Gated on

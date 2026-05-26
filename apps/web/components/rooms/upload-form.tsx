@@ -18,6 +18,7 @@ import {
 } from '@/lib/palettes';
 import type { RoomAnalysis } from '@/lib/vision';
 import { cn } from '@/lib/utils';
+import { FloorplanConfirmation } from '@/components/rooms/floorplan-confirmation';
 import { prepareImageForUpload } from '@/lib/client/prepare-image-upload';
 import { PreferencesModal } from '@/components/dashboard/preferences-modal';
 import { BRIEF_TAG_GROUPS } from '@/lib/brief/taxonomy';
@@ -179,6 +180,12 @@ export function UploadForm({
   // on the photo.
   const [recommending, setRecommending] = useState(false);
   const [analysisConfirmed, setAnalysisConfirmed] = useState(false);
+  // Mode B inserts a floorplan confirmation step between vision and
+  // the palette picker. In Mode A there's no such step, so the gate
+  // is permanently true. In Mode B, starts false; the
+  // FloorplanConfirmation component flips it to true via its
+  // onConfirm callback once the user accepts the room.
+  const [floorplanConfirmed, setFloorplanConfirmed] = useState<boolean>(flowMode !== 'b');
 
   const [style, setStyle] = useState<StyleSlug>('japandi');
   // Default selected palette. For Mode B, picks the first palette in
@@ -301,6 +308,11 @@ export function UploadForm({
   // concurrent fetches via curationLoading.
   useEffect(() => {
     if (!analysisConfirmed || !paletteId) return;
+    // Mode B inserts a floorplan confirmation between vision and the
+    // picker — don't auto-open the picker until the user has
+    // accepted the floorplan. In Mode A, floorplanConfirmed is
+    // permanently true so this is a no-op.
+    if (!floorplanConfirmed) return;
     if (curationLoading) return;
     if (loadedForPaletteId === paletteId) return;
     void openCuration();
@@ -308,7 +320,7 @@ export function UploadForm({
     // surrounding scope and sets loadedForPaletteId on success — the
     // deps below are the trigger conditions, not the closed-over vars.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisConfirmed, paletteId, loadedForPaletteId]);
+  }, [analysisConfirmed, paletteId, loadedForPaletteId, floorplanConfirmed]);
 
   async function handleFile(next: File | null) {
     setError(null);
@@ -318,6 +330,7 @@ export function UploadForm({
       setRoomId(null);
       setAnalysis(null);
       setAnalysisConfirmed(false);
+      setFloorplanConfirmed(flowMode !== 'b');
       return;
     }
     const mimeOk = ALLOWED_MIME.includes(next.type);
@@ -366,6 +379,7 @@ export function UploadForm({
     setAnalysis(null);
     setRoomId(null);
     setAnalysisConfirmed(false);
+    setFloorplanConfirmed(flowMode !== 'b');
     setError(null);
     try {
       const fd = new FormData();
@@ -697,7 +711,32 @@ export function UploadForm({
           underneath; while selecting=true the user can scroll the
           chips/palette filters but the focus stays on the photo
           overlay. */}
-      {analysing || analysisConfirmed ? (
+      {/* Mode B floorplan-confirmation step (A2). Sits between vision
+          and the palette picker — gates Step3Style + the auto-open
+          curation effect until the user confirms their room. Mode A
+          skips this entirely (floorplanConfirmed defaults to true
+          when flowMode='a'). */}
+      {flowMode === 'b' && analysisConfirmed && !floorplanConfirmed ? (
+        <FloorplanConfirmation
+          width_m={analysis?.dimensions_approximate_m?.width ?? null}
+          depth_m={analysis?.dimensions_approximate_m?.depth ?? null}
+          roomType={analysis?.room_type ?? null}
+          onConfirm={() => setFloorplanConfirmed(true)}
+          onReupload={() => {
+            // Reset back to the upload step. The user will pick a new
+            // photo and re-run vision. Keeping projectId + style +
+            // paletteId so they don't lose other choices.
+            setFile(null);
+            setPreview(null);
+            setRoomId(null);
+            setAnalysis(null);
+            setAnalysisConfirmed(false);
+            setFloorplanConfirmed(false);
+            if (fileInput.current) fileInput.current.value = '';
+          }}
+        />
+      ) : null}
+      {analysing || (analysisConfirmed && floorplanConfirmed) ? (
         <Step3Style
           paletteId={paletteId}
           onPaletteChange={setPaletteId}
