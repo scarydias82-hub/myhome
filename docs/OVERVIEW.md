@@ -25,6 +25,29 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Bound vision retry budget inside maxDuration —
+  fixes "TypeError: Load failed" on slow Anthropic responses.** Owner
+  reported the upload step failing with "load failed" during the
+  Claude vision analysis. Root cause: `apps/web/lib/vision.ts:136-162`
+  used a retry schedule of `delaysMs=[0, 2000, 5000]` with a 25s SDK
+  per-attempt timeout, giving worst-case wall time of
+  25 + 2 + 25 + 5 + 25 = 82s. The route's `maxDuration` is 60s. When
+  Anthropic returned slow-hanging responses (each attempt actually
+  hitting the 25s SDK timeout rather than failing fast with 529),
+  the third retry could still be in flight when Vercel killed the
+  function. Function returned no response. Safari's fetch threw
+  `TypeError: Load failed` at the upload-form catch, which surfaced
+  as "load failed" to the user. Latent bug — not caused by today's
+  PRs (#43-47), just waiting for the right Anthropic outage. Fix:
+  reduce retries to 2 attempts with delays `[0, 3000]`. New worst
+  case: 25 + 3 + 25 = 53s, fits inside the 60s function budget with
+  ~5-7s headroom for upload + room insert + setup. Lost: one retry
+  slot. Acceptable — when Anthropic is hanging (not 529-fast) a
+  third retry rarely succeeds anyway, and we'd rather return a
+  friendly "Claude is overloaded" error inside the budget than
+  have the browser see a network failure. Single-file change in
+  vision.ts (+ updated comment). No schema change, no API contract
+  change.
 - `2026-05-26` — **Image RAG infrastructure — Phase 2 (i) of the new
   floorplan-mode flow.** Owner directive: rather than pre-bake a
   static "this is what contemporary Coco looks like" structured
