@@ -303,8 +303,46 @@ export async function fetchCurationCandidates({
   const results = await Promise.allSettled(
     categories.map(async (displayLabel) => {
       const cats = expandCategory(displayLabel);
-      const selectCols =
-        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions, variant_group_id, variant_label, colour_hex';
+      // Core columns guaranteed to exist on the products table from
+      // the original 20260518000000_init_schema.sql migration. The
+      // extended set below adds today's newer columns; if any of
+      // those columns hasn't been applied to the live DB yet, the
+      // whole select errors and the tier silently returns 0 rows
+      // (silent empty-picker failure mode — bit us 2026-05-26).
+      // We try extended first, fall back to core on error.
+      const coreCols =
+        'id, name, retailer, category, price_aud, image_url, image_urls, product_url, affiliate_url, dimensions';
+      const extendedCols =
+        coreCols + ', variant_group_id, variant_label, colour_hex';
+      // Tier-runner: each tier passes a function that, given the
+      // active column set, returns the awaited query result. On
+      // schema-drift error (extended cols missing) it retries with
+      // coreCols. Logs the error verbosely so we can see schema
+      // drift in Vercel logs without the user repro-ing.
+      type QueryResult = { data: unknown; error: { message: string } | null };
+      const tryTier = async (
+        tierLabel: string,
+        // PostgrestFilterBuilder is a thenable but not strictly a
+        // Promise; PromiseLike covers both shapes.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        run: (cols: string) => PromiseLike<any>,
+      ): Promise<ProductRow[]> => {
+        const q: QueryResult = (await run(extendedCols)) as QueryResult;
+        if (q.error) {
+          console.warn(
+            `[curation] "${displayLabel}" — ${tierLabel} extended select errored: ${q.error.message}. Retrying with core cols.`,
+          );
+          const q2: QueryResult = (await run(coreCols)) as QueryResult;
+          if (q2.error) {
+            console.error(
+              `[curation] "${displayLabel}" — ${tierLabel} core select ALSO errored: ${q2.error.message}.`,
+            );
+            return [];
+          }
+          return (q2.data ?? []) as ProductRow[];
+        }
+        return (q.data ?? []) as ProductRow[];
+      };
 
       // 1. Wishlist items in this category (pinned). Filter by
       //    expanded category family so wishlist items tagged
@@ -321,40 +359,46 @@ export async function fetchCurationCandidates({
       const designerRows: ProductRow[] = [];
 
       if (paletteId && styleTags && styleTags.length > 0 && designerNeeded > 0) {
-        let qb = admin.from('products').select(selectCols);
-        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
-        const q = await qb
-          .in('category', cats)
-          .not('image_url', 'is', null)
-          .contains('palette_tags', [paletteId])
-          .overlaps('room_tags', roomFilter)
-          .overlaps('style_tags', styleTags)
-          .order('price_aud', { ascending: false, nullsFirst: false })
-          .limit(designerNeeded * 2);
-        if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
+        const rows = await tryTier('Tier 1', (cols) => {
+          let qb = admin.from('products').select(cols);
+          if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+          return qb
+            .in('category', cats)
+            .not('image_url', 'is', null)
+            .contains('palette_tags', [paletteId])
+            .overlaps('room_tags', roomFilter)
+            .overlaps('style_tags', styleTags)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(designerNeeded * 2);
+        });
+        designerRows.push(...rows);
       }
       if (paletteId && designerRows.length < designerNeeded) {
-        let qb = admin.from('products').select(selectCols);
-        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
-        const q = await qb
-          .in('category', cats)
-          .not('image_url', 'is', null)
-          .contains('palette_tags', [paletteId])
-          .overlaps('room_tags', roomFilter)
-          .order('price_aud', { ascending: false, nullsFirst: false })
-          .limit(designerNeeded * 2);
-        if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
+        const rows = await tryTier('Tier 2', (cols) => {
+          let qb = admin.from('products').select(cols);
+          if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+          return qb
+            .in('category', cats)
+            .not('image_url', 'is', null)
+            .contains('palette_tags', [paletteId])
+            .overlaps('room_tags', roomFilter)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(designerNeeded * 2);
+        });
+        designerRows.push(...rows);
       }
       if (designerRows.length < designerNeeded) {
-        let qb = admin.from('products').select(selectCols);
-        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
-        const q = await qb
-          .in('category', cats)
-          .not('image_url', 'is', null)
-          .overlaps('room_tags', roomFilter)
-          .order('price_aud', { ascending: false, nullsFirst: false })
-          .limit(designerNeeded * 2);
-        if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
+        const rows = await tryTier('Tier 3', (cols) => {
+          let qb = admin.from('products').select(cols);
+          if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+          return qb
+            .in('category', cats)
+            .not('image_url', 'is', null)
+            .overlaps('room_tags', roomFilter)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(designerNeeded * 2);
+        });
+        designerRows.push(...rows);
       }
       // Tier 4 — category only. Safety net mirroring the legacy
       // fallback in lib/matching.ts:fetchCandidates: if room_tags
@@ -363,39 +407,63 @@ export async function fetchCurationCandidates({
       // user is never stuck with an empty picker.
       const tier4StartCount = designerRows.length;
       if (designerRows.length < designerNeeded) {
-        let qb = admin.from('products').select(selectCols);
-        if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
-        const q = await qb
-          .in('category', cats)
-          .not('image_url', 'is', null)
-          .order('price_aud', { ascending: false, nullsFirst: false })
-          .limit(designerNeeded * 2);
-        if (!q.error && q.data) designerRows.push(...(q.data as ProductRow[]));
+        const rows = await tryTier('Tier 4', (cols) => {
+          let qb = admin.from('products').select(cols);
+          if (retailerAllowlist) qb = qb.in('retailer', retailerAllowlist);
+          return qb
+            .in('category', cats)
+            .not('image_url', 'is', null)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(designerNeeded * 2);
+        });
+        designerRows.push(...rows);
       }
       // Tier 5 (2026-05-26) — if Tier 4 returned zero AND a retailer
       // allowlist is in play, retry once with the allowlist dropped.
-      // Owner reported empty product picker on Mode B renders where
-      // the catalogue is Coco-only and Coco has zero rows in the
-      // category (e.g. kitchen Stools, bathroom Tapware). Mixing in
-      // products from other retailers beats showing the user a dead
-      // category. Only fires when the allowlist was set, so renders
-      // that already use the full catalogue see no change.
       if (
         retailerAllowlist &&
         designerRows.length === tier4StartCount &&
         designerRows.length < designerNeeded
       ) {
-        const q = await admin
-          .from('products')
-          .select(selectCols)
-          .in('category', cats)
-          .not('image_url', 'is', null)
-          .order('price_aud', { ascending: false, nullsFirst: false })
-          .limit(designerNeeded * 2);
-        if (!q.error && q.data && q.data.length > 0) {
-          designerRows.push(...(q.data as ProductRow[]));
+        const rows = await tryTier('Tier 5', (cols) =>
+          admin
+            .from('products')
+            .select(cols)
+            .in('category', cats)
+            .not('image_url', 'is', null)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(designerNeeded * 2),
+        );
+        if (rows.length > 0) {
+          designerRows.push(...rows);
           console.log(
-            `[curation] "${displayLabel}" — Tier 5: allowlist (${retailerAllowlist.join(',')}) had zero matches, surfaced ${q.data.length} from any retailer`,
+            `[curation] "${displayLabel}" — Tier 5: allowlist (${retailerAllowlist.join(',')}) had zero matches, surfaced ${rows.length} from any retailer`,
+          );
+        }
+      }
+      // Tier 7 (2026-05-26) — last-ditch fuzzy category match. If
+      // Tiers 1-5 all returned zero, the most likely cause is that
+      // the canonical category strings in `cats` don't match the
+      // retailers' actual labels (e.g. picker expects 'Lighting'
+      // but Coco stores 'Indoor Pendants'). Use a case-insensitive
+      // LIKE match on the first ~3 cats as a noun. Drops retailer
+      // allowlist too — better any product than empty.
+      if (designerRows.length === 0) {
+        const ilikePatterns = cats.slice(0, 3).map((c) => `%${c.toLowerCase()}%`);
+        const orClause = ilikePatterns.map((p) => `category.ilike.${p}`).join(',');
+        const rows = await tryTier('Tier 7', (cols) =>
+          admin
+            .from('products')
+            .select(cols)
+            .or(orClause)
+            .not('image_url', 'is', null)
+            .order('price_aud', { ascending: false, nullsFirst: false })
+            .limit(perCategory * 2),
+        );
+        if (rows.length > 0) {
+          designerRows.push(...rows);
+          console.log(
+            `[curation] "${displayLabel}" — Tier 7: fuzzy category match (${orClause}) surfaced ${rows.length} products. Canonical cats=[${cats.join(', ')}] returned zero — DB likely uses different category labels.`,
           );
         }
       }
