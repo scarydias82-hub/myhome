@@ -133,6 +133,29 @@ export interface HeroProductDescriptor {
    *  renderer 3D-perspective info the single hero shot can't convey.
    *  When null, falls back to the single `imageUrl`. */
   imageUrls?: string[] | null;
+  /** Short physical description from the product's vision_profile
+   *  (3-8 words, e.g. "low-profile modern armchair with curved arms
+   *  and round upholstered seat"). Used by buildOpenAIImagePrompt to
+   *  anchor each per-product directive in concrete visual language
+   *  rather than the generic category — gpt-image-1 honours the
+   *  reference image more reliably when the prompt names the
+   *  silhouette explicitly. Null for products whose vision_profile
+   *  hasn't been derived yet; the renderer falls back to the
+   *  category descriptor in that case. */
+  silhouette?: string | null;
+  /** Product dimensions from the scraper (cm). Used by
+   *  buildOpenAIImagePrompt to disambiguate scale — a "queen bed"
+   *  could be 140cm or 180cm wide depending on the SKU, and
+   *  gpt-image-1's defaults don't always match the actual proportions.
+   *  Combined with a category-derived size descriptor (compact /
+   *  standard / oversized) so the prompt reads natural-language
+   *  ("oversized at 240×95×78cm") rather than raw numbers. Null
+   *  when the scraper couldn't parse dimensions from the source. */
+  dimensions?: {
+    width_cm?: number | null;
+    depth_cm?: number | null;
+    height_cm?: number | null;
+  } | null;
 }
 
 // Render aggressiveness mode.

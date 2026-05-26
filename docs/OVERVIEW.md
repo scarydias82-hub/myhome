@@ -281,6 +281,38 @@ product, the system, or the business. Cross-reference SHAs with
   base64 encoding mid-pipe is corrupting bytes, or the model
   genuinely struggles with certain product photography. Worth a
   dedicated debugging session against the raw cutout bytes.
+- `2026-05-25` — **Render prompt: silhouette-anchored + tighter
+  fidelity directives (issues #39 #40 follow-up).** First Coco-rebuild
+  render test revealed two related failures: (a) generic dining
+  chairs rendered instead of the picked Axel armchair (lounge chair),
+  (b) the multi-instance directive's "a set of 4-6 around a dining
+  table" example leaked into non-dining-chair picks (#40). Both
+  symptoms trace to weak per-product anchoring in
+  `buildOpenAIImagePrompt` — the directive said *"a [category] ([SKU]
+  from [retailer])"* which gave gpt-image-1 nothing concrete to hold
+  against its room-composition priors. Three changes: (1) silhouette
+  threaded through to the renderer — every picked product now carries
+  the `vision_profile.silhouette` field (the 3-8 word Haiku-derived
+  physical description) from DB → render route → heroProducts →
+  buildOpenAIImagePrompt; `HeroProductDescriptor` gains an optional
+  `silhouette` field; null falls back to the generic category
+  descriptor. (2) Per-product directive leads with the silhouette —
+  *"Image 3: low-profile modern armchair with curved arms and round
+  upholstered seat (Axel armchair, from Coco Republic). Place this
+  SAME exact piece..."* — concrete visual anchor instead of a
+  category gpt-image-1 can interpret loosely. (3) Multi-instance
+  example dropped — the previous *"a set of 4-6 around a dining
+  table"* example no longer appears in the directive (#40 fix).
+  Stronger lead-in too: *"These products MUST appear... do NOT
+  substitute a stylistically-similar generic."* Plus product
+  dimensions threaded through — `HeroProductDescriptor.dimensions`,
+  new `CATEGORY_SIZE_THRESHOLDS` config + `dimensionsClause` helper
+  in `lib/openai-image.ts` that buckets each product into "compact /
+  standard-sized / oversized" relative to AU market sizing and
+  appends both descriptor + raw cm to the per-product directive.
+  Backward compatible: products without dimensions or silhouette
+  fall back cleanly. (Re-applied on top of today's #46/#48/#50 work
+  after PR #41 lay open behind 5 commits.)
 - `2026-05-25` — **Render flow simplification: tighter upload page,
   1-per-category picker, brief render commentary with expand.** Owner
   directive — strip clutter from the upload → palette → product flow
