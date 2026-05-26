@@ -72,6 +72,40 @@ export function getPalette(id: string): Palette | undefined {
   return PALETTES.find((p) => p.id === id);
 }
 
+// Mode B (floorplan-confirm + blank-canvas + Coco-only) shows a tightly
+// curated subset of palettes rather than the full 56 — owner directive
+// is "ultra-contemporary, crisp colours that make the furnishing pop".
+// Five picks signed off 2026-05-26 (see OVERVIEW changelog):
+//
+//   bone-and-black          High contrast architectural backdrop
+//   mushroom-and-bone       Warm tonal quiet luxury
+//   scandinavian-white      Crisp Nordic cool
+//   modernist-restraint     Cool architectural
+//   chocolate-brown-modern  Rich 2026 statement
+//
+// Mode A is unchanged — every palette in palettes.json still ships
+// there. To swap a palette in/out for Mode B, edit this list and
+// nothing else; both flows read through listPalettesForMode().
+export const MODE_B_PALETTE_IDS: readonly string[] = [
+  'bone-and-black',
+  'mushroom-and-bone',
+  'scandinavian-white',
+  'modernist-restraint',
+  'chocolate-brown-modern',
+];
+
+/** Palettes visible in the picker for the given flow mode. Mode A
+ *  returns the full catalogue; Mode B filters to MODE_B_PALETTE_IDS
+ *  in the order listed (so the picker matches the editorial intent
+ *  rather than alphabetical / timelessness sort). */
+export function listPalettesForMode(mode: 'a' | 'b'): Palette[] {
+  if (mode === 'a') return PALETTES;
+  const lookup = new Map(PALETTES.map((p) => [p.id, p]));
+  return MODE_B_PALETTE_IDS.map((id) => lookup.get(id)).filter(
+    (p): p is Palette => p !== undefined,
+  );
+}
+
 // Quick helper for the picker thumbnail: the five swatches in role order.
 export function paletteSwatch(p: Palette): string[] {
   const order: RoomRole[] = ['wall', 'sofa', 'floor', 'accent', 'trim'];

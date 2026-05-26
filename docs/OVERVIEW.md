@@ -25,6 +25,38 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Mode B feature flag + curated palette subset —
+  Phase 1 plumbing for the new floorplan-mode flow.** Owner directive
+  is "remove most of our palettes for the new flow and just keep the
+  ultra-contemporary ones, crisp colours to make the furnishings pop."
+  Done non-destructively via mode-aware filtering rather than deleting
+  rows from `palettes.json`: Mode A still sees every palette
+  (preserving Mode A's user data, palette_tags on existing products,
+  and the editorial range of the dashboard's trend carousels), Mode B
+  filters to a curated subset. The pivot to per-mode filtering came
+  from realising that pruning `palettes.json` globally would either
+  (a) leave orphaned `palette_tags` rows in `products` (harmless but
+  untidy) or (b) require a backfill to reclassify thousands of rows
+  against the smaller palette set (expensive). Mode-aware filtering
+  defers that decision until/if Mode B becomes the default. Three
+  changes: (a) `apps/web/lib/env.ts` exposes a new
+  `NEXT_PUBLIC_FLOORPLAN_MODE` env var + the typed
+  `isFloorplanModeEnabled` derived flag (mirrors the
+  `RENDER_RETAILER_ALLOWLIST` pattern from #37 so server + client
+  read the same answer); (b) `apps/web/lib/palettes.ts` defines
+  `MODE_B_PALETTE_IDS` (5 entries: `bone-and-black`,
+  `mushroom-and-bone`, `scandinavian-white`, `modernist-restraint`,
+  `chocolate-brown-modern` — signed off 2026-05-26 after a palette
+  audit against Coco Republic's house style) and exports
+  `listPalettesForMode(mode)` that returns either the full set or the
+  curated 5 in the listed editorial order (intentionally not
+  alphabetical / timelessness-sorted — the order is the editor's
+  recommendation arc from sharp-white-architectural through to
+  rich-statement); (c) no consumers yet — this is plumbing the Mode B
+  picker will read from when it's built. Zero impact on Mode A: no
+  existing call site changed, no DB migration. To swap palettes
+  in/out of the Mode B set, edit `MODE_B_PALETTE_IDS` and ship; both
+  flows read through the same helper.
 - `2026-05-26` — **Colour-variant data layer — Phase 1 of the new
   floorplan-mode flow.** Mode B (the floorplan-confirm + blank-canvas
   + Coco-only redesign — see §6 for the spec) needs the catalogue to
