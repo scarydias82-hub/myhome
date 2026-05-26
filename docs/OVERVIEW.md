@@ -25,6 +25,28 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Mode B result-page copy + dashboard CTA (A5).**
+  Final phase of the Mode B rollout. Two changes:
+  (1) `apps/web/app/renders/[id]/page.tsx` — render row query now
+  selects `render_mode`; new `isDesignMode = render.render_mode ===
+  'design'` branches the page heading from "The restyle." to
+  "Your [bedroom/living room/etc], reimagined." — matches the
+  owner-confirmed copy from A1 ("it's still theirs, not 'we
+  designed this for you'"). Mode A rows (render_mode='restyle'
+  or null for pre-migration) keep the original "The restyle"
+  copy unchanged.
+  (2) `apps/web/app/dashboard/page.tsx` gains a Mode B CTA card
+  visible only when `isFloorplanModeEnabled`. Sits below
+  `HeroGreeting` with editorial styling — "Pilot · design from
+  scratch" eyebrow + "Your room, reimagined." headline + a "Try
+  the design flow →" link to `/design/new`. Intentionally subdued
+  — Mode A is still the primary path; promoting this to a
+  primary CTA tile inside HeroGreeting waits until pilot
+  validates. Closes the floorplan-mode workstream — Mode B is
+  now end-to-end discoverable (CTA), enterable (PR #52),
+  confirmable (PR #53 floorplan step), pickable (PR #55 swatch
+  picker), renderable (PR #56 blank canvas), and presentable
+  (this PR).
 - `2026-05-26` — **Mode B blank-canvas render path (A4).** Fourth
   phase of the Mode B rollout. Render route now branches on a new
   `mode: 'a' | 'b'` field in the request body. Mode B replaces the
