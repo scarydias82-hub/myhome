@@ -4,7 +4,7 @@ The **living source of truth** for the business, the strategy, the system,
 the product today, the roadmap, and the how-to for operating it with Claude
 Code.
 
-**Last verified:** 2026-05-25 · most recent material commit: `dbb702f` (will
+**Last verified:** 2026-05-26 · most recent material commit: `dbb702f` (will
 be bumped on the commit that lands this revision).
 
 > **Living-doc protocol.** Every commit that materially changes the
@@ -25,6 +25,36 @@ Most recent first. One line per commit that materially changes the
 product, the system, or the business. Cross-reference SHAs with
 `git log --oneline` when you need precision.
 
+- `2026-05-26` — **Colour-variant data layer — Phase 1 of the new
+  floorplan-mode flow.** Mode B (the floorplan-confirm + blank-canvas
+  + Coco-only redesign — see §6 for the spec) needs the catalogue to
+  expose which products are colour-siblings of each other so the picker
+  can collapse "Marlow Sofa - Charcoal Linen" / "Marlow Sofa - Oat
+  Bouclé" / "Marlow Sofa - Sand Linen" into one card with swipeable
+  colour swatches instead of three separate cards. Today every variant
+  is its own DB row with no sibling-link — Coco's scraper at
+  `apps/scraper/scrapers/cocoRepublic.js:201-214` (`variantFromOptions`)
+  extracts the colour from BigCommerce options but `apps/scraper/
+  scripts/ingest.js:39-71` discarded the field. This migration
+  (`20260526100000_products_variants.sql`) lands the data layer in one
+  shot: (a) adds `variant_group_id` (uuid), `variant_label` (text),
+  `colour_hex` (text) columns + index on group_id; (b) backfills
+  `colour_hex` by promoting `dimensions->>'hex'` (we already extract
+  dominant colour at ingest via `paletteMatch.classifyProduct`, just
+  unpromoted to a typed column); (c) backfills `variant_group_id` +
+  `variant_label` for Coco rows via regex on the product name — splits
+  at the last " - " separator, then accepts the suffix as a label
+  only if it matches a fabric word (Linen / Velvet / Leather / Bouclé /
+  Wool / Cotton / Silk / Suede / etc.) or a recognised AU furniture
+  palette colour term (Charcoal / Sand / Oat / Walnut / Cognac / etc.).
+  Conservative — rows that don't match the heuristic stay ungrouped
+  and render as standalone cards in the picker, no harm done. The
+  group_id is a deterministic md5-derived uuid of `(retailer ||
+  name_root)`, and `ingest.js:toRow` now mirrors the same hash logic
+  so fresh ingests land in the existing group automatically — no
+  follow-up reconciliation pass needed. UI swipe-for-colour deferred
+  to whichever later PR rebuilds the picker; this ship is data-layer
+  only.
 - `2026-05-25` — **Composite: reject black-background cutouts at source
   instead of pasting them onto the room.** First Coco-only render test
   surfaced black rectangles in the multi-stage "Stage 3 Together"
@@ -2106,7 +2136,7 @@ making sure each user has a great first render — concierge-style if needed.
 | `renders`          | One row per render attempt. Holds `fal_request_id`, `picking_list`, `cost_estimate_aud`, `status`, `output_url`. |
 | `staged_images`    | One row per virtual-staging call. Single or multi-product.           |
 | `render_revisions` | Version history per render. Original + every staging is one row. `renders.active_revision_id` points at the displayed revision. |
-| `products`         | Shared catalogue. Read for all authed users; service role writes. Tag columns: `palette_tags`, `style_tags`, `room_tags`, `mood_tags`; vision-grounded fit signal: `vision_profile jsonb` (silhouette / materials / color_family / visual_tone / quality_tier / palette_fit / room_fit — populated by `apps/scraper/scripts/visionProfile.js`). |
+| `products`         | Shared catalogue. Read for all authed users; service role writes. Tag columns: `palette_tags`, `style_tags`, `room_tags`, `mood_tags`; vision-grounded fit signal: `vision_profile jsonb` (silhouette / materials / color_family / visual_tone / quality_tier / palette_fit / room_fit — populated by `apps/scraper/scripts/visionProfile.js`). Colour-variant columns (added 2026-05-26): `variant_group_id uuid` (siblings of the same product share a value), `variant_label text` (display label, e.g. "Charcoal Linen"), `colour_hex text` (cached swatch for picker cards, lifted from `dimensions.hex`). |
 | `shortlist_items`  | Per-project picks promoted from a render or a staged image.          |
 | `trend_cards`      | Pre-rendered (palette × room) trend imagery for the dashboard.       |
 | `palette_likes`    | Per-user palette hearts. `palette_id` is a text slug (no FK — palettes are compile-time JSON). Unique on `(user_id, palette_id)`. RLS: authenticated read (aggregate counts), insert/delete own rows. |

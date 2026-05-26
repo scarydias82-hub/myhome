@@ -6,6 +6,7 @@
 // for backup. For real retailer feeds we'd swap to retailer-hosted URLs.
 
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -36,6 +37,25 @@ if (RETAILER_FILTER) {
   console.log(`[ingest] filtering to retailers: ${[...RETAILER_FILTER].join(', ')}`);
 }
 
+// Format an md5 hex digest as a canonical uuid. Mirror of the
+// md5_uuid() helper added in migration 20260526100000_products_variants
+// — both produce the same uuid for the same input so backfilled rows
+// and freshly-ingested ones land in the same variant group without a
+// follow-up reconciliation pass.
+function md5Uuid(input) {
+  const h = createHash('md5').update(input).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+// Strip a trailing " - <variant suffix>" from a Coco-style product name
+// so siblings share the same name_root. Returns null when the name
+// doesn't have the separator (single-variant products → no group).
+function nameRootFor(name) {
+  if (typeof name !== 'string') return null;
+  const m = name.match(/^(.+?) - [^-]+$/);
+  return m ? m[1].trim() || null : null;
+}
+
 function toRow(raw) {
   // Coco-style scrapers populate raw.images.all_sources with every
   // hero source URL the retailer publishes. Older scrapers only
@@ -44,6 +64,18 @@ function toRow(raw) {
   // available", distinct from "[] explicitly empty").
   const imageUrls = Array.isArray(raw.images?.all_sources) && raw.images.all_sources.length > 0
     ? raw.images.all_sources
+    : null;
+
+  // Variant data. Coco-style scrapers emit raw.variant.{colour,size};
+  // older single-variant scrapers leave the field undefined. The colour
+  // label becomes variant_label directly. variant_group_id is derived
+  // deterministically from (retailer, name_root) so siblings — same
+  // sofa, different fabrics — share a group across ingests AND match
+  // the backfill in migration 20260526100000_products_variants.
+  const variantLabel = raw.variant?.colour ?? null;
+  const nameRoot = nameRootFor(raw.name);
+  const variantGroupId = variantLabel && nameRoot
+    ? md5Uuid(`${raw.retailer}|${nameRoot}`)
     : null;
 
   return {
@@ -66,6 +98,11 @@ function toRow(raw) {
     // designer line tagged differently to core range). Fall back to the
     // retailer lookup so older products.json files re-ingest cleanly.
     market_segment: raw.market_segment ?? segmentFor(raw.retailer),
+    variant_group_id: variantGroupId,
+    variant_label: variantLabel,
+    // colour_hex is populated downstream from the classifyProduct call
+    // (raw.dimensions.hex is the dominant-colour extraction); see the
+    // assignment in the ingest loop below.
     last_seen_at: raw.scraped_at ?? new Date().toISOString(),
   };
 }
@@ -149,6 +186,11 @@ for await (const { retailer, products } of walkRetailerDirs()) {
     row.style_tags = styleTags;
     row.room_tags = roomTags;
     row.mood_tags = moodTags;
+    // colour_hex shadows dimensions.hex as a typed column so the
+    // picker card can read it without deserialising the dimensions
+    // JSONB. Migration 20260526100000 backfilled existing rows from
+    // dimensions->>'hex'; this keeps fresh ingests in sync.
+    row.colour_hex = hex ?? null;
     const { error } = await supabase
       .from('products')
       .upsert(row, { onConflict: 'retailer,sku' });
