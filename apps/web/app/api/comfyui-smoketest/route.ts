@@ -19,20 +19,39 @@
 // hobby 10s / pro 60s function timeouts. maxDuration is set high but
 // the realistic test target is local dev.
 //
-// Curl:
+// Curl (Stage 1 baseline — plain img2img):
 //   curl -X POST 'http://localhost:3000/api/comfyui-smoketest' \
 //     -H 'X-Smoketest-Token: <COMFYUI_TEST_TOKEN>' \
 //     -F 'photo=@/path/to/room.jpg' \
 //     -F 'prompt=a modern contemporary living room with editorial styling' \
 //     -F 'denoise=0.7' \
+//     -F 'maxLongSide=512' \
 //     --output result.png
+//
+// Curl (Stage 2 — Depth ControlNet):
+//   curl -X POST 'http://localhost:3000/api/comfyui-smoketest' \
+//     -H 'X-Smoketest-Token: <COMFYUI_TEST_TOKEN>' \
+//     -F 'photo=@/path/to/room.jpg' \
+//     -F 'prompt=a modern contemporary living room with editorial styling' \
+//     -F 'denoise=0.65' \
+//     -F 'maxLongSide=512' \
+//     -F 'mode=depth' \
+//     --output result-depth.png
+//
+// `mode=depth` routes through buildModeCDepthWorkflow (Depth ControlNet
+// via MiDaS preprocessor). Compare the two outputs A/B — depth should
+// preserve walls + furniture silhouettes; plain img2img will drift.
+//
+// `maxLongSide` defaults to 1024. Set to 512 for 32GB Macs running
+// --cpu-vae (the 1024 case OOMs on the Stage 1 smoke test as observed
+// on 2026-05-27).
 //
 // Removed when Mode C is wired into /api/render (Stage 3) and the
 // end-to-end path is exercised through the real UI.
 
 import { NextResponse } from 'next/server';
 import { getServerEnv } from '@/lib/env';
-import { renderViaComfyUI } from '@/lib/comfyui';
+import { renderViaComfyUI, renderViaComfyUIWithDepth } from '@/lib/comfyui';
 
 export const runtime = 'nodejs';
 // Set high for local dev where Vercel timeouts don't apply. On Vercel
@@ -109,15 +128,30 @@ export async function POST(req: Request): Promise<Response> {
   const denoise = parseFloatField(form.get('denoise'), 0.7);
   const seed = parseIntField(form.get('seed'));
   const steps = parseIntField(form.get('steps'));
+  const maxLongSide = parseIntField(form.get('maxLongSide'));
+  const mode = typeof form.get('mode') === 'string' ? String(form.get('mode')) : 'img2img';
+  const controlnetStrength = parseFloatField(form.get('controlnetStrength'), 1.0);
 
   try {
-    const result = await renderViaComfyUI({
-      roomBuf,
-      positivePrompt: prompt,
-      denoise,
-      seed,
-      steps,
-    });
+    const result =
+      mode === 'depth'
+        ? await renderViaComfyUIWithDepth({
+            roomBuf,
+            positivePrompt: prompt,
+            denoise,
+            seed,
+            steps,
+            maxLongSide,
+            controlnetStrength,
+          })
+        : await renderViaComfyUI({
+            roomBuf,
+            positivePrompt: prompt,
+            denoise,
+            seed,
+            steps,
+            maxLongSide,
+          });
     return new Response(new Uint8Array(result.outputBuf), {
       status: 200,
       headers: {
@@ -127,6 +161,7 @@ export async function POST(req: Request): Promise<Response> {
         // info leaked.
         'X-ComfyUI-Prompt-Id': result.promptId,
         'X-ComfyUI-Duration-Ms': String(result.durationMs),
+        'X-ComfyUI-Mode': mode,
       },
     });
   } catch (err) {

@@ -253,18 +253,102 @@ If it errors, the JSON body explains why — most common:
   doesn't match what's in your `models/checkpoints/` folder)
 - `ComfyUI render timed out after 300000ms` → Mac asleep, tunnel
   down, or the workflow is hung
+- `ComfyUI execution error for prompt … convolution_overrideable not
+  implemented` → PyTorch 2.12 + ComfyUI 0.22 MPS VAE bug; restart
+  ComfyUI with `--cpu-vae` (see Lessons from the Stage 1 smoke test
+  below)
 
-Once the smoke test produces a recognisable restyled image, Stage 2
-adds Depth ControlNet + Inpaint to the workflow builder. Pre-reqs
-for Stage 2 (download in advance to save round-trips):
+### Lessons from the Stage 1 smoke test (2026-05-27)
+
+Burned a few hours getting the first end-to-end render through.
+Memo'd here so we never re-learn them.
+
+1. **MPS VAE encode is broken on PyTorch 2.12 + ComfyUI 0.22.**
+   `NotImplementedError: convolution_overrideable not implemented`
+   in the VAE encode path. Workaround: launch ComfyUI with `--cpu-vae`
+   so the encoder/decoder run on CPU (slower but correct). The
+   diffusion model itself stays on MPS, so sampling speed is
+   unaffected.
+   ```bash
+   python main.py --listen 0.0.0.0 --cpu-vae
+   ```
+
+2. **Input resolution ceiling is 512×512 on a 32GB M2 Max with
+   `--cpu-vae`.** CPU VAE encode of a 12-megapixel phone photo
+   created enough activation memory pressure to push past the 32GB
+   unified RAM budget. macOS killed the ComfyUI process
+   (`zsh: killed python main.py`). Resize inputs before sending:
+   ```bash
+   sips -Z 512 ~/Pictures/room.jpeg --out ~/Pictures/room-tiny.jpeg
+   ```
+   The Stage 2 workflow builder (`buildModeCDepthWorkflow`) bakes in
+   an `ImageScale` node that handles this automatically — so the
+   callers of `renderViaComfyUI` / `renderViaComfyUIWithDepth` don't
+   need to pre-resize. Set `maxLongSide=512` in the smoke-test form
+   field for safety on Mac.
+
+3. **DNS hiccups during long polls used to kill the script.** Now
+   patched — `lib/comfyui.ts`'s `pollHistory` + `fetchComfyUIOutput`
+   use `fetchWithRetry` with 3 retries and exponential backoff. A
+   single DNS drop (common when the Mac flips between Wi-Fi and
+   LTE) no longer aborts a 5-minute render.
+
+4. **Error states used to poll forever.** Now patched — `pollHistory`
+   detects `status_str === 'error'` and throws `ComfyUIExecutionError`
+   with the ComfyUI-side traceback surfaced. Previously the poll
+   only checked `completed === true` and would tick uselessly for
+   30+ minutes on jobs that errored in 0.45s.
+
+5. **SDXL output quality at 512×512 is noticeably worse than at
+   1024×1024.** Expected — SDXL was trained on 1024 natively.
+   Mode C's full quality story needs either:
+   - A box with proper GPU (e.g. RTX 5090, 32GB VRAM), where the
+     1024×1024 ceiling lifts to Flux Dev resolution; or
+   - The 96GB M2 Max tier (Flux Dev fits in unified RAM at 1024
+     with `--cpu-vae` headroom)
+
+### Stage 2 ships (workflow builder + client polish)
+
+`lib/comfyui-workflows.ts` now exports `buildModeCDepthWorkflow()`
+in addition to the Stage 1 `buildImg2ImgWorkflow()`. The depth
+workflow adds three nodes — MiDaS depth preprocessor, ControlNet
+loader, ControlNet apply — onto the img2img graph and wires them
+into the KSampler's conditioning pair.
+
+Smoke-test the Stage 2 path with `mode=depth`:
+
+```bash
+curl -X POST 'http://localhost:3000/api/comfyui-smoketest' \
+  -H "X-Smoketest-Token: ${COMFYUI_TEST_TOKEN}" \
+  -F 'photo=@/path/to/your/room.jpg' \
+  -F 'prompt=a modern contemporary living room with warm natural light' \
+  -F 'denoise=0.65' \
+  -F 'maxLongSide=512' \
+  -F 'mode=depth' \
+  -F 'controlnetStrength=1.0' \
+  --output result-depth.png \
+  -i
+```
+
+First Stage 2 call also downloads MiDaS weights (~1.3GB) on first
+use — bump the total budget to ~8 minutes for the cold case. The
+SDXL Depth ControlNet (`control_v11p_sdxl_depth.safetensors`)
+should already be in `~/Documents/ComfyUI/models/controlnet/` per
+Step 2 Option B above.
+
+A/B comparison: run the same prompt with and without `mode=depth`.
+The depth variant should preserve walls, window placement, ceiling
+height, and large furniture silhouettes; the plain img2img variant
+will drift them.
+
+### Stage 2 pre-reqs (optional — for Stage 3 inpainting)
+
+Stage 3 adds per-product inpainting, which needs Segment Anything
+to derive masks. Optional to download now:
 
 ```bash
 cd ~/Documents/ComfyUI/models
-mkdir -p depthanything sams
-# Depth Anything V2 (Large) — ~1.3GB
-hf download depth-anything/Depth-Anything-V2-Large \
-  depth_anything_v2_vitl.pth \
-  --local-dir ./depthanything
+mkdir -p sams
 # Segment Anything ViT-B — ~358MB
 hf download ybelkada/segment-anything \
   checkpoints/sam_vit_b_01ec64.pth \
