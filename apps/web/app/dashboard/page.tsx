@@ -26,7 +26,7 @@
 
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { isSupabaseConfigured, publicEnv, isFloorplanModeEnabled } from '@/lib/env';
+import { isSupabaseConfigured, publicEnv } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { listPalettes, paletteSwatch, paletteBrightness } from '@/lib/palettes';
@@ -607,34 +607,13 @@ export default async function DashboardPage() {
             on first dashboard load when preferences is null. */}
         <HeroGreeting firstName={firstName} preferences={userPreferences} />
 
-        {/* A5 (2026-05-26) — Mode B entry CTA. Visible only when
-            NEXT_PUBLIC_FLOORPLAN_MODE=true. Single editorial-styled
-            link, intentionally subdued — Mode A's photo-restyle is
-            still the primary path; this is the opt-in design flow
-            we're piloting. Once Mode B graduates from pilot we can
-            promote this to a primary CTA tile inside HeroGreeting. */}
-        {isFloorplanModeEnabled ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-ink/[0.06] bg-paper-warm p-4 md:p-5">
-            <div className="flex-1 min-w-[200px]">
-              <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-                Pilot · design from scratch
-              </p>
-              <p className="mt-1 font-display text-h4 text-ink">
-                Your room, <em>reimagined</em>.
-              </p>
-              <p className="mt-1 text-[13px] text-ink-soft">
-                Upload a photo to extract dimensions, then we design a fresh
-                room in the contemporary Coco Republic aesthetic.
-              </p>
-            </div>
-            <Link
-              href="/design/new"
-              className="rounded-full bg-ink px-5 py-2.5 font-mono text-meta uppercase tracking-eyebrow text-cream hover:bg-ink/90"
-            >
-              Try the design flow →
-            </Link>
-          </div>
-        ) : null}
+        {/* Mode B (blank-canvas Coco) entry CTA removed 2026-05-27 —
+            owner committed to Mode C as the sole render path while
+            the product is in closed beta (no users yet). The
+            /design/new route still exists for revert-by-restore but
+            isn't linked from any UI surface. To put the CTA back,
+            restore the previous isFloorplanModeEnabled-gated block
+            from git history. */}
 
         {/* 2. Featured products — Claude-curated weekly (heuristic
             until #137). Sits above all other content so products

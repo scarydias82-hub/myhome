@@ -197,6 +197,13 @@ export function UploadForm({
   const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Mode C is now the sole render path (owner decision 2026-05-27 —
+  // committed while in closed beta with no live users). The previous
+  // Stage 3a opt-in toggle + isComfyUIModeEnabled gating were
+  // collapsed into a hardcoded `mode: 'c'` on submit. The backend
+  // still accepts 'a' | 'b' | 'c' for compatibility (the smoketest
+  // route + any future revert), only the UI changed.
+
   // §6.11 Phase C (#155) — inheritance source + per-render override.
   // recommendationSource tells us where the tags that fed the synth
   // came from (project / user_prefs / override / none). When the user
@@ -642,10 +649,12 @@ export function UploadForm({
           paletteId,
           featuredProductIds: pickedIds,
           projectId: projectId ?? undefined,
-          // A4: forward the flow mode to the render route so it can
-          // branch into the blank-canvas Coco design pipeline when
-          // the user came in via /design/new.
-          mode: flowMode,
+          // 2026-05-27 — Mode C is now the sole render path. Always
+          // send 'c'; the backend's mode_c branch handles ComfyUI
+          // Depth ControlNet rendering with the picked products in
+          // the prompt. Owner-decided while in closed beta — see
+          // PR #75 for the UI collapse.
+          mode: 'c',
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
@@ -830,6 +839,11 @@ export function UploadForm({
         />
       ) : null}
 
+      {/* Mode C opt-in toggle removed 2026-05-27 — Mode C is now the
+          sole render path while the product is in closed beta. To
+          restore the toggle (and the dual-path UX), revert PR #75
+          and restore NEXT_PUBLIC_COMFYUI_MODE gating in lib/env.ts. */}
+
       <div className="flex flex-wrap items-center gap-4">
         {!curationOpen ? (
           <Button
@@ -852,7 +866,7 @@ export function UploadForm({
               disabled={!allCategoriesHavePick() || submitting}
             >
               {submitting
-                ? 'Restyling… (~30s)'
+                ? 'Restyling… (~2-3 min)'
                 : `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`}
             </Button>
             <button

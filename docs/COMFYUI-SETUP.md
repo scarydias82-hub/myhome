@@ -258,34 +258,57 @@ If it errors, the JSON body explains why — most common:
   ComfyUI with `--cpu-vae` (see Lessons from the Stage 1 smoke test
   below)
 
-### Lessons from the Stage 1 smoke test (2026-05-27)
+### The 2026-05-27 setup arc (lessons memo'd)
 
 Burned a few hours getting the first end-to-end render through.
-Memo'd here so we never re-learn them.
+Final working configuration on the owner's 32GB M2 Max:
+
+- **PyTorch 2.6.0** (NOT 2.12 — see lesson 1 below)
+- **torchvision 0.21.0**, **torchaudio 2.6.0** (must match torch ABI)
+- **comfyui_controlnet_aux** custom node installed with **onnxruntime**
+  (CPU build) instead of `onnxruntime-gpu` (CUDA-only, no macOS wheel)
+- ComfyUI launched **without `--cpu-vae`** — MPS VAE works fine on 2.6
+- 1024×1024 native SDXL with Depth ControlNet runs in ~30-90s, no OOM
+
+The reset command if it ever drifts:
+
+```bash
+cd ~/Documents/ComfyUI && source venv/bin/activate
+pip install --force-reinstall "torch==2.6.0" "torchvision==0.21.0" "torchaudio==2.6.0"
+# (comfyui_controlnet_aux deps stay as-is)
+python main.py --listen 0.0.0.0
+```
+
+### Specific bugs we hit (so we never re-fight them)
 
 1. **MPS VAE encode is broken on PyTorch 2.12 + ComfyUI 0.22.**
    `NotImplementedError: convolution_overrideable not implemented`
-   in the VAE encode path. Workaround: launch ComfyUI with `--cpu-vae`
-   so the encoder/decoder run on CPU (slower but correct). The
-   diffusion model itself stays on MPS, so sampling speed is
-   unaffected.
+   in the VAE encode path. Two paths out:
+   - **Recommended**: downgrade to PyTorch 2.6 (lesson above). MPS
+     coverage is much more complete there.
+   - **Fallback** (only if you can't downgrade torch): launch ComfyUI
+     with `--cpu-vae` so the encoder/decoder run on CPU. Forces a
+     512px ceiling on a 32GB Mac due to CPU activation memory.
+
+2. **CVE-2025-32434 forces torch ≥ 2.6 for `.pth` files.**
+   MiDaS ships as `.pth`, so `comfyui_controlnet_aux`'s depth
+   preprocessor refuses to load on older torch versions. PyTorch 2.5
+   passes the MPS VAE bug but fails the CVE check; PyTorch 2.6 is
+   the floor that satisfies both.
+
+3. **`onnxruntime-gpu` has no macOS-ARM wheel.** When installing
+   `comfyui_controlnet_aux` requirements:
    ```bash
-   python main.py --listen 0.0.0.0 --cpu-vae
+   grep -v 'onnxruntime-gpu' requirements.txt > /tmp/req-mac.txt
+   pip install -r /tmp/req-mac.txt && pip install onnxruntime
    ```
 
-2. **Input resolution ceiling is 512×512 on a 32GB M2 Max with
-   `--cpu-vae`.** CPU VAE encode of a 12-megapixel phone photo
-   created enough activation memory pressure to push past the 32GB
-   unified RAM budget. macOS killed the ComfyUI process
-   (`zsh: killed python main.py`). Resize inputs before sending:
-   ```bash
-   sips -Z 512 ~/Pictures/room.jpeg --out ~/Pictures/room-tiny.jpeg
-   ```
-   The Stage 2 workflow builder (`buildModeCDepthWorkflow`) bakes in
-   an `ImageScale` node that handles this automatically — so the
-   callers of `renderViaComfyUI` / `renderViaComfyUIWithDepth` don't
-   need to pre-resize. Set `maxLongSide=512` in the smoke-test form
-   field for safety on Mac.
+4. **Input resolution ceiling drops to 512×512 with `--cpu-vae`.**
+   Only relevant if you're stuck on torch 2.12 and need the
+   `--cpu-vae` workaround. CPU VAE encode of a full-res phone photo
+   pushes past 32GB unified RAM → `zsh: killed`. The
+   `buildModeCDepthWorkflow` ImageScale node defaults to 1024 but
+   can be overridden to 512.
 
 3. **DNS hiccups during long polls used to kill the script.** Now
    patched — `lib/comfyui.ts`'s `pollHistory` + `fetchComfyUIOutput`
