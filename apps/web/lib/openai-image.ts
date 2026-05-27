@@ -321,11 +321,26 @@ export function buildOpenAIImagePrompt({
   roomType,
   productRefs,
   rugRoomContext = 'unknown',
+  architecturalFeatures,
+  existingFurnitureToReplace,
 }: {
   paletteName: string;
   paletteVibe?: string | null;
   styleName: string;
   roomType?: string | null;
+  /** Architectural features vision extracted from the source photo
+   *  (white timber battens, wainscoting, cornicing, exposed beams,
+   *  decorative mouldings, etc.). Pre-render gpt-image-1 routinely
+   *  simplifies these into plain walls + invented openings unless
+   *  the prompt names them explicitly. Owner-reported 2026-05-27:
+   *  battened wall replaced with hard wall + invented window. */
+  architecturalFeatures?: string[];
+  /** Items vision marked condition='replace' in existing_furniture.
+   *  Explicit REMOVE directives in the prompt — gpt-image-1's
+   *  default is to preserve what's in the source photo, so without
+   *  this it tends to keep the original sectional/coffee table/etc
+   *  instead of swapping them for the picked products. */
+  existingFurnitureToReplace?: string[];
   /** Product reference shape now includes the vision_profile-derived
    *  silhouette ("low-profile modern armchair with curved arms and
    *  round upholstered seat"). The prompt leads with this descriptor
@@ -411,6 +426,32 @@ export function buildOpenAIImagePrompt({
   lines.push(
     `Critical: preserve the room's architecture exactly — same walls, windows, doors, ceiling, camera angle, dimensions. Do not invent new windows, walls, or openings. Only the decor, furniture, soft furnishings, paint colour, and finishes change. The result should look like the same physical room professionally restyled.`,
   );
+
+  // 2026-05-27 — explicit architectural-feature preservation. Vision
+  // extracts decorative wall features (timber battens, panelling,
+  // wainscoting, cornicing, picture rails, ceiling roses) but pre-
+  // this they were never named in the render prompt — gpt-image-1
+  // routinely simplified them to plain walls + invented light-source
+  // openings. Naming them explicitly keeps the model from
+  // "tidying" them away.
+  if (architecturalFeatures && architecturalFeatures.length > 0) {
+    lines.push(
+      `Architectural details to PRESERVE EXACTLY (do not simplify, remove, or replace with plain walls): ${architecturalFeatures.join('; ')}. If the source photo shows a battened wall with light passing through gaps, keep that exact treatment in the render — do not infill with a solid wall or invent a window to explain the light source.`,
+    );
+  }
+
+  // 2026-05-27 — explicit REMOVE directives. Vision marks items in
+  // `existing_furniture` with condition='replace'/'keep'/'uncertain'.
+  // gpt-image-1's default is to keep what's in the input photo,
+  // which is why picked products often render alongside the
+  // original furniture instead of swapping. Listing the
+  // condition='replace' items here as explicit removal targets
+  // forces the swap.
+  if (existingFurnitureToReplace && existingFurnitureToReplace.length > 0) {
+    lines.push(
+      `REMOVE these existing items from the source photo (they must NOT appear in the output): ${existingFurnitureToReplace.join(', ')}. Replace them with the picked products from the reference images above — match the picked products' silhouette, material, and finish exactly. Do not leave the original items in the scene; do not show both old and new pieces.`,
+    );
+  }
 
   if (roomType) {
     lines.push(
