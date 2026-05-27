@@ -79,15 +79,30 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/renders/${id}`);
 
-  // Primary render query — only legacy columns so the page still loads
-  // against a pre-migration schema. The active_revision_id pointer and
-  // designer_read are fetched in separate queries below and tolerated
-  // as missing (no migration applied yet).
-  const renderRes = await supabase
+  // Primary render query — try with the newest columns first; on
+  // schema-drift error (today's render_mode migration didn't apply
+  // to prod), retry with the legacy column set so the page still
+  // loads. The 2026-05-26 schema-drift episode bit the picker
+  // (PR #65), then the render insert (PR #66), then bit this
+  // SELECT too — same root cause, same fallback pattern.
+  const baseCols =
+    'id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud';
+  const extendedCols = baseCols + ', render_mode';
+  let renderRes = await supabase
     .from('renders')
-    .select('id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud, render_mode')
+    .select(extendedCols)
     .eq('id', id)
     .single();
+  if (renderRes.error) {
+    console.warn(
+      `[renders/[id]] extended SELECT errored: ${renderRes.error.message}. Retrying with base cols (likely 20260526120000 migration not applied to this DB).`,
+    );
+    renderRes = await supabase
+      .from('renders')
+      .select(baseCols)
+      .eq('id', id)
+      .single();
+  }
   const render = renderRes.data as RenderRow | null;
   if (!render) notFound();
   // Default hero_products to null until the secondary defensive fetch
