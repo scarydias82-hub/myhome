@@ -40,7 +40,7 @@ import sharp from 'sharp';
 import { submitOpenAIImageRender, buildOpenAIImagePrompt, buildModeBPrompt } from '@/lib/openai-image';
 import { fetchKnowledgeImages } from '@/lib/knowledge';
 import { cutoutProduct } from '@/lib/composite';
-import { renderViaComfyUIWithDepth } from '@/lib/comfyui';
+import { submitModeCWithDepth } from '@/lib/comfyui';
 import { modeCPromptFromAnalysis } from '@/lib/comfyui-prompt';
 
 // R4 (2026-05-26) — categories that render better as transparent
@@ -141,17 +141,15 @@ function pickRenderReferenceUrls(p: HeroProductDescriptor): string[] {
 }
 
 export const runtime = 'nodejs';
-// Mode A (gpt-image-1) is synchronous and finishes in 15-30s; Mode A
-// via fal queue submits in 5-8s + designer LLM in after() needs 15-25s
-// — both fit comfortably in 60s. Mode C (ComfyUI synchronous SDXL +
-// Depth ControlNet via tunnel) is the slow path — 70-180s warm on a
-// proper GPU, 3-8min cold on M2 Max with MiDaS first-download. Bumped
-// to 300 (Vercel Pro max for non-fluid-compute) so a warm Mode C
-// render completes inside the function lifetime. Cold Mode C calls
-// may still time out — a known limitation we accept until Stage 3b
-// refactors Mode C to use the async submit + status-poll pattern fal
-// uses (same architecture as kontext-multi).
-export const maxDuration = 300;
+// Mode A (gpt-image-1) ~15-30s synchronous; fal queue submit ~5-8s
+// + designer LLM in after() ~15-25s; Mode C now async — submits in
+// ~2-5s + returns, status route drives polling. All paths fit in
+// the original 60s budget. Bumped from 300 → 60 on 2026-05-27
+// (PR #77 Mode C async refactor): the only reason for 300 was
+// holding the function open while Mode C synchronously polled
+// ComfyUI; the polling moved to /api/renders/[id]/status, so the
+// submit path can return promptly.
+export const maxDuration = 60;
 
 interface Body {
   roomId?: string;
@@ -292,14 +290,14 @@ export async function POST(request: NextRequest) {
     body.mode === 'b' ? 'b' : body.mode === 'c' ? 'c' : 'a';
   const renderMode = mode === 'b' ? 'design' : mode === 'c' ? 'mode_c' : 'restyle';
 
-  // Resilient insert. If the render_mode column hasn't been applied
-  // to prod yet (migration 20260526120000 didn't run cleanly), the
-  // insert errors with "column 'render_mode' does not exist" and
-  // EVERY render fails — owner reported 2026-05-26 "could not
-  // create render record" hitting this exact path. Retry without
-  // render_mode on error. Mode A renders are fine either way; Mode
-  // B loses the design-mode flag on the row but still produces a
-  // render (downstream defaults to 'restyle' on null).
+  // Resilient insert. Two columns might be missing depending on which
+  // migrations have applied to this DB:
+  //   - render_mode (20260526120000)
+  //   - submit_params (20260527010000 — PR #78 retry support)
+  // The fallback ladder tries the full insert, then drops
+  // submit_params, then drops render_mode. Worst case (both missing)
+  // the row still lands with base cols and the render proceeds —
+  // just without the metadata for retry / mode-aware UI.
   const baseInsert = {
     user_id: user.id,
     room_id: room.id,
@@ -307,11 +305,29 @@ export async function POST(request: NextRequest) {
     status: 'running',
     project_id: verifiedProjectId,
   };
+  // submit_params is the original POST body. Surfaced to the failed-
+  // render page so the "Try again" button can re-submit identically
+  // without the user re-picking everything.
+  const submitParamsJson = JSON.parse(JSON.stringify(body)) as Record<string, unknown>;
   let renderRes = await admin
     .from('renders')
-    .insert({ ...baseInsert, render_mode: renderMode })
+    .insert({
+      ...baseInsert,
+      render_mode: renderMode,
+      submit_params: submitParamsJson,
+    })
     .select('id')
     .single();
+  if (renderRes.error) {
+    console.warn(
+      `[render] insert with render_mode + submit_params failed (${renderRes.error.message}); retrying without submit_params (likely 20260527010000 migration not applied)`,
+    );
+    renderRes = await admin
+      .from('renders')
+      .insert({ ...baseInsert, render_mode: renderMode })
+      .select('id')
+      .single();
+  }
   if (renderRes.error) {
     console.warn(
       `[render] insert with render_mode failed (${renderRes.error.message}); retrying without it (likely 20260526120000 migration not applied to this DB).`,
@@ -668,28 +684,39 @@ export async function POST(request: NextRequest) {
     const provider = getActiveProvider();
     console.log(`[render] provider: ${provider}`);
 
-    // Mode C — ComfyUI SDXL + Depth ControlNet via the owner's tunnel
-    // (PR #71/#72, Stage 3a wiring). Takes precedence over the
-    // provider-based dispatch below: when the request explicitly
-    // asked for mode 'c', the FLUX_PROVIDER setting is bypassed. The
-    // depth controlnet locks room geometry at the model level — the
-    // failure mode Mode A/B keeps hitting (hallucinated windows,
-    // replaced walls, drifted ceiling height) is structurally absent
-    // here. Trade-off: slower (~90-180s warm, up to 8min cold on M2
-    // Max with first-time MiDaS download) and depends on the tunnel.
+    // Mode C — ComfyUI SDXL + Depth ControlNet via the owner's tunnel.
+    // Refactored 2026-05-27 (PR #77) to async submit + poll pattern,
+    // matching fal-ai/kontext-multi's request_id flow:
+    //   1. (here) Upload room photo to ComfyUI, submit workflow,
+    //      store prompt_id on the renders row, return id.
+    //   2. (status route) Poll /history/{prompt_id} on each /api/
+    //      renders/[id]/status call; fetch output + upload to storage
+    //      when ComfyUI marks the prompt completed.
+    // The previous Stage 3a path was synchronous — held the route
+    // open for 90-180s waiting for ComfyUI, which routinely hit
+    // Vercel's 300s ceiling on cold renders. Stage 3b's multi-pass
+    // inpainting would have been even more incompatible. The async
+    // pattern decouples submit from completion entirely.
     //
     // Requires COMFYUI_URL to be set server-side; returns a clean
     // 503 if Mode C was requested but the tunnel isn't configured.
-    // The UI toggle is gated on NEXT_PUBLIC_COMFYUI_MODE so this
-    // 503 path is normally unreachable from any user surface.
     if (mode === 'c' && resizedRoomBuf) {
       if (!process.env.COMFYUI_URL) {
+        // Technical reason logged server-side; user gets a generic
+        // "service unavailable" message so the failure mode reads as
+        // transient and recoverable (because to the user, it is —
+        // the only fix is the owner setting COMFYUI_URL, not anything
+        // the user did wrong).
+        console.error('[render-mode-c] COMFYUI_URL not set on server');
         await admin
           .from('renders')
           .update({ status: 'failed', completed_at: new Date().toISOString() })
           .eq('id', render.id);
         return NextResponse.json(
-          { error: 'Mode C is not configured (COMFYUI_URL not set).' },
+          {
+            error:
+              'Render service is temporarily unavailable. Please try again in a few minutes.',
+          },
           { status: 503 },
         );
       }
@@ -729,47 +756,48 @@ export async function POST(request: NextRequest) {
       console.log(`[render-mode-c] positive: ${positivePrompt}`);
 
       try {
-        const result = await renderViaComfyUIWithDepth({
+        const submitResult = await submitModeCWithDepth({
           roomBuf: resizedRoomBuf,
           positivePrompt,
           negativePrompt: prompts.negative,
-          // SDXL native; if the owner's GPU can't hold 1024 (32GB
-          // M2 Max OOM observed during smoke tests) drop via env
-          // override here in a future change. Default to native.
+          // SDXL native; if the GPU can't hold 1024 (32GB M2 Max
+          // OOM observed during smoke tests) drop via env override
+          // in a future change. Default to native.
           maxLongSide: 1024,
         });
-        const outKey = `${user.id}/${render.id}.png`;
-        const upload = await admin.storage
-          .from('renders')
-          .upload(outKey, new Uint8Array(result.outputBuf), {
-            contentType: 'image/png',
-            cacheControl: '31536000',
-            upsert: true,
-          });
-        if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
 
-        // Same userPicked branch as the gpt-image-1 path — preserve
-        // an inline-set picking_list when the user picked products
-        // ahead of submission, otherwise flag for Florence-2 build
-        // in after().
-        const userPicked =
-          body.featuredProductIds != null && body.featuredProductIds.length > 0;
-        await admin
+        // Persist the ComfyUI prompt_id so the status route can
+        // poll for completion. Resilient update — if the column
+        // doesn't exist yet (migration 20260527000000 not applied),
+        // log + continue; the render row stays in 'running' but
+        // without a prompt_id the status route will mark it
+        // failed on the next poll. That's the right behaviour:
+        // surfaces the schema drift loudly rather than silently
+        // losing the render.
+        const updateRes = await admin
           .from('renders')
-          .update({
-            status: 'succeeded',
-            output_url: outKey,
-            completed_at: new Date().toISOString(),
-            picking_list_status: userPicked ? 'ready' : 'building',
-          })
+          .update({ comfyui_prompt_id: submitResult.promptId })
           .eq('id', render.id);
+        if (updateRes.error) {
+          console.warn(
+            `[render-mode-c] failed to persist comfyui_prompt_id (${updateRes.error.message}); status route will mark render failed on next poll. Likely 20260527000000 migration not applied to this DB.`,
+          );
+        }
         console.log(
-          `[render-mode-c] saved + marked succeeded for ${render.id} (${result.durationMs}ms, prompt_id=${result.promptId})`,
+          `[render-mode-c] submitted prompt_id=${submitResult.promptId} for ${render.id} (input=${submitResult.inputFilename})`,
         );
+
+        // Return immediately. The status route picks up from here:
+        // it polls /history/{prompt_id} via the tunnel and finalises
+        // the render row (output_url + status='succeeded') when
+        // ComfyUI marks the prompt complete.
         return NextResponse.json({ id: render.id });
       } catch (err) {
+        // Same pattern as the COMFYUI_URL branch above: technical
+        // detail logged for owner debugging, user-facing message
+        // stays generic + recoverable-sounding.
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[render-mode-c] failed for ${render.id}:`, message);
+        console.error(`[render-mode-c] submit failed for ${render.id}:`, message);
         await admin
           .from('renders')
           .update({
@@ -778,7 +806,10 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', render.id);
         return NextResponse.json(
-          { error: `Mode C render failed: ${message}` },
+          {
+            error:
+              'Render service is temporarily unavailable. Please try again in a few minutes.',
+          },
           { status: 502 },
         );
       }

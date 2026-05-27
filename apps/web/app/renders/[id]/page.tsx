@@ -20,6 +20,7 @@ import { findPaletteByHexes } from '@/lib/palettes';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { TryAgainButton } from '@/components/renders/try-again-button';
 
 interface RenderRow {
   id: string;
@@ -37,7 +38,11 @@ interface RenderRow {
   /** A4 (2026-05-26) — distinguishes Mode A's photo-restyle path
    *  from Mode B's blank-canvas Coco-design path. Defaults to
    *  'restyle' for pre-migration rows via the column default. */
-  render_mode: 'restyle' | 'design' | null;
+  render_mode: 'restyle' | 'design' | 'mode_c' | null;
+  /** Original /api/render POST body (PR #78). Surfaced to the failed-
+   *  render page so a single-click retry can re-submit identically.
+   *  Null on rows predating the 20260527010000 migration. */
+  submit_params: Record<string, unknown> | null;
   /** #174 — pre-selected hero products written by /api/render at
    *  submit time. Visible on the page from the moment the render is
    *  queued, separate from the post-render Florence-2 picking_list. */
@@ -87,7 +92,11 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
   // SELECT too — same root cause, same fallback pattern.
   const baseCols =
     'id, status, output_url, created_at, completed_at, room_id, style_profile_id, project_id, picking_list, cost_estimate_aud';
-  const extendedCols = baseCols + ', render_mode';
+  // Extended cols add render_mode (#73) + submit_params (#78). Both
+  // optional — if either migration hasn't applied, the SELECT falls
+  // back to baseCols and the page still loads (render_mode treated
+  // as null = restyle; submit_params absent = no retry button).
+  const extendedCols = baseCols + ', render_mode, submit_params';
   let renderRes = await supabase
     .from('renders')
     .select(extendedCols)
@@ -440,14 +449,20 @@ export default async function RenderPage({ params }: { params: Promise<{ id: str
             <div className="rounded-xl border border-ink/[0.06] bg-cream p-10 text-center">
               <p className="font-display text-h3 text-ink">Something went sideways.</p>
               <p className="mx-auto mt-3 max-w-md text-[15px] text-ink-soft">
-                The render couldn't complete. This is usually transient — try another photo or run it
-                again.
+                The render couldn't complete. This is usually transient — most failures clear
+                within a few minutes.
               </p>
-              <div className="mt-6">
-                <Link href="/rooms/new">
-                  <Button variant="cta" size="lg">
-                    Try another render
-                  </Button>
+              <div className="mt-6 flex flex-col items-center gap-4">
+                {/* TryAgainButton (PR #78) — re-POSTs the original
+                    submit_params. Renders nothing when submit_params
+                    is null (pre-migration rows), in which case the
+                    user falls back to the "start fresh" link below. */}
+                <TryAgainButton submitParams={render.submit_params ?? null} />
+                <Link
+                  href="/rooms/new"
+                  className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:text-ink"
+                >
+                  Or start a fresh render →
                 </Link>
               </div>
             </div>

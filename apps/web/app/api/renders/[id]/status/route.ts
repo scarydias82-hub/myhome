@@ -34,6 +34,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { checkActiveStatus, fetchActiveResult } from '@/lib/fal';
+import {
+  checkModeCPromptStatus,
+  fetchComfyUIOutput,
+  type ModeCPollResult,
+} from '@/lib/comfyui';
 import { buildPickingList } from '@/lib/matching';
 import { findPaletteByHexes } from '@/lib/palettes';
 import { autoStageAfterPickingList } from '@/lib/auto-stage';
@@ -74,6 +79,13 @@ interface RenderRow {
    *  picking_list_status flips to 'ready' and never picks up the
    *  staged composite that lands ~20-30s later. */
   auto_stage_status: AutoStageStatus;
+  /** Render-time provider/flow choice. 'mode_c' routes the status
+   *  poll through the ComfyUI tunnel branch below (PR #77 async
+   *  refactor); other values fall through to the fal queue check. */
+  render_mode: 'restyle' | 'design' | 'mode_c' | null;
+  /** ComfyUI prompt_id returned by submitWorkflow at /api/render
+   *  submit time. Only populated for Mode C renders. */
+  comfyui_prompt_id: string | null;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -85,13 +97,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const admin = createAdminClient() as unknown as SupabaseClient;
-  const renderRes = await admin
-    .from('renders')
-    .select(
-      'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id, auto_stage_status',
-    )
-    .eq('id', id)
-    .single();
+  // Resilient SELECT — the render_mode + comfyui_prompt_id columns
+  // are recent migrations (20260526120000, 20260527000000). If either
+  // hasn't been applied to this DB, the SELECT errors with "column
+  // does not exist" and EVERY status poll fails. Retry with just the
+  // base columns on schema-drift error so older databases keep
+  // working (Mode C polling won't activate, but everything else
+  // does — render_mode column missing means there are no Mode C
+  // renders to poll anyway).
+  const fullCols =
+    'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id, auto_stage_status, render_mode, comfyui_prompt_id';
+  const baseCols =
+    'id, user_id, status, output_url, picking_list, picking_list_status, cost_estimate_aud, fal_request_id, completed_at, style_profile_id, room_id, project_id, auto_stage_status';
+  let renderRes = await admin.from('renders').select(fullCols).eq('id', id).single();
+  if (renderRes.error) {
+    console.warn(
+      `[status] SELECT with render_mode/comfyui_prompt_id failed (${renderRes.error.message}); retrying with base cols`,
+    );
+    renderRes = await admin.from('renders').select(baseCols).eq('id', id).single();
+  }
   const render = renderRes.data as RenderRow | null;
   if (!render || render.user_id !== user.id) {
     return NextResponse.json({ error: 'Render not found' }, { status: 404 });
@@ -150,6 +174,152 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       pickingListStatus,
       autoStageStatus: render.auto_stage_status,
     });
+  }
+
+  // Mode C — ComfyUI tunnel polling (PR #77 async refactor). The
+  // submit handler stores the prompt_id; here we hit /history/{id}
+  // on each /status call. When ComfyUI marks the prompt complete we
+  // fetch the output buffer + upload to Supabase + flip the row to
+  // succeeded. Status route stays fast (~1-2s per poll) — the
+  // client polls every few seconds, so a Mode C render that takes
+  // 5 minutes results in ~150 quick status calls rather than one
+  // 5-minute-long /api/render call.
+  if (render.render_mode === 'mode_c') {
+    if (!process.env.COMFYUI_URL) {
+      // Submit succeeded earlier with the URL set; URL has since
+      // been unset. Mark failed so the row doesn't spin.
+      await admin
+        .from('renders')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          picking_list_status: 'failed',
+        })
+        .eq('id', render.id);
+      return NextResponse.json({
+        status: 'failed',
+        pickingListStatus: 'failed',
+        error: 'COMFYUI_URL unset on server',
+      });
+    }
+    if (!render.comfyui_prompt_id) {
+      // Submit failed to persist the prompt_id earlier (likely the
+      // 20260527000000 migration not applied). Mark failed loudly
+      // rather than poll forever.
+      await admin
+        .from('renders')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          picking_list_status: 'failed',
+        })
+        .eq('id', render.id);
+      return NextResponse.json({
+        status: 'failed',
+        pickingListStatus: 'failed',
+        error: 'No comfyui_prompt_id on render row (migration may not be applied).',
+      });
+    }
+
+    const probe: ModeCPollResult = await checkModeCPromptStatus(
+      render.comfyui_prompt_id,
+    ).catch(
+      (err): ModeCPollResult => ({
+        status: 'error',
+        messages: [],
+        summary: err instanceof Error ? err.message : String(err),
+      }),
+    );
+
+    if (probe.status === 'queued' || probe.status === 'running') {
+      return NextResponse.json({
+        status: 'running',
+        pickingListStatus,
+        autoStageStatus: render.auto_stage_status,
+      });
+    }
+
+    if (probe.status === 'error') {
+      console.error(
+        `[status] Mode C prompt ${render.comfyui_prompt_id} errored: ${probe.summary}`,
+      );
+      await admin
+        .from('renders')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          picking_list_status: 'failed',
+        })
+        .eq('id', render.id);
+      // User-facing error stays generic + recoverable. probe.summary
+      // (the ComfyUI traceback) is logged above for owner debugging
+      // but not returned to the client.
+      return NextResponse.json({
+        status: 'failed',
+        pickingListStatus: 'failed',
+        error:
+          'Render service hit an issue. Try again — most failures clear within a few minutes.',
+      });
+    }
+
+    // probe.status === 'success' — fetch the output bytes from
+    // ComfyUI's /view endpoint, upload to Supabase storage in the
+    // same shape Mode A produces (so /renders/[id]/page doesn't
+    // need to branch on render_mode for image lookup), then flip
+    // the row to succeeded.
+    const successProbe = probe as Extract<ModeCPollResult, { status: 'success' }>;
+    try {
+      const outputBuf = await fetchComfyUIOutput(successProbe.image);
+      const outKey = `${render.user_id}/${render.id}.png`;
+      const upload = await admin.storage
+        .from('renders')
+        .upload(outKey, new Uint8Array(outputBuf), {
+          contentType: 'image/png',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+      if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
+
+      // picking_list_status: 'ready' when the user pre-picked
+      // products at submit time, else 'building' (status-route's
+      // existing after() picks it up on the next poll).
+      const hasInlinePicks =
+        Array.isArray(render.picking_list) && render.picking_list.length > 0;
+      await admin
+        .from('renders')
+        .update({
+          status: 'succeeded',
+          output_url: outKey,
+          completed_at: new Date().toISOString(),
+          picking_list_status: hasInlinePicks ? 'ready' : 'building',
+        })
+        .eq('id', render.id);
+      console.log(
+        `[status] Mode C ${render.id} succeeded — output saved to ${outKey}`,
+      );
+      return NextResponse.json({
+        status: 'succeeded',
+        pickingListStatus: hasInlinePicks ? 'ready' : 'building',
+        autoStageStatus: render.auto_stage_status,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[status] Mode C fetch/upload failed for ${render.id}:`, message);
+      await admin
+        .from('renders')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          picking_list_status: 'failed',
+        })
+        .eq('id', render.id);
+      return NextResponse.json({
+        status: 'failed',
+        pickingListStatus: 'failed',
+        error:
+          'Render service hit an issue saving your output. Try again — most failures clear within a few minutes.',
+      });
+    }
   }
 
   // Running but no fal job — shouldn't happen; mark failed so we don't
