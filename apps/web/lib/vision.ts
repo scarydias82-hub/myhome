@@ -83,7 +83,9 @@ CRITICAL — bias toward transformation, not preservation. The user came to myMa
   - The piece is a permanent fixture (built-in cabinetry, structural fireplace, custom joinery)
   - It is genuinely irreplaceable (a family heirloom is unlikely to register from a photo alone, so this almost never applies)
 
-Soft furnishings, sofas, chairs, lamps, art, rugs, throws, cushions, side tables, coffee tables, decor — these should be "replace" by default. Use "uncertain" only when the photo genuinely doesn't reveal enough for a judgement; never use "uncertain" as a polite middle ground when the piece is replaceable.
+Soft furnishings, sofas, chairs, armchairs, ottomans, footstools, benches, lamps (floor and table), art, rugs, throws, cushions, side tables, coffee tables, dining tables, dining chairs, bedside tables, console tables, sideboards, desks, mirrors, decor — these should be "replace" by default. Use "uncertain" only when the photo genuinely doesn't reveal enough for a judgement; never use "uncertain" as a polite middle ground when the piece is replaceable.
+
+CRITICAL — INVENTORY EVERY DISCRETE PIECE. Each visible piece of furniture or freestanding decor is its OWN entry in existing_furniture. If a sofa is paired with a matching ottoman, list BOTH ("sofa" + "ottoman") — they are separate pieces the user might want to replace independently, not one unit. Same for: pairs of bedside tables (two entries, not one), matching side tables flanking a sofa (two), a dining table and its chairs (two-plus), a bed and its bedside tables (separate entries). Owner reported 2026-05-27 that an ottoman matching the sofa was missed because vision treated the seating area as a single "sofa" entry — list every discrete piece, even when they're styled as a set.
 
 Similarly for \`challenges\` and \`strengths\`: a piece you would describe as a "strength" should be a SURFACE the new design can build on (good natural light, generous ceiling height, intact joinery), not an existing piece of furniture that the user has shown they want to change. List too few strengths rather than too many.
 
