@@ -204,6 +204,14 @@ export function UploadForm({
   // still accepts 'a' | 'b' | 'c' for compatibility (the smoketest
   // route + any future revert), only the UI changed.
 
+  // Optional prompt override (testing). When the user types into the
+  // textarea below, this value is sent to /api/render as
+  // `promptOverride` — the Mode C branch uses it as the positive
+  // prompt INSTEAD of the auto-built vision.ts + product descriptors.
+  // Lets the owner iterate on prompt formulations without code
+  // changes. Empty string = use auto-built prompt (default).
+  const [promptOverride, setPromptOverride] = useState('');
+
   // §6.11 Phase C (#155) — inheritance source + per-render override.
   // recommendationSource tells us where the tags that fed the synth
   // came from (project / user_prefs / override / none). When the user
@@ -238,29 +246,10 @@ export function UploadForm({
   // the picker. User can still override either; we just remove the
   // friction of re-picking what they already agreed to.
   const [briefPreFilled, setBriefPreFilled] = useState(false);
-  useEffect(() => {
-    if (!projectId) return;
-    let cancelled = false;
-    fetch(`/api/projects/${projectId}/brief`)
-      .then((r) => r.json())
-      .then((j: { response?: { recommendation?: { palette_id?: string; style_slug?: string } } | null }) => {
-        if (cancelled) return;
-        const rec = j.response?.recommendation;
-        if (!rec) return;
-        if (rec.style_slug) setStyle(rec.style_slug as StyleSlug);
-        if (rec.palette_id) {
-          setPaletteId(rec.palette_id);
-          // #168 — direction is derived from the selected palette,
-          // no separate state to set. The card label and banner
-          // compute paletteDirection() at render time.
-        }
-        setBriefPreFilled(true);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+  // Project brief auto-fetch removed 2026-05-27 — owner stripped
+  // the Claude-as-designer recommendation layer. Even when the
+  // user lands here from a project with a synthesised brief, we
+  // no longer pre-fill palette/style. User picks fresh every time.
 
   // #128 — featured-products fetch dropped. The server-side
   // auto-feature path in /api/render runs the same query when the
@@ -451,20 +440,14 @@ export function UploadForm({
             'Vision analysis was unavailable, but you can still proceed. The restyle will be less precise.',
         );
       }
-      // Vision is done. Show the carousels immediately (with their
-      // default palette selection) — the recommendation arrives via
-      // a separate call below, which has its own overlay on the
-      // carousels themselves. #143.
+      // Vision is done. Show the carousels with the default
+      // palette selection — first palette in the catalogue. The
+      // Claude-as-designer recommendation step was removed
+      // 2026-05-27: user picks the palette themselves, no AI
+      // pre-selection. The `recommendForRoom` function below is
+      // kept for now as dead code in case the curation step is
+      // ever brought back.
       setAnalysisConfirmed(true);
-
-      // Phase 2: kick off the recommendation. We fire-and-forget here
-      // (no await) so the React render commits the analysing=false +
-      // analysisConfirmed=true update first, which mounts the
-      // carousels. Then the recommendation overlay fades in on top
-      // of them while the synth runs.
-      if (json.roomId && json.analysis) {
-        void recommendForRoom(json.roomId);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error. Try again.');
     } finally {
@@ -655,6 +638,11 @@ export function UploadForm({
           // the prompt. Owner-decided while in closed beta — see
           // PR #75 for the UI collapse.
           mode: 'c',
+          // Optional positive-prompt override for testing. When set,
+          // the Mode C branch uses this string verbatim instead of
+          // the auto-built vision-derived descriptors. Empty value
+          // omits the field; backend treats absent as "no override".
+          ...(promptOverride.trim() ? { promptOverride: promptOverride.trim() } : {}),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
@@ -844,6 +832,35 @@ export function UploadForm({
           restore the toggle (and the dual-path UX), revert PR #75
           and restore NEXT_PUBLIC_COMFYUI_MODE gating in lib/env.ts. */}
 
+      {/* Optional prompt override (testing). Surfaces when the user
+          is at the picking step. Empty by default — when populated,
+          /api/render's Mode C branch uses this verbatim as the
+          positive SDXL prompt INSTEAD of the auto-built vision +
+          product descriptors. Lets the owner iterate on prompt
+          formulations without code changes. */}
+      {curationOpen ? (
+        <details className="rounded-lg border border-editorial-border bg-editorial-surface/60 p-4">
+          <summary className="cursor-pointer font-mono text-meta uppercase tracking-eyebrow text-ink-soft transition hover:text-ink">
+            Advanced · prompt override (optional)
+          </summary>
+          <div className="mt-3">
+            <p className="mb-2 text-[12px] leading-relaxed text-ink-soft">
+              Type a positive prompt to send to the renderer instead of the
+              auto-built one. Leave blank to use the default (vision-derived
+              descriptors + your picked products). Comma-separated phrases
+              work best — SDXL has a ~77-token attention window.
+            </p>
+            <textarea
+              value={promptOverride}
+              onChange={(e) => setPromptOverride(e.target.value)}
+              placeholder="e.g. a contemporary living room, cream and chocolate brown palette, low-arm boucle sofa, walnut coffee table, jute rug, brass arc lamp, editorial interior photography, natural light, photorealistic"
+              rows={4}
+              className="w-full rounded-md border border-editorial-border bg-editorial-cream/30 px-3 py-2 font-dmsans text-[13px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-editorial-borderStrong focus:outline-none"
+            />
+          </div>
+        </details>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-4">
         {!curationOpen ? (
           <Button
@@ -879,7 +896,7 @@ export function UploadForm({
           </>
         )}
         <p className="font-mono text-meta uppercase tracking-eyebrow text-ink-faint">
-          Designer-curated · rendered with gpt-image-1 + Flux Kontext
+          Rendered with SDXL + Depth ControlNet (Mode C)
         </p>
       </div>
 
