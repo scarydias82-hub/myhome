@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { Pill } from '@/components/saltbush/pill';
-import { isComfyUIModeEnabled } from '@/lib/env';
 import { type StyleSlug } from '@/lib/styles';
 import {
   isTrendForward,
@@ -198,16 +197,12 @@ export function UploadForm({
   const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Mode C opt-in (PR #74, Stage 3a). When `isComfyUIModeEnabled` is
-  // true (server env NEXT_PUBLIC_COMFYUI_MODE=true) AND we're in the
-  // photo-restyle flow (Mode B blank-canvas can't benefit from Depth
-  // ControlNet — there's no room geometry to preserve), the user gets
-  // a toggle to route this single render through Mode C instead of
-  // Mode A's default gpt-image-1 path. Sent as `mode: 'c'` on submit.
-  // Local state only — not persisted across uploads; each render is
-  // an explicit opt-in.
-  const [useModeC, setUseModeC] = useState(false);
-  const modeCAvailable = isComfyUIModeEnabled && flowMode === 'a';
+  // Mode C is now the sole render path (owner decision 2026-05-27 —
+  // committed while in closed beta with no live users). The previous
+  // Stage 3a opt-in toggle + isComfyUIModeEnabled gating were
+  // collapsed into a hardcoded `mode: 'c'` on submit. The backend
+  // still accepts 'a' | 'b' | 'c' for compatibility (the smoketest
+  // route + any future revert), only the UI changed.
 
   // §6.11 Phase C (#155) — inheritance source + per-render override.
   // recommendationSource tells us where the tags that fed the synth
@@ -654,16 +649,12 @@ export function UploadForm({
           paletteId,
           featuredProductIds: pickedIds,
           projectId: projectId ?? undefined,
-          // A4: forward the flow mode to the render route so it can
-          // branch into the blank-canvas Coco design pipeline when
-          // the user came in via /design/new.
-          //
-          // Mode C override (PR #74): when the user opted into the
-          // experimental Depth ControlNet path via the toggle, send
-          // 'c' instead. Only effective when modeCAvailable is true
-          // (env flag + photo-restyle flow), so this is a no-op
-          // otherwise.
-          mode: useModeC && modeCAvailable ? 'c' : flowMode,
+          // 2026-05-27 — Mode C is now the sole render path. Always
+          // send 'c'; the backend's mode_c branch handles ComfyUI
+          // Depth ControlNet rendering with the picked products in
+          // the prompt. Owner-decided while in closed beta — see
+          // PR #75 for the UI collapse.
+          mode: 'c',
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
@@ -848,41 +839,10 @@ export function UploadForm({
         />
       ) : null}
 
-      {/* Mode C toggle (Stage 3a). Surfaces an opt-in for the
-          experimental Depth ControlNet renderer right above the
-          submit row. Hidden unless NEXT_PUBLIC_COMFYUI_MODE=true is
-          set server-side AND we're in the photo-restyle flow (Mode B
-          has no room photo to lock geometry against). Stays a small,
-          editorial-styled box so it doesn't compete with the primary
-          CTA visually. */}
-      {curationOpen && modeCAvailable ? (
-        <div className="rounded-lg border border-editorial-border bg-editorial-cream/40 p-4">
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={useModeC}
-              onChange={(e) => setUseModeC(e.target.checked)}
-              className="mt-0.5 h-4 w-4 cursor-pointer accent-editorial-cognac"
-            />
-            <span className="block">
-              <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft">
-                Experimental
-              </span>
-              <span className="mt-1 block text-[14px] font-medium text-ink">
-                Preserve room geometry exactly (Mode C)
-              </span>
-              <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
-                Routes the render through a Depth ControlNet pipeline that
-                locks your walls, windows, and furniture silhouettes at the
-                model level. Higher fidelity to your existing room — at the
-                cost of slower render (~2-3 min). Best for rooms with strong
-                architectural features (panelling, mouldings, distinctive
-                wall geometry).
-              </span>
-            </span>
-          </label>
-        </div>
-      ) : null}
+      {/* Mode C opt-in toggle removed 2026-05-27 — Mode C is now the
+          sole render path while the product is in closed beta. To
+          restore the toggle (and the dual-path UX), revert PR #75
+          and restore NEXT_PUBLIC_COMFYUI_MODE gating in lib/env.ts. */}
 
       <div className="flex flex-wrap items-center gap-4">
         {!curationOpen ? (
@@ -906,9 +866,7 @@ export function UploadForm({
               disabled={!allCategoriesHavePick() || submitting}
             >
               {submitting
-                ? useModeC && modeCAvailable
-                  ? 'Restyling… (~2-3 min)'
-                  : 'Restyling… (~30s)'
+                ? 'Restyling… (~2-3 min)'
                 : `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`}
             </Button>
             <button
