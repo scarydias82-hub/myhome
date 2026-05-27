@@ -821,6 +821,22 @@ export async function POST(request: NextRequest) {
               roomType,
               productRefs: refs,
               rugRoomContext,
+              // 2026-05-27 — pass through vision's architectural-features
+              // list so the prompt explicitly preserves things like
+              // timber battens / wainscoting / cornicing instead of
+              // letting gpt-image-1 "tidy" them into plain walls.
+              // Cap at 6 items so the prompt stays focused.
+              architecturalFeatures: (
+                (room.analysis as RoomAnalysis | null)?.architectural_features ?? []
+              ).slice(0, 6),
+              // 2026-05-27 — explicit REMOVE list for furniture
+              // vision marked condition='replace'. Without this the
+              // model's default is to keep the original sectional /
+              // coffee table / etc instead of swapping for the picks.
+              existingFurnitureToReplace: existingFurniture
+                .filter((f) => f?.condition === 'replace' && typeof f.item === 'string')
+                .map((f) => f.item)
+                .slice(0, 8),
             });
       // If Mode B was requested but the RAG returned zero refs, fall
       // back to using the room photo as starter — the user gets a
