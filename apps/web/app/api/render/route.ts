@@ -28,7 +28,9 @@ import {
   getActiveProvider,
 } from '@/lib/fal';
 import { getPalette } from '@/lib/palettes';
-import { getDesignerAdvice } from '@/lib/designer';
+// getDesignerAdvice import dropped 2026-05-27 — owner removed the
+// Claude-as-designer narrative layer. lib/designer.ts remains on
+// disk for revert.
 import { autoFeatureForPalette, autoFeatureClaude } from '@/lib/featuring';
 import { generatePaletteSwatch } from '@/lib/paletteSwatch';
 import { buildKontextPrompt } from '@/lib/kontextPrompt';
@@ -165,6 +167,12 @@ interface Body {
    *  'restyle' | 'design' | 'mode_c' so downstream surfaces can
    *  branch cleanly. */
   mode?: 'a' | 'b' | 'c';
+  /** Optional Mode C positive-prompt override. When set + mode='c',
+   *  the value is sent verbatim to the SDXL pipeline INSTEAD of
+   *  the auto-built vision-derived prompt. Empty / absent = use
+   *  the auto-built prompt. Owner-only testing feature (surfaced
+   *  in the upload form's "Advanced · prompt override" details). */
+  promptOverride?: string;
 }
 
 interface RoomRow {
@@ -570,27 +578,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Kick off the designer LLM in the background. It doesn't depend on
-  // the fal output — works from room analysis + selected palette +
-  // catalogue candidates — so it can run during the render wait,
-  // giving the user something to engage with for the 25-60s Flux pass.
-  // Persists to renders.designer_read; the page reads from there.
-  after(async () => {
-    try {
-      const advice = await getDesignerAdvice({
-        admin,
-        roomAnalysis: room.analysis as RoomAnalysis | null,
-        palette,
-      });
-      await admin
-        .from('renders')
-        .update({ designer_read: advice })
-        .eq('id', render.id);
-      console.log(`[render] designer pre-read saved for ${render.id}`);
-    } catch (err) {
-      console.error('[render] designer pre-read failed', err);
-    }
-  });
+  // Designer LLM pre-read removed 2026-05-27 — owner stripped the
+  // Claude-as-designer narrative layer. The renders.designer_read
+  // column is no longer populated for new renders; existing rows
+  // keep their previously-saved advice but no new advice is
+  // generated. lib/designer.ts + getDesignerAdvice() remain on disk
+  // in case the narrative is brought back later.
 
   try {
     const groundedPrompt = buildPrompt(
@@ -719,17 +712,26 @@ export async function POST(request: NextRequest) {
         styleName: style.name,
         productRefs,
       });
+      // Optional positive-prompt override — when the upload form's
+      // "Advanced · prompt override" textarea is populated, the
+      // user-supplied string trumps the auto-built vision-derived
+      // descriptors. Negative prompt stays as the buildModeCPrompt
+      // baseline (no override for that side; the negative is mostly
+      // generic SDXL artefact suppressors and rarely needs tweaking).
+      const override = body.promptOverride?.trim();
+      const positivePrompt = override && override.length > 0 ? override : prompts.positive;
+      const usingOverride = positivePrompt !== prompts.positive;
       console.log(
         `[render-mode-c] submitting ComfyUI: ${productRefs.length} products, palette=${
           palette?.id ?? 'none'
-        }, style=${style.slug}`,
+        }, style=${style.slug}, override=${usingOverride}`,
       );
-      console.log(`[render-mode-c] positive: ${prompts.positive}`);
+      console.log(`[render-mode-c] positive: ${positivePrompt}`);
 
       try {
         const result = await renderViaComfyUIWithDepth({
           roomBuf: resizedRoomBuf,
-          positivePrompt: prompts.positive,
+          positivePrompt,
           negativePrompt: prompts.negative,
           // SDXL native; if the owner's GPU can't hold 1024 (32GB
           // M2 Max OOM observed during smoke tests) drop via env
