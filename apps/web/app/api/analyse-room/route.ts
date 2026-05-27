@@ -15,7 +15,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { analyseRoom, type VisionMediaType } from '@/lib/vision';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Bumped 60 → 90 on 2026-05-27 (PR #76) when vision was moved from
+// claude-haiku-4-5 to claude-sonnet-4-6. Sonnet's vision pass on
+// room photos completes in 10-20s typical but can hit 30-40s under
+// load; with 2 retries × 35s timeout + 3s delay = 73s worst case,
+// 60 doesn't survive a single slow call. 90 leaves ~15-17s buffer
+// for the surrounding upload + DB insert.
+export const maxDuration = 90;
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);

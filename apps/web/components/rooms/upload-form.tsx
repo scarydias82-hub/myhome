@@ -382,14 +382,14 @@ export function UploadForm({
       // "indefinite".
       //
       // Now: bounded client-side timeout via AbortSignal. Each
-      // attempt aborts at 70s (slightly past Vercel's 60s function
-      // deadline so we don't pre-empt a function that's actually
-      // about to return). One retry on abort/throw, then surface
-      // the friendly error. Total worst-case wait: ~140s — but the
-      // SECOND attempt only fires on hard-fail of the first, not on
-      // 504 timeout, so most "Vercel killed the function" cases
-      // skip the retry and surface the error immediately.
-      const ATTEMPT_TIMEOUT_MS = 70_000;
+      // attempt aborts at 100s (slightly past the analyse-room
+      // route's 90s maxDuration so we don't pre-empt a function
+      // that's actually about to return). Bumped from 70s on
+      // 2026-05-27 (PR #76) when room vision moved from Haiku to
+      // Sonnet 4.6 — the slower model's worst-case retry budget
+      // pushed the route's maxDuration to 90s. One retry on
+      // abort/throw, then surface the friendly error.
+      const ATTEMPT_TIMEOUT_MS = 100_000;
       const submit = async (): Promise<Response> => {
         const ac = new AbortController();
         const t = setTimeout(() => ac.abort(), ATTEMPT_TIMEOUT_MS);
