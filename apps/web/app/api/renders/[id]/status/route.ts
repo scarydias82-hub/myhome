@@ -251,10 +251,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           picking_list_status: 'failed',
         })
         .eq('id', render.id);
+      // User-facing error stays generic + recoverable. probe.summary
+      // (the ComfyUI traceback) is logged above for owner debugging
+      // but not returned to the client.
       return NextResponse.json({
         status: 'failed',
         pickingListStatus: 'failed',
-        error: probe.summary,
+        error:
+          'Render service hit an issue. Try again — most failures clear within a few minutes.',
       });
     }
 
@@ -312,7 +316,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({
         status: 'failed',
         pickingListStatus: 'failed',
-        error: `Mode C output fetch failed: ${message}`,
+        error:
+          'Render service hit an issue saving your output. Try again — most failures clear within a few minutes.',
       });
     }
   }

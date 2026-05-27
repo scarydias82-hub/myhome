@@ -290,14 +290,14 @@ export async function POST(request: NextRequest) {
     body.mode === 'b' ? 'b' : body.mode === 'c' ? 'c' : 'a';
   const renderMode = mode === 'b' ? 'design' : mode === 'c' ? 'mode_c' : 'restyle';
 
-  // Resilient insert. If the render_mode column hasn't been applied
-  // to prod yet (migration 20260526120000 didn't run cleanly), the
-  // insert errors with "column 'render_mode' does not exist" and
-  // EVERY render fails — owner reported 2026-05-26 "could not
-  // create render record" hitting this exact path. Retry without
-  // render_mode on error. Mode A renders are fine either way; Mode
-  // B loses the design-mode flag on the row but still produces a
-  // render (downstream defaults to 'restyle' on null).
+  // Resilient insert. Two columns might be missing depending on which
+  // migrations have applied to this DB:
+  //   - render_mode (20260526120000)
+  //   - submit_params (20260527010000 — PR #78 retry support)
+  // The fallback ladder tries the full insert, then drops
+  // submit_params, then drops render_mode. Worst case (both missing)
+  // the row still lands with base cols and the render proceeds —
+  // just without the metadata for retry / mode-aware UI.
   const baseInsert = {
     user_id: user.id,
     room_id: room.id,
@@ -305,11 +305,29 @@ export async function POST(request: NextRequest) {
     status: 'running',
     project_id: verifiedProjectId,
   };
+  // submit_params is the original POST body. Surfaced to the failed-
+  // render page so the "Try again" button can re-submit identically
+  // without the user re-picking everything.
+  const submitParamsJson = JSON.parse(JSON.stringify(body)) as Record<string, unknown>;
   let renderRes = await admin
     .from('renders')
-    .insert({ ...baseInsert, render_mode: renderMode })
+    .insert({
+      ...baseInsert,
+      render_mode: renderMode,
+      submit_params: submitParamsJson,
+    })
     .select('id')
     .single();
+  if (renderRes.error) {
+    console.warn(
+      `[render] insert with render_mode + submit_params failed (${renderRes.error.message}); retrying without submit_params (likely 20260527010000 migration not applied)`,
+    );
+    renderRes = await admin
+      .from('renders')
+      .insert({ ...baseInsert, render_mode: renderMode })
+      .select('id')
+      .single();
+  }
   if (renderRes.error) {
     console.warn(
       `[render] insert with render_mode failed (${renderRes.error.message}); retrying without it (likely 20260526120000 migration not applied to this DB).`,
@@ -684,12 +702,21 @@ export async function POST(request: NextRequest) {
     // 503 if Mode C was requested but the tunnel isn't configured.
     if (mode === 'c' && resizedRoomBuf) {
       if (!process.env.COMFYUI_URL) {
+        // Technical reason logged server-side; user gets a generic
+        // "service unavailable" message so the failure mode reads as
+        // transient and recoverable (because to the user, it is —
+        // the only fix is the owner setting COMFYUI_URL, not anything
+        // the user did wrong).
+        console.error('[render-mode-c] COMFYUI_URL not set on server');
         await admin
           .from('renders')
           .update({ status: 'failed', completed_at: new Date().toISOString() })
           .eq('id', render.id);
         return NextResponse.json(
-          { error: 'Mode C is not configured (COMFYUI_URL not set).' },
+          {
+            error:
+              'Render service is temporarily unavailable. Please try again in a few minutes.',
+          },
           { status: 503 },
         );
       }
@@ -766,6 +793,9 @@ export async function POST(request: NextRequest) {
         // ComfyUI marks the prompt complete.
         return NextResponse.json({ id: render.id });
       } catch (err) {
+        // Same pattern as the COMFYUI_URL branch above: technical
+        // detail logged for owner debugging, user-facing message
+        // stays generic + recoverable-sounding.
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[render-mode-c] submit failed for ${render.id}:`, message);
         await admin
@@ -776,7 +806,10 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', render.id);
         return NextResponse.json(
-          { error: `Mode C submit failed: ${message}` },
+          {
+            error:
+              'Render service is temporarily unavailable. Please try again in a few minutes.',
+          },
           { status: 502 },
         );
       }
