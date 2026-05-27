@@ -460,3 +460,117 @@ export async function renderViaComfyUIWithDepth(
     8 * 60_000,
   );
 }
+
+export interface SubmitModeCWithDepthInput
+  extends Omit<RenderViaComfyUIWithDepthInput, 'roomBuf' | 'filename'> {
+  roomBuf: Buffer;
+  filename?: string;
+}
+
+export interface SubmitModeCResult {
+  /** ComfyUI prompt_id. Stored on renders.comfyui_prompt_id; the
+   *  status route uses this to poll /history/{prompt_id}. */
+  promptId: string;
+  /** The filename ComfyUI assigned to the uploaded input image.
+   *  Mostly for debugging; the status route doesn't need it. */
+  inputFilename: string;
+}
+
+/** Submit-only variant of renderViaComfyUIWithDepth — uploads the
+ *  room photo + submits the workflow, then returns the prompt_id
+ *  immediately. Does NOT poll for completion or fetch the output.
+ *
+ *  Used by /api/render's Mode C branch (PR #77 async refactor) so
+ *  the route stays inside Vercel's 60s function budget. The status
+ *  route (/api/renders/[id]/status) drives the prompt to completion
+ *  by polling /history/{prompt_id} and fetching the output when
+ *  done. Same architecture pattern as fal-ai/kontext-multi's
+ *  fal_request_id flow.
+ *
+ *  Upload + submit together take ~2-5s on a healthy tunnel
+ *  (depending on image size). Well within Vercel's budget. */
+export async function submitModeCWithDepth(
+  input: SubmitModeCWithDepthInput,
+): Promise<SubmitModeCResult> {
+  const filename =
+    input.filename ?? `mymaison-input-${Date.now()}-${randomUUID().slice(0, 8)}.png`;
+  const uploaded = await uploadImageToComfyUI(input.roomBuf, filename);
+  const workflow = buildModeCDepthWorkflow({
+    inputImageFilename: uploaded.name,
+    positivePrompt: input.positivePrompt,
+    negativePrompt: input.negativePrompt,
+    denoise: input.denoise,
+    seed: input.seed,
+    steps: input.steps,
+    cfg: input.cfg,
+    maxLongSide: input.maxLongSide,
+    controlnetName: input.controlnetName,
+    controlnetStrength: input.controlnetStrength,
+    filenamePrefix: 'myMaison_modeC_depth',
+  });
+  const promptId = await submitWorkflow(workflow);
+  return { promptId, inputFilename: uploaded.name };
+}
+
+/** Single-shot status probe for a previously-submitted Mode C
+ *  prompt. Hits /history/{prompt_id} ONCE and returns immediately
+ *  with one of:
+ *    - 'queued' / 'running' — caller's polling loop should keep
+ *       polling (e.g. status route returns status='running' to the
+ *       client and waits for the next /status request).
+ *    - 'success' — caller can call fetchComfyUIOutput() on the
+ *       returned image descriptor to grab the bytes.
+ *    - 'error' — ComfyUI reported a node-execution failure; the
+ *       returned messages describe what went wrong.
+ *
+ *  Designed for the status route's polling pattern — fast (~1s
+ *  round-trip through tunnel), non-blocking, called once per
+ *  client poll. Distinct from pollHistory() which loops internally
+ *  for renderViaComfyUI*'s synchronous orchestration path. */
+export type ModeCPollResult =
+  | { status: 'queued' | 'running' }
+  | { status: 'success'; image: HistoryOutputImage }
+  | { status: 'error'; messages: HistoryStatusMessage[]; summary: string };
+
+export async function checkModeCPromptStatus(
+  promptId: string,
+): Promise<ModeCPollResult> {
+  const url = getComfyUIUrl();
+  const res = await fetchWithRetry(
+    `${url}/history/${encodeURIComponent(promptId)}`,
+    { method: 'GET' },
+    { timeoutMs: 15_000, retries: 2, backoffMs: 1_000 },
+  );
+  if (!res.ok) {
+    // 404 happens when the prompt is queued but not yet running.
+    // Treat as still-running so the client keeps polling.
+    return { status: 'queued' };
+  }
+  const data = (await res.json()) as Record<string, HistoryEntry>;
+  const entry = data[promptId];
+  if (!entry || !entry.status) return { status: 'queued' };
+  if (entry.status.status_str === 'error') {
+    return {
+      status: 'error',
+      messages: entry.status.messages ?? [],
+      summary: describeComfyUIErrorMessages(entry.status.messages),
+    };
+  }
+  if (entry.status.completed === true) {
+    const outputImages = Object.values(entry.outputs ?? {})
+      .flatMap((node) => node?.images ?? [])
+      .filter((img): img is HistoryOutputImage => Boolean(img));
+    const first = outputImages[0];
+    if (!first) {
+      // Marked completed but no images — treat as error so the row
+      // gets flagged failed rather than spinning forever.
+      return {
+        status: 'error',
+        messages: [],
+        summary: 'ComfyUI marked prompt complete but returned no output images',
+      };
+    }
+    return { status: 'success', image: first };
+  }
+  return { status: 'running' };
+}
