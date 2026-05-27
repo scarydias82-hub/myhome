@@ -93,7 +93,13 @@ export function buildImg2ImgWorkflow(input: Img2ImgWorkflowInput): ComfyUIWorkfl
   const checkpoint = input.checkpointName ?? 'sd_xl_base_1.0.safetensors';
   const negative = input.negativePrompt ?? DEFAULT_NEGATIVE;
   const denoise = input.denoise ?? 0.7;
-  const steps = input.steps ?? 20;
+  // Default steps bumped 20 → 35 on 2026-05-27 (PR #76). euler /
+  // normal at 20 steps was producing soft "AI-fizz" on small details
+  // — typical SDXL artefact at sub-native sampling budget. dpmpp_2m
+  // with karras scheduler at 35 steps is the SDXL community default
+  // for quality output; adds ~30% latency for noticeably cleaner
+  // furniture surfaces and architectural detail.
+  const steps = input.steps ?? 35;
   const cfg = input.cfg ?? 7;
   const seed = input.seed ?? Math.floor(Math.random() * 1_000_000_000);
   const filenamePrefix = input.filenamePrefix ?? 'myMaison_modeC';
@@ -151,8 +157,15 @@ export function buildImg2ImgWorkflow(input: Img2ImgWorkflowInput): ComfyUIWorkfl
         seed,
         steps,
         cfg,
-        sampler_name: 'euler',
-        scheduler: 'normal',
+        // Sampler bumped 2026-05-27 (PR #76): euler/normal → dpmpp_2m/karras.
+        // dpmpp_2m is the SDXL community default — converges faster than
+        // euler at higher step counts and produces sharper material/edge
+        // detail. karras scheduler concentrates samples near the denoise
+        // start where small details are decided. Combined with the
+        // 20→35 step bump, this is the main quality lever on Mode C
+        // output short of upgrading models.
+        sampler_name: 'dpmpp_2m',
+        scheduler: 'karras',
         denoise,
       },
       _meta: { title: 'Sample' },
