@@ -124,29 +124,33 @@ export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis
   // latency on top of inference); with base64 we hand the bytes over
   // directly. Same image, same model, same prompt — no quality delta.
   const anthropic = getAnthropic();
-  // Haiku is ~3× faster than Sonnet for this structured-extraction task and
-  // handles vision more than well enough. Sonnet was occasionally taking
-  // >60s on Vercel and getting silently killed by the function timeout.
+  // Sonnet 4.6 since 2026-05-27 (PR #76). Pre-this we ran Haiku for
+  // speed, but the missed-ottoman class of bugs (PR #69 tried to
+  // patch via prompt-side directives, didn't fully hold for
+  // low-context photos) traces back to Haiku's tendency to skim
+  // discrete-item inventory. Sonnet's higher per-item attention is
+  // worth the latency hit because vision's output drives:
+  //   - The Mode C prompt's product descriptors (silhouette mismatch
+  //     → wrong rendered furniture)
+  //   - Stage 3b's SAM mask derivation (missed pieces → no mask →
+  //     picked product never gets inpainted into the render)
+  // The remaining Claude calls (scraper-side product vision, rug
+  // classification) stay on Haiku — they're high-volume / low-stakes
+  // batch work where per-call cost matters more than recall.
   //
-  // Retry budget MUST stay inside the analyse-room route's maxDuration
-  // (60s). Worst case = (timeout × attempts) + (sum of delays). Previous
-  // [0, 2s, 5s] × 25s timeout gave 82s worst case — when Anthropic
-  // returns slow-hanging responses (not fast 529s), the third retry can
-  // still be in flight when Vercel kills the function. The function
-  // returns no response and Safari shows "TypeError: Load failed" at
-  // the upload-form's fetch catch. Tightened 2026-05-26 to bound at
-  // 53s worst case (timeout 25s × 2 attempts + 3s delay) — fits inside
-  // 60s with ~5-7s buffer for upload + room insert + setup.
-  //
-  // Lost: one retry slot. Acceptable trade-off — when Anthropic is
-  // hanging (not 529-fast), a third retry rarely succeeds anyway, and
-  // we'd rather return a friendly "Claude is overloaded" error inside
-  // the function budget than have the browser see a network failure.
+  // Retry budget MUST stay inside the analyse-room route's
+  // maxDuration. Sonnet vision typically completes in 10-20s but
+  // can hit 30-40s under load. With timeout 35s × 2 attempts +
+  // 3s delay = 73s worst case, the analyse-room route bumped to
+  // maxDuration=90 (PR #76) to fit with ~15-17s buffer for upload
+  // + room insert + setup. Previous tighter budget (Haiku at 25s
+  // × 2 + 3s = 53s in a 60s route) doesn't survive Sonnet's
+  // slower-but-better profile.
   const message = await withAnthropicRetry(
     () =>
       anthropic.messages.create(
         {
-          model: 'claude-haiku-4-5',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1500,
           system: SYSTEM,
           messages: [
@@ -166,7 +170,7 @@ export async function analyseRoom(input: AnalyseRoomInput): Promise<RoomAnalysis
             },
           ],
         },
-        { timeout: 25_000 },
+        { timeout: 35_000 },
       ),
     { label: 'vision', delaysMs: [0, 3000] },
   );
