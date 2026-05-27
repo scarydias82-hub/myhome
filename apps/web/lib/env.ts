@@ -29,6 +29,23 @@ const serverEnvSchema = z.object({
   //   - lib/matching.ts  (any matcher candidate fetch)
   // Names are matched case-sensitively against `products.retailer`.
   RENDER_RETAILER_ALLOWLIST: z.string().optional(),
+  // ComfyUI tunnel URL (Mode C render path — ControlNet-grade room
+  // preservation via the owner's Mac M2 Max). Set to the cloudflared
+  // tunnel URL exposing the local ComfyUI HTTP server, e.g.
+  // https://<words>.trycloudflare.com. When unset, Mode C is
+  // unavailable and /api/render falls through to Mode A/B (gpt-image-1).
+  // The quick-tunnel URL rotates on cloudflared restart; long-term
+  // we'll switch to a named tunnel with a stable hostname. See
+  // docs/COMFYUI-SETUP.md.
+  COMFYUI_URL: z.string().url().optional(),
+  // Shared secret guarding the dev smoke-test route
+  // (/api/comfyui-smoketest). The smoke-test endpoint kicks one render
+  // through ComfyUI for end-to-end validation without touching the
+  // main /api/render path; locking it behind a token stops the
+  // endpoint from being a public render-on-demand for anyone who
+  // discovers the URL. Set to any high-entropy string and pass via
+  // the X-Smoketest-Token header.
+  COMFYUI_TEST_TOKEN: z.string().min(8).optional(),
 });
 
 // In dev we let the app boot without Supabase so you can render the landing page
@@ -93,6 +110,8 @@ export function getServerEnv() {
     HF_TOKEN: process.env.HF_TOKEN,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     RENDER_RETAILER_ALLOWLIST: process.env.RENDER_RETAILER_ALLOWLIST,
+    COMFYUI_URL: process.env.COMFYUI_URL,
+    COMFYUI_TEST_TOKEN: process.env.COMFYUI_TEST_TOKEN,
   });
 }
 

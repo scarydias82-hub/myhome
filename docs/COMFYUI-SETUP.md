@@ -206,17 +206,70 @@ anything beyond testing.
 
 ---
 
-## Step 6 — Hand over the tunnel URL to me
+## Step 6 — Smoke test the integration (Stage 1)
 
-Once you've got a working tunnel URL (named or quick), paste it back
-to me along with which model option you used (Flux Dev or SDXL).
-I'll then ship:
+`lib/comfyui.ts` + the `/api/comfyui-smoketest` route ship in PR #71.
+They hit your tunnel to validate the full wire-up — upload image →
+submit workflow → poll → fetch output — using a plain SDXL img2img
+workflow (no ControlNet yet; Stage 2 adds Depth + Inpaint).
 
-- `lib/comfyui.ts` — API client that submits jobs to your tunnel URL
-- `NEXT_PUBLIC_COMFYUI_MODE` feature flag — opt-in routing
-- `/api/render` branch — when flag is on, jobs go to ComfyUI
-- Polling logic — ComfyUI is async, returns a `prompt_id` you poll
-- The actual ControlNet workflow JSON tailored to your model choice
+### Set env vars
+
+In `apps/web/.env.local`:
+
+```bash
+COMFYUI_URL=https://<your-tunnel-words>.trycloudflare.com
+COMFYUI_TEST_TOKEN=<any high-entropy string, e.g. `openssl rand -hex 32`>
+```
+
+### Run the smoke test
+
+In one terminal, start the Next.js dev server:
+
+```bash
+pnpm --filter web dev
+```
+
+In another, curl the endpoint with any room photo:
+
+```bash
+curl -X POST 'http://localhost:3000/api/comfyui-smoketest' \
+  -H "X-Smoketest-Token: ${COMFYUI_TEST_TOKEN}" \
+  -F 'photo=@/path/to/your/room.jpg' \
+  -F 'prompt=a modern contemporary living room with warm natural light, editorial interior photography' \
+  -F 'denoise=0.7' \
+  --output result.png \
+  -i
+```
+
+The `-i` flag shows response headers including `X-ComfyUI-Prompt-Id`
+and `X-ComfyUI-Duration-Ms`. First render takes 70-90s warm,
+3-5 min cold (MPS kernel compile). `result.png` lands in your CWD.
+
+If it errors, the JSON body explains why — most common:
+- `COMFYUI_URL not set` → check `.env.local`
+- `ComfyUI /prompt failed: 400 — ...node_errors...` → workflow JSON
+  shape doesn't match what ComfyUI expects (e.g. checkpoint filename
+  doesn't match what's in your `models/checkpoints/` folder)
+- `ComfyUI render timed out after 300000ms` → Mac asleep, tunnel
+  down, or the workflow is hung
+
+Once the smoke test produces a recognisable restyled image, Stage 2
+adds Depth ControlNet + Inpaint to the workflow builder. Pre-reqs
+for Stage 2 (download in advance to save round-trips):
+
+```bash
+cd ~/Documents/ComfyUI/models
+mkdir -p depthanything sams
+# Depth Anything V2 (Large) — ~1.3GB
+hf download depth-anything/Depth-Anything-V2-Large \
+  depth_anything_v2_vitl.pth \
+  --local-dir ./depthanything
+# Segment Anything ViT-B — ~358MB
+hf download ybelkada/segment-anything \
+  checkpoints/sam_vit_b_01ec64.pth \
+  --local-dir ./sams
+```
 
 ---
 
