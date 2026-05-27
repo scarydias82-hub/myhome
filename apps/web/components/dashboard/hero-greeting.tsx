@@ -4,7 +4,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { BRIEF_TAG_GROUPS } from '@/lib/brief/taxonomy';
 import { PreferencesModal } from '@/components/dashboard/preferences-modal';
 
 // Hero greeting — compressed vs the previous version. On mobile this
@@ -41,17 +40,9 @@ interface HeroGreetingProps {
   preferences: UserPreferences | null;
 }
 
-// Build a label-lookup once so we can render chips as the human label
-// ("Modern organic") rather than the slug ("modern-organic").
-const TAG_LABEL_BY_SLUG: Record<string, string> = (() => {
-  const map: Record<string, string> = {};
-  for (const group of BRIEF_TAG_GROUPS) {
-    for (const tag of group.tags) {
-      map[tag.slug] = tag.label;
-    }
-  }
-  return map;
-})();
+// Tag label lookup removed 2026-05-27 — the dashboard hero no longer
+// renders preferences as chips. The modal still maps slugs to labels
+// via its own internal taxonomy.
 
 type ActionKey = 'photo' | 'project' | 'board' | 'catalogue';
 
@@ -123,13 +114,12 @@ export function HeroGreeting({ firstName, preferences }: HeroGreetingProps) {
   // same auto-onboarding flow PreferencesSection used to drive.
   const [prefsOpen, setPrefsOpen] = useState<boolean>(isFirstTime);
 
+  // Preferences display collapsed 2026-05-27 — the previous chip
+  // row + "+N more" overflow + first-time CTA were taking too much
+  // visual weight on the dashboard hero. Single-line "Your Aesthetic:
+  // [Edit]" link is enough; the modal itself still handles set/edit/
+  // first-time flow. Tags carry forward to the modal via initialTags.
   const tags = preferences?.tags ?? [];
-  // Cap visible chips so the hero stays compact on mobile. 6 fits one
-  // wrap row on a 360px viewport for the average label length; overflow
-  // becomes a "+N more" pill the user can click to see the full set via
-  // the Edit modal.
-  const displayChips = tags.slice(0, 6);
-  const overflow = tags.length - displayChips.length;
 
   return (
     <section className="pt-6 pb-6 md:pt-10 md:pb-8">
@@ -144,56 +134,23 @@ export function HeroGreeting({ firstName, preferences }: HeroGreetingProps) {
         point.
       </p>
 
-      {/* Taste-signal nested into the welcome copy. Empty state = small
-          CTA pill that auto-opens the modal; filled state = "Your
-          taste:" eyebrow + chip row + Edit pill. Sits between the
-          sub-blurb and the action tiles so it reads as part of the
-          greeting rather than as a separate "system" surface. */}
-      {isFirstTime ? (
-        <div className="mt-4 md:mt-5">
-          <button
-            type="button"
-            onClick={() => setPrefsOpen(true)}
-            className="inline-flex items-center gap-2 rounded-pill border border-editorial-cognac/40 bg-editorial-cognac/10 px-4 py-2 font-dmmono text-[11px] uppercase tracking-[0.14em] text-editorial-cognac transition hover:border-editorial-cognac hover:bg-editorial-cognac/15"
-          >
-            <span aria-hidden>✦</span>
-            <span>Set up your taste signal</span>
-            <span aria-hidden>→</span>
-          </button>
-        </div>
-      ) : (
-        <div className="mt-4 flex flex-wrap items-center gap-2 md:mt-5">
-          <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe md:text-[11px]">
-            Your taste:
-          </p>
-          {displayChips.length > 0 ? (
-            displayChips.map((slug) => (
-              <span
-                key={slug}
-                className="rounded-pill border border-editorial-border bg-editorial-surface px-2.5 py-1 font-dmsans text-[12px] text-editorial-ink"
-              >
-                {TAG_LABEL_BY_SLUG[slug] ?? slug}
-              </span>
-            ))
-          ) : (
-            <span className="font-dmsans text-[12px] italic text-editorial-taupe">
-              No tags yet
-            </span>
-          )}
-          {overflow > 0 ? (
-            <span className="rounded-pill px-2 py-1 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe">
-              +{overflow} more
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setPrefsOpen(true)}
-            className="ml-1 rounded-pill border border-editorial-border bg-editorial-surface px-3 py-1 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-ink transition hover:border-editorial-borderStrong md:text-[11px]"
-          >
-            Edit →
-          </button>
-        </div>
-      )}
+      {/* Collapsed 2026-05-27 — single "Your Aesthetic: edit" line.
+          The modal still handles the full set/edit/onboarding flow,
+          but the dashboard hero no longer renders tag chips inline.
+          Auto-open on first visit (isFirstTime) is preserved so new
+          users still get the onboarding prompt. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 md:mt-5">
+        <p className="font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-taupe md:text-[11px]">
+          Your aesthetic:
+        </p>
+        <button
+          type="button"
+          onClick={() => setPrefsOpen(true)}
+          className="rounded-pill border border-editorial-border bg-editorial-surface px-3 py-1 font-dmmono text-[10px] uppercase tracking-[0.14em] text-editorial-ink transition hover:border-editorial-borderStrong md:text-[11px]"
+        >
+          edit →
+        </button>
+      </div>
 
       {/* 2-col on mobile so all 4 tiles land above the fold on most
           phones; 4-col on lg+ so it stays a single row on desktop.
