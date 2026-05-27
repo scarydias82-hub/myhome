@@ -65,6 +65,18 @@ const publicEnvSchema = z.object({
   // the existing photo-restyle flow remains the only flow exposed.
   // See OVERVIEW §6 for the Mode B spec.
   NEXT_PUBLIC_FLOORPLAN_MODE: z.string().optional(),
+  // Mode-C opt-in flag. When set to "true" AND the server env has
+  // COMFYUI_URL configured, the UI exposes a Mode C toggle on the
+  // photo-restyle flow ("preserve room geometry exactly — slower,
+  // higher fidelity"). When unset (production default), Mode C is
+  // invisible in the UI and /api/render's mode_c branch can't be
+  // triggered from anywhere user-facing. The smoke-test route
+  // (/api/comfyui-smoketest) remains usable independently.
+  //
+  // Default stays OFF because Mode C requires a working ComfyUI
+  // tunnel on the server side; flipping the flag without setting
+  // COMFYUI_URL would only show a toggle that 503s when used.
+  NEXT_PUBLIC_COMFYUI_MODE: z.string().optional(),
 });
 
 export const publicEnv = publicEnvSchema.parse({
@@ -75,6 +87,7 @@ export const publicEnv = publicEnvSchema.parse({
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
   NEXT_PUBLIC_FLOORPLAN_MODE: process.env.NEXT_PUBLIC_FLOORPLAN_MODE,
+  NEXT_PUBLIC_COMFYUI_MODE: process.env.NEXT_PUBLIC_COMFYUI_MODE,
 });
 
 export const isSupabaseConfigured = Boolean(
@@ -114,6 +127,17 @@ export function getServerEnv() {
     COMFYUI_TEST_TOKEN: process.env.COMFYUI_TEST_TOKEN,
   });
 }
+
+// True when the Mode C ComfyUI flow is opted in via env var. Reads
+// from NEXT_PUBLIC_COMFYUI_MODE so both client (UI gating) and
+// server (rendering branch in /api/render) get a consistent answer.
+//
+// Default OFF — Mode C only becomes selectable when the owner
+// explicitly flips this AND configures COMFYUI_URL on the server.
+// Without the server-side URL the UI toggle would lead to a 503
+// when triggered.
+export const isComfyUIModeEnabled =
+  (publicEnv.NEXT_PUBLIC_COMFYUI_MODE ?? '').toLowerCase() === 'true';
 
 // Parse RENDER_RETAILER_ALLOWLIST into a string[] of retailer names.
 // Empty / unset returns null (meaning "no filter — every retailer

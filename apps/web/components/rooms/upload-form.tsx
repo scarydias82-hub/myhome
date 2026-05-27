@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Eyebrow } from '@/components/saltbush/eyebrow';
 import { Pill } from '@/components/saltbush/pill';
+import { isComfyUIModeEnabled } from '@/lib/env';
 import { type StyleSlug } from '@/lib/styles';
 import {
   isTrendForward,
@@ -196,6 +197,17 @@ export function UploadForm({
   // palette/direction was picked, not just THAT it was.
   const [recommendationReasoning, setRecommendationReasoning] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Mode C opt-in (PR #74, Stage 3a). When `isComfyUIModeEnabled` is
+  // true (server env NEXT_PUBLIC_COMFYUI_MODE=true) AND we're in the
+  // photo-restyle flow (Mode B blank-canvas can't benefit from Depth
+  // ControlNet — there's no room geometry to preserve), the user gets
+  // a toggle to route this single render through Mode C instead of
+  // Mode A's default gpt-image-1 path. Sent as `mode: 'c'` on submit.
+  // Local state only — not persisted across uploads; each render is
+  // an explicit opt-in.
+  const [useModeC, setUseModeC] = useState(false);
+  const modeCAvailable = isComfyUIModeEnabled && flowMode === 'a';
 
   // §6.11 Phase C (#155) — inheritance source + per-render override.
   // recommendationSource tells us where the tags that fed the synth
@@ -645,7 +657,13 @@ export function UploadForm({
           // A4: forward the flow mode to the render route so it can
           // branch into the blank-canvas Coco design pipeline when
           // the user came in via /design/new.
-          mode: flowMode,
+          //
+          // Mode C override (PR #74): when the user opted into the
+          // experimental Depth ControlNet path via the toggle, send
+          // 'c' instead. Only effective when modeCAvailable is true
+          // (env flag + photo-restyle flow), so this is a no-op
+          // otherwise.
+          mode: useModeC && modeCAvailable ? 'c' : flowMode,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
@@ -830,6 +848,42 @@ export function UploadForm({
         />
       ) : null}
 
+      {/* Mode C toggle (Stage 3a). Surfaces an opt-in for the
+          experimental Depth ControlNet renderer right above the
+          submit row. Hidden unless NEXT_PUBLIC_COMFYUI_MODE=true is
+          set server-side AND we're in the photo-restyle flow (Mode B
+          has no room photo to lock geometry against). Stays a small,
+          editorial-styled box so it doesn't compete with the primary
+          CTA visually. */}
+      {curationOpen && modeCAvailable ? (
+        <div className="rounded-lg border border-editorial-border bg-editorial-cream/40 p-4">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={useModeC}
+              onChange={(e) => setUseModeC(e.target.checked)}
+              className="mt-0.5 h-4 w-4 cursor-pointer accent-editorial-cognac"
+            />
+            <span className="block">
+              <span className="font-mono text-meta uppercase tracking-eyebrow text-ink-soft">
+                Experimental
+              </span>
+              <span className="mt-1 block text-[14px] font-medium text-ink">
+                Preserve room geometry exactly (Mode C)
+              </span>
+              <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">
+                Routes the render through a Depth ControlNet pipeline that
+                locks your walls, windows, and furniture silhouettes at the
+                model level. Higher fidelity to your existing room — at the
+                cost of slower render (~2-3 min). Best for rooms with strong
+                architectural features (panelling, mouldings, distinctive
+                wall geometry).
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-4">
         {!curationOpen ? (
           <Button
@@ -852,7 +906,9 @@ export function UploadForm({
               disabled={!allCategoriesHavePick() || submitting}
             >
               {submitting
-                ? 'Restyling… (~30s)'
+                ? useModeC && modeCAvailable
+                  ? 'Restyling… (~2-3 min)'
+                  : 'Restyling… (~30s)'
                 : `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`}
             </Button>
             <button

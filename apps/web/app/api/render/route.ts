@@ -38,6 +38,8 @@ import sharp from 'sharp';
 import { submitOpenAIImageRender, buildOpenAIImagePrompt, buildModeBPrompt } from '@/lib/openai-image';
 import { fetchKnowledgeImages } from '@/lib/knowledge';
 import { cutoutProduct } from '@/lib/composite';
+import { renderViaComfyUIWithDepth } from '@/lib/comfyui';
+import { modeCPromptFromAnalysis } from '@/lib/comfyui-prompt';
 
 // R4 (2026-05-26) — categories that render better as transparent
 // cutouts than as raw retailer images. For these (rugs primarily),
@@ -137,10 +139,17 @@ function pickRenderReferenceUrls(p: HeroProductDescriptor): string[] {
 }
 
 export const runtime = 'nodejs';
-// Submit itself is fast (~5-8s) but we now kick off the designer LLM
-// via after() in the same function — that needs another 15-25s. Bump
-// to 60 so the background call has comfortable headroom.
-export const maxDuration = 60;
+// Mode A (gpt-image-1) is synchronous and finishes in 15-30s; Mode A
+// via fal queue submits in 5-8s + designer LLM in after() needs 15-25s
+// — both fit comfortably in 60s. Mode C (ComfyUI synchronous SDXL +
+// Depth ControlNet via tunnel) is the slow path — 70-180s warm on a
+// proper GPU, 3-8min cold on M2 Max with MiDaS first-download. Bumped
+// to 300 (Vercel Pro max for non-fluid-compute) so a warm Mode C
+// render completes inside the function lifetime. Cold Mode C calls
+// may still time out — a known limitation we accept until Stage 3b
+// refactors Mode C to use the async submit + status-poll pattern fal
+// uses (same architecture as kontext-multi).
+export const maxDuration = 300;
 
 interface Body {
   roomId?: string;
@@ -148,12 +157,14 @@ interface Body {
   paletteId?: string;
   featuredProductIds?: string[];
   projectId?: string;
-  /** Flow mode (A4, 2026-05-26). 'a' = original photo-restyle flow
-   *  (default — every existing caller). 'b' = the new floorplan-
-   *  confirm + blank-canvas + Coco-only design flow. Persisted on
-   *  the render row as render_mode = 'restyle' | 'design' so
-   *  downstream surfaces can branch cleanly. */
-  mode?: 'a' | 'b';
+  /** Flow mode. 'a' = original photo-restyle (default — every
+   *  existing caller). 'b' = floorplan-confirm + blank-canvas +
+   *  Coco-only design flow. 'c' = ComfyUI Mode C — SDXL + Depth
+   *  ControlNet through the owner's tunnel for geometry-preserving
+   *  re-renders. Persisted on the render row as render_mode =
+   *  'restyle' | 'design' | 'mode_c' so downstream surfaces can
+   *  branch cleanly. */
+  mode?: 'a' | 'b' | 'c';
 }
 
 interface RoomRow {
@@ -263,13 +274,15 @@ export async function POST(request: NextRequest) {
     if (p && p.user_id === user.id) verifiedProjectId = p.id;
   }
 
-  // Mode flag (A4). 'b' opts into the blank-canvas Coco design flow;
-  // anything else (including undefined) stays on the original
-  // photo-restyle path. Persisted on the render row as render_mode
-  // so result-page + analytics surfaces can branch on a single
-  // typed column rather than re-deriving from request context.
-  const mode: 'a' | 'b' = body.mode === 'b' ? 'b' : 'a';
-  const renderMode = mode === 'b' ? 'design' : 'restyle';
+  // Mode flag. 'b' opts into the blank-canvas Coco design flow; 'c'
+  // opts into ComfyUI Mode C (Depth ControlNet via tunnel); anything
+  // else (including undefined) stays on the original photo-restyle
+  // path. Persisted on the render row as render_mode so result-page
+  // + analytics surfaces can branch on a single typed column rather
+  // than re-deriving from request context.
+  const mode: 'a' | 'b' | 'c' =
+    body.mode === 'b' ? 'b' : body.mode === 'c' ? 'c' : 'a';
+  const renderMode = mode === 'b' ? 'design' : mode === 'c' ? 'mode_c' : 'restyle';
 
   // Resilient insert. If the render_mode column hasn't been applied
   // to prod yet (migration 20260526120000 didn't run cleanly), the
@@ -661,6 +674,113 @@ export async function POST(request: NextRequest) {
 
     const provider = getActiveProvider();
     console.log(`[render] provider: ${provider}`);
+
+    // Mode C — ComfyUI SDXL + Depth ControlNet via the owner's tunnel
+    // (PR #71/#72, Stage 3a wiring). Takes precedence over the
+    // provider-based dispatch below: when the request explicitly
+    // asked for mode 'c', the FLUX_PROVIDER setting is bypassed. The
+    // depth controlnet locks room geometry at the model level — the
+    // failure mode Mode A/B keeps hitting (hallucinated windows,
+    // replaced walls, drifted ceiling height) is structurally absent
+    // here. Trade-off: slower (~90-180s warm, up to 8min cold on M2
+    // Max with first-time MiDaS download) and depends on the tunnel.
+    //
+    // Requires COMFYUI_URL to be set server-side; returns a clean
+    // 503 if Mode C was requested but the tunnel isn't configured.
+    // The UI toggle is gated on NEXT_PUBLIC_COMFYUI_MODE so this
+    // 503 path is normally unreachable from any user surface.
+    if (mode === 'c' && resizedRoomBuf) {
+      if (!process.env.COMFYUI_URL) {
+        await admin
+          .from('renders')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', render.id);
+        return NextResponse.json(
+          { error: 'Mode C is not configured (COMFYUI_URL not set).' },
+          { status: 503 },
+        );
+      }
+
+      // Build the Mode C prompt. Format differs from buildOpenAI*
+      // because SDXL's CLIP encoder has a ~77-token attention window
+      // — long prose directives get truncated. The builder hands
+      // back both positive + negative as separate strings, matching
+      // SDXL's pipeline.
+      const productRefs = heroProducts.slice(0, MAX_PRODUCTS_FOR_REFS).map((p) => ({
+        name: p.name,
+        category: p.category,
+        retailer: p.retailer,
+        silhouette: p.silhouette ?? null,
+        dimensions: p.dimensions ?? null,
+      }));
+      const prompts = modeCPromptFromAnalysis(room.analysis as RoomAnalysis | null, {
+        paletteName: palette?.name ?? style.name,
+        paletteVibe: palette?.vibe ?? null,
+        styleName: style.name,
+        productRefs,
+      });
+      console.log(
+        `[render-mode-c] submitting ComfyUI: ${productRefs.length} products, palette=${
+          palette?.id ?? 'none'
+        }, style=${style.slug}`,
+      );
+      console.log(`[render-mode-c] positive: ${prompts.positive}`);
+
+      try {
+        const result = await renderViaComfyUIWithDepth({
+          roomBuf: resizedRoomBuf,
+          positivePrompt: prompts.positive,
+          negativePrompt: prompts.negative,
+          // SDXL native; if the owner's GPU can't hold 1024 (32GB
+          // M2 Max OOM observed during smoke tests) drop via env
+          // override here in a future change. Default to native.
+          maxLongSide: 1024,
+        });
+        const outKey = `${user.id}/${render.id}.png`;
+        const upload = await admin.storage
+          .from('renders')
+          .upload(outKey, new Uint8Array(result.outputBuf), {
+            contentType: 'image/png',
+            cacheControl: '31536000',
+            upsert: true,
+          });
+        if (upload.error) throw new Error(`storage upload: ${upload.error.message}`);
+
+        // Same userPicked branch as the gpt-image-1 path — preserve
+        // an inline-set picking_list when the user picked products
+        // ahead of submission, otherwise flag for Florence-2 build
+        // in after().
+        const userPicked =
+          body.featuredProductIds != null && body.featuredProductIds.length > 0;
+        await admin
+          .from('renders')
+          .update({
+            status: 'succeeded',
+            output_url: outKey,
+            completed_at: new Date().toISOString(),
+            picking_list_status: userPicked ? 'ready' : 'building',
+          })
+          .eq('id', render.id);
+        console.log(
+          `[render-mode-c] saved + marked succeeded for ${render.id} (${result.durationMs}ms, prompt_id=${result.promptId})`,
+        );
+        return NextResponse.json({ id: render.id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[render-mode-c] failed for ${render.id}:`, message);
+        await admin
+          .from('renders')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', render.id);
+        return NextResponse.json(
+          { error: `Mode C render failed: ${message}` },
+          { status: 502 },
+        );
+      }
+    }
 
     // #176 — gpt-image-1 path. Synchronous: openai.images.edit returns
     // the rendered bytes directly (~15-30s), no queue. We save to
