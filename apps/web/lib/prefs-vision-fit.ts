@@ -34,6 +34,40 @@ export interface VisionProfile {
   quality_tier?: string | null;
   palette_fit?: Record<string, number>;
   room_fit?: Record<string, number>;
+  // Stage 3b additions (PR #77, 2026-05-27). All optional because
+  // existing rows pre-PR-#77 don't have them populated. Mode C's
+  // IP-Adapter logic (Stage 3b) will fall back gracefully when any
+  // field is missing; prefs-vision-fit scorer ignores them entirely
+  // (those signals don't map to user-taste tags).
+  /** Camera angle on the product image. "three_quarter" / "front" are
+   *  the IP-Adapter sweet spot; "lifestyle" is intentionally avoided
+   *  as a reference because surrounding context bleeds into renders. */
+  dominant_view_angle?:
+    | 'front'
+    | 'three_quarter'
+    | 'side'
+    | 'top_down'
+    | 'lifestyle'
+    | null;
+  /** Surface character independent of material — matte vs glossy vs
+   *  textured. Drives how SDXL renders specular highlights. */
+  material_finish?: 'matte' | 'semi_gloss' | 'glossy' | 'textured' | 'mixed' | null;
+  /** How the piece meets the floor. Useful for room composition
+   *  (legs_visible pieces float; skirted/platform pieces ground). */
+  base_type?:
+    | 'legs_visible'
+    | 'skirted'
+    | 'platform'
+    | 'wall_mounted'
+    | 'floor_resting'
+    | 'n/a'
+    | null;
+  /** Style coherence anchors. 1-3 tags ordered most-to-least defining. */
+  style_tags?: string[];
+  /** Seating-only: arm shape. Absent on non-seating products. */
+  arm_style?: 'rolled' | 'track' | 'square' | 'armless' | 'curved' | 'n/a';
+  /** Seating-only: cushion treatment. Absent on non-seating products. */
+  cushion_type?: 'loose' | 'tight' | 'tufted' | 'channel' | 'smooth' | 'n/a';
 }
 
 interface SignalMap {

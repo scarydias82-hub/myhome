@@ -110,7 +110,7 @@ const ROOM_TYPES = [
 
 // ---- System prompt --------------------------------------------------------
 
-const SYSTEM = `You are myMaison's catalogue intelligence pre-pass. You see a single product image (furniture, lighting, rug, decor, paint, tile, etc.) and must produce a structured vision profile that the render-time matcher will use to narrow candidate products by visual fit.
+const SYSTEM = `You are myMaison's catalogue intelligence pre-pass. You see a single product image (furniture, lighting, rug, decor, paint, tile, etc.) and must produce a structured vision profile that the render-time matcher will use to narrow candidate products by visual fit AND that Mode C's IP-Adapter (Stage 3b) will use to pick the best reference angle per render.
 
 Output ONE JSON object inside a fenced code block. No prose, no commentary.
 
@@ -130,11 +130,29 @@ REQUIRED FIELDS
 
 7. room_fit (object, room → 0.0-1.0) — for each room the product would naturally belong in, score 0.0-1.0. OMIT rooms scoring below 0.4. Rooms: living_room, bedroom, dining_room, kitchen, bathroom, study, outdoor, hallway. A sofa is mainly living_room (high) with a tail in study; a vanity tap is bathroom only.
 
+8. dominant_view_angle (string, exactly one of) — front | three_quarter | side | top_down | lifestyle. The angle the product is shot from. front = head-on, three_quarter = ~45° (most common product hero shot), side = profile, top_down = aerial (rugs, flat-lays), lifestyle = styled-room shot with surrounding context. Mode C's IP-Adapter (Stage 3b) prefers three_quarter or front; lifestyle shots are intentionally avoided as visual reference because they bleed surrounding context into the render.
+
+9. material_finish (string, exactly one of) — matte | semi_gloss | glossy | textured | mixed. Surface character independent of material. A linen sofa is "textured"; a brass lamp is typically "glossy"; a chalk-painted cabinet is "matte". Drives how SDXL/Flux renders specular highlights.
+
+10. base_type (string, exactly one of) — legs_visible | skirted | platform | wall_mounted | floor_resting | n/a. How the piece meets the floor. "legs_visible" = clear gap under the piece; "skirted" = upholstery hides the legs; "platform" = solid plinth or block base; "floor_resting" = directly on floor (rugs, ottomans without legs); "wall_mounted" = hangs (art, mirrors, sconces); "n/a" = doesn't apply (paint, wallpaper, throws).
+
+11. style_tags (string[], 1-3 items, ordered most-to-least defining) — pick from: modern, contemporary, mid_century, scandinavian, japandi, traditional, industrial, coastal, art_deco, farmhouse, eclectic, minimalist, transitional. Cap at 3.
+
+CONDITIONAL FIELDS (seating / chairs / sofas / armchairs / benches / stools / beds)
+
+When the product IS one of these categories, ALSO populate:
+
+12. arm_style (string, exactly one of) — rolled | track | square | armless | curved | n/a. Rolled = scrolled outward; track = straight rectangular; square = boxy 90°; curved = continuous curve; armless = no arms; n/a = irrelevant for the product type.
+
+13. cushion_type (string, exactly one of) — loose | tight | tufted | channel | smooth | n/a. Loose = removable cushions visible; tight = upholstered as one surface; tufted = button-tufted dimpling; channel = vertical channels; smooth = flat upholstery with no visible cushion divisions; n/a = irrelevant.
+
+For non-seating products (lighting, rugs, decor, etc.) OMIT arm_style and cushion_type entirely — do not output them with "n/a", just leave the fields out.
+
 THE PALETTE CATALOGUE (id: style hooks — vibe)
 
 ${PALETTE_BLOCK}
 
-Output shape:
+Output shape (full schema — fields 12-13 only when applicable):
 
 \`\`\`json
 {
@@ -144,7 +162,13 @@ Output shape:
   "visual_tone": "...",
   "quality_tier": "...",
   "palette_fit": { "<palette_id>": 0.0 },
-  "room_fit": { "<room>": 0.0 }
+  "room_fit": { "<room>": 0.0 },
+  "dominant_view_angle": "...",
+  "material_finish": "...",
+  "base_type": "...",
+  "style_tags": ["...", "..."],
+  "arm_style": "...",
+  "cushion_type": "..."
 }
 \`\`\``;
 
@@ -266,6 +290,25 @@ async function generateProfile(product) {
   const palette_fit = pruneFitMap(parsed.palette_fit, new Set(PALETTES.map((p) => p.id)));
   const room_fit = pruneFitMap(parsed.room_fit, new Set(ROOM_TYPES));
 
+  // Stage 3b additions (PR #77, 2026-05-27) — extra fields the
+  // IP-Adapter + multi-pass inpainting pipeline will read. Each is
+  // pinned to a closed enum and validated; out-of-enum values get
+  // dropped to null rather than allowed through.
+  const dominant_view_angle = pickEnum(parsed.dominant_view_angle, VIEW_ANGLES);
+  const material_finish = pickEnum(parsed.material_finish, MATERIAL_FINISHES);
+  const base_type = pickEnum(parsed.base_type, BASE_TYPES);
+  const style_tags = Array.isArray(parsed.style_tags)
+    ? parsed.style_tags
+        .filter((t) => typeof t === 'string' && STYLE_TAGS.has(t))
+        .slice(0, 3)
+    : [];
+  // Conditional fields — only populate when Claude returned one
+  // (signals the product is seating/bed). Don't synthesise 'n/a'
+  // because the matcher wants to skip the field entirely for
+  // non-seating products.
+  const arm_style = parsed.arm_style ? pickEnum(parsed.arm_style, ARM_STYLES) : undefined;
+  const cushion_type = parsed.cushion_type ? pickEnum(parsed.cushion_type, CUSHION_TYPES) : undefined;
+
   return {
     silhouette: typeof parsed.silhouette === 'string' ? parsed.silhouette.slice(0, 200) : '',
     materials: Array.isArray(parsed.materials)
@@ -276,9 +319,51 @@ async function generateProfile(product) {
     quality_tier: typeof parsed.quality_tier === 'string' ? parsed.quality_tier : null,
     palette_fit,
     room_fit,
+    dominant_view_angle,
+    material_finish,
+    base_type,
+    style_tags,
+    ...(arm_style ? { arm_style } : {}),
+    ...(cushion_type ? { cushion_type } : {}),
     generated_at: new Date().toISOString(),
     model: MODEL,
   };
+}
+
+// Enum validation helpers. Returns the value if it's in the set,
+// otherwise null. Keeps malformed Claude output from contaminating
+// downstream matchers + Stage 3b IP-Adapter selection.
+const VIEW_ANGLES = new Set(['front', 'three_quarter', 'side', 'top_down', 'lifestyle']);
+const MATERIAL_FINISHES = new Set(['matte', 'semi_gloss', 'glossy', 'textured', 'mixed']);
+const BASE_TYPES = new Set([
+  'legs_visible',
+  'skirted',
+  'platform',
+  'wall_mounted',
+  'floor_resting',
+  'n/a',
+]);
+const STYLE_TAGS = new Set([
+  'modern',
+  'contemporary',
+  'mid_century',
+  'scandinavian',
+  'japandi',
+  'traditional',
+  'industrial',
+  'coastal',
+  'art_deco',
+  'farmhouse',
+  'eclectic',
+  'minimalist',
+  'transitional',
+]);
+const ARM_STYLES = new Set(['rolled', 'track', 'square', 'armless', 'curved', 'n/a']);
+const CUSHION_TYPES = new Set(['loose', 'tight', 'tufted', 'channel', 'smooth', 'n/a']);
+
+function pickEnum(value, allowedSet) {
+  if (typeof value !== 'string') return null;
+  return allowedSet.has(value) ? value : null;
 }
 
 function pruneFitMap(raw, allowedKeys) {
