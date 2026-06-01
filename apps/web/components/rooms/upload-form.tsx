@@ -616,19 +616,21 @@ export function UploadForm({
     // hasn't been opened, fall through to the legacy featuredIds
     // (currently always []).
     const pickedIds = curationOpen ? getAllPickedIds() : featuredIds;
-    // Submit gate (2026-05-27 — relaxed from "all categories must
-    // have a pick"). The render needs EITHER:
-    //   A) At least one picked product per category (legacy behaviour
-    //      — picks become heroProducts + picking list)
+    // Submit gate (2026-06-01 — relaxed further). The render needs
+    // EITHER:
+    //   A) At least one product picked ANYWHERE (any category — not
+    //      one per category). User can render with just a sofa pick,
+    //      no rug / no coffee table, etc.
     //   B) The Advanced prompt override populated with text (the
     //      user is rendering by prompt alone, no specific catalogue
     //      products)
     // If neither, surface a friendly error rather than letting the
     // user submit a render that has nothing to anchor it.
     const hasPromptOverride = promptOverride.trim().length > 0;
-    if (curationOpen && !allCategoriesHavePick() && !hasPromptOverride) {
+    const hasAnyPick = getAllPickedIds().length > 0;
+    if (curationOpen && !hasAnyPick && !hasPromptOverride) {
       setError(
-        'Pick at least one product per category, or type a custom prompt in the Advanced section.',
+        'Pick at least one product, or type a custom prompt in the Advanced section.',
       );
       return;
     }
@@ -892,13 +894,14 @@ export function UploadForm({
               type="submit"
               variant="cta"
               size="lg"
-              // Submit enabled when EITHER all categories have a pick
-              // OR the Advanced prompt override is non-empty (2026-05-27).
-              // Lets the user render by prompt alone without picking
-              // products — useful for testing prompt variations or
-              // when the catalogue doesn't surface what they want.
+              // Submit enabled when EITHER at least one product is
+              // picked (anywhere — not one per category) OR the
+              // Advanced prompt override is non-empty. Lets the user
+              // render with a single pick + the rest of the room
+              // filled in by SDXL, or by prompt alone with no picks.
               disabled={
-                (!allCategoriesHavePick() && promptOverride.trim().length === 0) ||
+                (getAllPickedIds().length === 0 &&
+                  promptOverride.trim().length === 0) ||
                 submitting
               }
             >
