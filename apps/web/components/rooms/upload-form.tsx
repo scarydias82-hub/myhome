@@ -616,24 +616,16 @@ export function UploadForm({
     // hasn't been opened, fall through to the legacy featuredIds
     // (currently always []).
     const pickedIds = curationOpen ? getAllPickedIds() : featuredIds;
-    // Submit gate (2026-06-01 — relaxed further). The render needs
-    // EITHER:
-    //   A) At least one product picked ANYWHERE (any category — not
-    //      one per category). User can render with just a sofa pick,
-    //      no rug / no coffee table, etc.
-    //   B) The Advanced prompt override populated with text (the
-    //      user is rendering by prompt alone, no specific catalogue
-    //      products)
-    // If neither, surface a friendly error rather than letting the
-    // user submit a render that has nothing to anchor it.
-    const hasPromptOverride = promptOverride.trim().length > 0;
-    const hasAnyPick = getAllPickedIds().length > 0;
-    if (curationOpen && !hasAnyPick && !hasPromptOverride) {
-      setError(
-        'Pick at least one product, or type a custom prompt in the Advanced section.',
-      );
-      return;
-    }
+    // Submit gate removed 2026-06-01 — owner request. Backend
+    // (Mode C in /api/render + buildModeCPrompt) handles any
+    // combination cleanly:
+    //   - 1+ picks, no override → auto-prompt with product descriptors
+    //   - 0 picks, has override → override prompt verbatim
+    //   - 0 picks, no override → auto-prompt with palette + style +
+    //     room type only (produces a generic restyle of the room)
+    // Letting the backend make the call rather than gating in the
+    // UI means the user can render whatever combination they want
+    // without the form arguing about it.
     setSubmitting(true);
     setError(null);
     try {
@@ -894,22 +886,20 @@ export function UploadForm({
               type="submit"
               variant="cta"
               size="lg"
-              // Submit enabled when EITHER at least one product is
-              // picked (anywhere — not one per category) OR the
-              // Advanced prompt override is non-empty. Lets the user
-              // render with a single pick + the rest of the room
-              // filled in by SDXL, or by prompt alone with no picks.
-              disabled={
-                (getAllPickedIds().length === 0 &&
-                  promptOverride.trim().length === 0) ||
-                submitting
-              }
+              // Always enabled (owner request 2026-06-01). User can
+              // submit any combination — picks, override-only, or
+              // neither. Backend handles all paths. The only thing
+              // we gate on is the in-flight submission to prevent
+              // double-clicks.
+              disabled={submitting}
             >
               {submitting
                 ? 'Restyling… (~2-3 min)'
                 : getAllPickedIds().length > 0
                   ? `Render with these ${getAllPickedIds().length} pick${getAllPickedIds().length === 1 ? '' : 's'}`
-                  : 'Render with custom prompt'}
+                  : promptOverride.trim().length > 0
+                    ? 'Render with custom prompt'
+                    : 'Render this room'}
             </Button>
             <button
               type="button"
